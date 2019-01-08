@@ -1,4 +1,7 @@
 {-# LANGUAGE PartialTypeSignatures #-}
+module Constraint_tests where
+
+import AutoTests
 import Constraints
 
 t1 :: Term
@@ -333,8 +336,8 @@ f1 = read "f1[1]"
 p1 :: Predicate
 p1 = read "p1[1]"
 
-xsig :: Signature
-xsig = ([p1],[f1],n_base_vars)
+xsig :: ExtendedSignature
+xsig = (([p1],[f1],n_base_vars),([],n_base_vars,[]),[],[])
 
 
 -- Examples
@@ -669,9 +672,9 @@ diagtest = (\x -> case x of {[y] -> Left (\z -> (multiples_l_h y)); (y:ys) -> Ri
 diagtestfun = recursively_diagonalize_h diagtest
 diagtestenum = diagtestfun nums
 
-sig :: Signature
+sig :: ExtendedSignature
 --sig = ([read "p1[0]",read "p2[1]",read "p3[2]"],[read "f1[0]",read "f2[1]",read "f3[2]"],2)
-sig = ([read "p1[0]",read "p2[1]",read "p3[2]"],[read "f1[0]",read "f2[1]",read "f3[2]"],2)
+sig = (([read "p1[0]",read "p2[1]",read "p3[2]"],[read "f1[0]",read "f2[1]",read "f3[2]"],2),([],2,[]),[],[])
 --zeroterms :: Enumeration (_,Term)
 --zeroterms = enumerate_zero_terms_dependent sig (Dom (U 2)) [read "x5"]
 
@@ -2296,15 +2299,15 @@ show_nth_sol en i = show_full_soln ((enum_up_to_h i en) !! i)
 show_all_sols :: Enumeration (h,FullSolution) -> IO ()
 show_all_sols en = foldr (>>) (putStr "") (map (\pair -> (putStr ("Graph solution #" ++ (show (fst pair)) ++ ":\n")) >> (show_full_soln (snd pair))) (zip [0..infinity] (enum_up_to_h infinity en)))
 
-show_nth_inst :: [Metavariable] -> [Unifier] -> Enumeration (h,Maybe ([UnifierDescription],Instantiation)) -> Int -> IO ()
+show_nth_inst :: [Metavariable] -> [Unifier] -> Enumeration (h,Maybe ([UnifierDescription],Instantiation)) -> Int -> String
 show_nth_inst mvs us en i = show_one_inst mvs us ((enum_up_to_h i en) !! i)
 
-show_one_inst :: [Metavariable] -> [Unifier] -> Maybe ([UnifierDescription],Instantiation) -> IO ()
-show_one_inst mvs us Nothing = putStr "Unsatisiable.\n"
-show_one_inst mvs us (Just (uds,inst)) = putStr ((show_inst inst mvs) ++ "\nwith\n" ++ (show_unifs us uds))
+show_one_inst :: [Metavariable] -> [Unifier] -> Maybe ([UnifierDescription],Instantiation) -> String
+show_one_inst mvs us Nothing = "Unsatisiable.\n"
+show_one_inst mvs us (Just (uds,inst)) = ((show_inst inst mvs) ++ "\nwith\n" ++ (show_unifs us uds))
 
 show_all_insts :: [Metavariable] -> [Unifier] -> Enumeration (h,Maybe ([UnifierDescription],Instantiation)) -> IO ()
-show_all_insts mvs us en = foldr (>>) (putStr "") (map (\pair -> (putStr ("Solution #" ++ (show (fst pair)) ++ ":\n")) >> (show_one_inst mvs us (snd pair))) (zip [0..infinity] (enum_up_to_h infinity en)))
+show_all_insts mvs us en = foldr (>>) (putStr "") (map (\pair -> (putStr ("Solution #" ++ (show (fst pair)) ++ ":\n")) >> (putStr (show_one_inst mvs us (snd pair)))) (zip [0..infinity] (enum_up_to_h infinity en)))
 
 -- We use an empty unifier description list as an indicator for an unsatisfiable set of constraints.
 show_unifs :: [Unifier] -> [UnifierDescription] -> String
@@ -2360,6 +2363,10 @@ u2 = U 2
 
 epropus = [u0,u1,u2]
 
+epropheur :: MetaunificationHeuristic _ _
+epropheur = (Nothing,Nothing)
+--epropheur = (Just (enumerate_lits_dependent (Nothing,Nothing)),Just enumerate_terms_dependent)
+
 -- Derived variables
 epropx0u0 :: Variable
 epropx0u0 = get_image_var eprop_n_base_vars u0 x0
@@ -2370,8 +2377,8 @@ epropx1u0 = get_image_var eprop_n_base_vars u0 x1
 epropx2u0 :: Variable
 epropx2u0 = get_image_var eprop_n_base_vars u0 x2
 
-epropsig :: Signature
-epropsig = ([read "p1[2]",read "p2[1]"],[read "f1[2]",read "f2[2]",read "f3[1]",read "f4[1]"],eprop_n_base_vars)
+epropsig :: ExtendedSignature
+epropsig = (([read "p1[2]",read "p2[1]"],[read "f1[2]",read "f2[2]",read "f3[1]",read "f4[1]"],eprop_n_base_vars),((map (\mv -> [mv]) epropmetavars),eprop_n_base_vars,(map (\mv -> 0) epropmetavars)),[],[])
 
 -- Example 1
 epropmt1_1 :: Metaterm
@@ -2393,13 +2400,13 @@ epropfs1 :: FullSolution
 epropfs1 = (eproprmvs1,[],(eproprinst1,[]),epropg1)
 
 epropres1 :: Enumeration (_,FullSolution)
-epropres1 = enumerate_and_propagate_all epropsig epropfs1
+epropres1 = enumerate_and_propagate_all epropheur epropsig epropfs1
 
 eproperrs1 :: [ConstraintFormErrors]
 eproperrs1 = verify_all_unifier_constraints_wellformed epropsig epropmetavars epropus epropcs1
 
 epropinst1 :: Enumeration (_,Maybe ([UnifierDescription],Instantiation))
-epropinst1 = solve_unifier_constraints epropsig epropmetavars epropcs1 epropus
+epropinst1 = solve_unifier_constraints epropheur epropsig epropmetavars epropcs1 epropus
 
 -- Example 2
 epropmt2_1 :: Metaterm
@@ -2421,13 +2428,13 @@ epropfs2 :: FullSolution
 epropfs2 = (eproprmvs2,[],(eproprinst2,[]),epropg2)
 
 epropres2 :: Enumeration (_,FullSolution)
-epropres2 = enumerate_and_propagate_all epropsig epropfs2
+epropres2 = enumerate_and_propagate_all epropheur epropsig epropfs2
 
 eproperrs2 :: [ConstraintFormErrors]
 eproperrs2 = verify_all_unifier_constraints_wellformed epropsig epropmetavars epropus epropcs2
 
 epropinst2 :: Enumeration (_,Maybe ([UnifierDescription],Instantiation))
-epropinst2 = solve_unifier_constraints epropsig epropmetavars epropcs2 epropus
+epropinst2 = solve_unifier_constraints epropheur epropsig epropmetavars epropcs2 epropus
 
 -- Example 3
 epropmt3_1 :: Metaterm
@@ -2458,13 +2465,13 @@ epropfs3 :: FullSolution
 epropfs3 = (eproprmvs3,[],(eproprinst3,[]),epropg3)
 
 epropres3 :: Enumeration (_,FullSolution)
-epropres3 = enumerate_and_propagate_all epropsig epropfs3
+epropres3 = enumerate_and_propagate_all epropheur epropsig epropfs3
 
 eproperrs3 :: [ConstraintFormErrors]
 eproperrs3 = verify_all_unifier_constraints_wellformed epropsig epropmetavars epropus epropcs3
 
 epropinst3 :: Enumeration (_,Maybe ([UnifierDescription],Instantiation))
-epropinst3 = solve_unifier_constraints epropsig epropmetavars epropcs3 epropus
+epropinst3 = solve_unifier_constraints epropheur epropsig epropmetavars epropcs3 epropus
 
 -- Example 4
 epropmt4_1 :: Metaterm
@@ -2495,13 +2502,13 @@ epropfs4 :: FullSolution
 epropfs4 = (eproprmvs4,[],(eproprinst4,[]),epropg4)
 
 epropres4 :: Enumeration (_,FullSolution)
-epropres4 = enumerate_and_propagate_all epropsig epropfs4
+epropres4 = enumerate_and_propagate_all epropheur epropsig epropfs4
 
 eproperrs4 :: [ConstraintFormErrors]
 eproperrs4 = verify_all_unifier_constraints_wellformed epropsig epropmetavars epropus epropcs4
 
 epropinst4 :: Enumeration (_,Maybe ([UnifierDescription],Instantiation))
-epropinst4 = solve_unifier_constraints epropsig epropmetavars epropcs4 epropus
+epropinst4 = solve_unifier_constraints epropheur epropsig epropmetavars epropcs4 epropus
 
 -- Example 5
 epropmt5_1 :: Metaterm
@@ -2528,7 +2535,7 @@ eproperrs5 :: [ConstraintFormErrors]
 eproperrs5 = verify_all_unifier_constraints_wellformed epropsig epropmetavars epropus epropcs5
 
 epropinst5 :: Enumeration (_,Maybe ([UnifierDescription],Instantiation))
-epropinst5 = solve_unifier_constraints epropsig epropmetavars epropcs5 epropus
+epropinst5 = solve_unifier_constraints epropheur epropsig epropmetavars epropcs5 epropus
 
 -- Example 6
 epropmt6_1 :: Metaterm
@@ -2559,13 +2566,13 @@ epropfs6 :: FullSolution
 epropfs6 = (eproprmvs6,[],(eproprinst6,[]),epropg6)
 
 epropres6 :: Enumeration (_,FullSolution)
-epropres6 = enumerate_and_propagate_all epropsig epropfs6
+epropres6 = enumerate_and_propagate_all epropheur epropsig epropfs6
 
 eproperrs6 :: [ConstraintFormErrors]
 eproperrs6 = verify_all_unifier_constraints_wellformed epropsig epropmetavars epropus epropcs6
 
 epropinst6 :: Enumeration (_,Maybe ([UnifierDescription],Instantiation))
-epropinst6 = solve_unifier_constraints epropsig epropmetavars epropcs6 epropus
+epropinst6 = solve_unifier_constraints epropheur epropsig epropmetavars epropcs6 epropus
 
 -- Example 7
 epropmt7_1 :: Metaterm
@@ -2592,7 +2599,7 @@ eproperrs7 :: [ConstraintFormErrors]
 eproperrs7 = verify_all_unifier_constraints_wellformed epropsig epropmetavars epropus epropcs7
 
 epropinst7 :: Enumeration (_,Maybe ([UnifierDescription],Instantiation))
-epropinst7 = solve_unifier_constraints epropsig epropmetavars epropcs7 epropus
+epropinst7 = solve_unifier_constraints epropheur epropsig epropmetavars epropcs7 epropus
 
 -- Example 8
 epropmt8_1 :: Metaterm
@@ -2632,13 +2639,13 @@ epropfs8 :: FullSolution
 epropfs8 = (eproprmvs8,[],(eproprinst8,[]),epropg8)
 
 epropres8 :: Enumeration (_,FullSolution)
-epropres8 = enumerate_and_propagate_all epropsig epropfs8
+epropres8 = enumerate_and_propagate_all epropheur epropsig epropfs8
 
 eproperrs8 :: [ConstraintFormErrors]
 eproperrs8 = verify_all_unifier_constraints_wellformed epropsig epropmetavars epropus epropcs8
 
 epropinst8 :: Enumeration (_,Maybe ([UnifierDescription],Instantiation))
-epropinst8 = solve_unifier_constraints epropsig epropmetavars epropcs8 epropus
+epropinst8 = solve_unifier_constraints epropheur epropsig epropmetavars epropcs8 epropus
 
 -- Example 9
 epropmt9_1 :: Metaterm
@@ -2678,13 +2685,13 @@ epropfs9 :: FullSolution
 epropfs9 = (eproprmvs9,[],(eproprinst9,[]),epropg9)
 
 epropres9 :: Enumeration (_,FullSolution)
-epropres9 = enumerate_and_propagate_all epropsig epropfs9
+epropres9 = enumerate_and_propagate_all epropheur epropsig epropfs9
 
 eproperrs9 :: [ConstraintFormErrors]
 eproperrs9 = verify_all_unifier_constraints_wellformed epropsig epropmetavars epropus epropcs9
 
 epropinst9 :: Enumeration (_,Maybe ([UnifierDescription],Instantiation))
-epropinst9 = solve_unifier_constraints epropsig epropmetavars epropcs9 epropus
+epropinst9 = solve_unifier_constraints epropheur epropsig epropmetavars epropcs9 epropus
 
 -- Example 10
 epropmt10_1 :: Metaterm
@@ -2724,13 +2731,13 @@ epropfs10 :: FullSolution
 epropfs10 = (eproprmvs10,[],(eproprinst10,[]),epropg10)
 
 epropres10 :: Enumeration (_,FullSolution)
-epropres10 = enumerate_and_propagate_all epropsig epropfs10
+epropres10 = enumerate_and_propagate_all epropheur epropsig epropfs10
 
 eproperrs10 :: [ConstraintFormErrors]
 eproperrs10 = verify_all_unifier_constraints_wellformed epropsig epropmetavars epropus epropcs10
 
 epropinst10 :: Enumeration (_,Maybe ([UnifierDescription],Instantiation))
-epropinst10 = solve_unifier_constraints epropsig epropmetavars epropcs10 epropus
+epropinst10 = solve_unifier_constraints epropheur epropsig epropmetavars epropcs10 epropus
 
 -- Example 11
 epropmt11_1 :: Metaterm
@@ -2766,7 +2773,7 @@ eproperrs11 :: [ConstraintFormErrors]
 eproperrs11 = verify_all_unifier_constraints_wellformed epropsig epropmetavars epropus epropcs11
 
 epropinst11 :: Enumeration (_,Maybe ([UnifierDescription],Instantiation))
-epropinst11 = solve_unifier_constraints epropsig epropmetavars epropcs11 epropus
+epropinst11 = solve_unifier_constraints epropheur epropsig epropmetavars epropcs11 epropus
 
 -- Example 12
 epropmt12_1 :: Metaterm
@@ -2793,7 +2800,7 @@ eproperrs12 :: [ConstraintFormErrors]
 eproperrs12 = verify_all_unifier_constraints_wellformed epropsig epropmetavars epropus epropcs12
 
 epropinst12 :: Enumeration (_,Maybe ([UnifierDescription],Instantiation))
-epropinst12 = solve_unifier_constraints epropsig epropmetavars epropcs12 epropus
+epropinst12 = solve_unifier_constraints epropheur epropsig epropmetavars epropcs12 epropus
 
 -- Example 13
 
@@ -2821,7 +2828,7 @@ eproperrs13 :: [ConstraintFormErrors]
 eproperrs13 = verify_all_unifier_constraints_wellformed epropsig epropmetavars epropus epropcs13
 
 epropinst13 :: Enumeration (_,Maybe ([UnifierDescription],Instantiation))
-epropinst13 = solve_unifier_constraints epropsig epropmetavars epropcs13 epropus
+epropinst13 = solve_unifier_constraints epropheur epropsig epropmetavars epropcs13 epropus
 
 -- Example 14
 
@@ -2849,7 +2856,7 @@ eproperrs14 :: [ConstraintFormErrors]
 eproperrs14 = verify_all_unifier_constraints_wellformed epropsig epropmetavars epropus epropcs14
 
 epropinst14 :: Enumeration (_,Maybe ([UnifierDescription],Instantiation))
-epropinst14 = solve_unifier_constraints epropsig epropmetavars epropcs14 epropus
+epropinst14 = solve_unifier_constraints epropheur epropsig epropmetavars epropcs14 epropus
 
 -- Example 15
 epropmt15_1 :: Metaterm
@@ -2874,10 +2881,10 @@ epropfs15 :: FullSolution
 epropfs15 = (eproprmvs15,[],(eproprinst15,[]),epropg15)
 
 epropres15 :: Enumeration (_,FullSolution)
-epropres15 = enumerate_and_propagate_all epropsig epropfs15
+epropres15 = enumerate_and_propagate_all epropheur epropsig epropfs15
 
 epropinst15 :: Enumeration (_,Maybe ([UnifierDescription],Instantiation))
-epropinst15 = solve_unifier_constraints epropsig epropmetavars epropcs15 epropus
+epropinst15 = solve_unifier_constraints epropheur epropsig epropmetavars epropcs15 epropus
 
 -- Example 16
 epropmt16_1 :: Metaterm
@@ -2902,10 +2909,10 @@ epropfs16 :: FullSolution
 epropfs16 = (eproprmvs16,[],(eproprinst16,[]),epropg16)
 
 epropres16 :: Enumeration (_,FullSolution)
-epropres16 = enumerate_and_propagate_all epropsig epropfs16
+epropres16 = enumerate_and_propagate_all epropheur epropsig epropfs16
 
 epropinst16 :: Enumeration (_,Maybe ([UnifierDescription],Instantiation))
-epropinst16 = solve_unifier_constraints epropsig epropmetavars epropcs16 epropus
+epropinst16 = solve_unifier_constraints epropheur epropsig epropmetavars epropcs16 epropus
 
 -- Example 17
 epropmt17_1 :: Metaterm
@@ -2939,10 +2946,10 @@ epropfs17 :: FullSolution
 epropfs17 = (eproprmvs17,[],(eproprinst17,[]),epropg17)
 
 epropres17 :: Enumeration (_,FullSolution)
-epropres17 = enumerate_and_propagate_all epropsig epropfs17
+epropres17 = enumerate_and_propagate_all epropheur epropsig epropfs17
 
 epropinst17 :: Enumeration (_,Maybe ([UnifierDescription],Instantiation))
-epropinst17 = solve_unifier_constraints epropsig epropmetavars epropcs17 epropus
+epropinst17 = solve_unifier_constraints epropheur epropsig epropmetavars epropcs17 epropus
 
 -- Example 18
 epropmt18_1 :: Metaterm
@@ -2976,10 +2983,10 @@ epropfs18 :: FullSolution
 epropfs18 = (eproprmvs18,[],(eproprinst18,[]),epropg18)
 
 epropres18 :: Enumeration (_,FullSolution)
-epropres18 = enumerate_and_propagate_all epropsig epropfs18
+epropres18 = enumerate_and_propagate_all epropheur epropsig epropfs18
 
 epropinst18 :: Enumeration (_,Maybe ([UnifierDescription],Instantiation))
-epropinst18 = solve_unifier_constraints epropsig epropmetavars epropcs18 epropus
+epropinst18 = solve_unifier_constraints epropheur epropsig epropmetavars epropcs18 epropus
 
 -- Example 19
 epropmt19_1 :: Metaterm
@@ -3006,7 +3013,7 @@ eproperrs19 :: [ConstraintFormErrors]
 eproperrs19 = verify_all_unifier_constraints_wellformed epropsig epropmetavars epropus epropcs19
 
 epropinst19 :: Enumeration (_,Maybe ([UnifierDescription],Instantiation))
-epropinst19 = solve_unifier_constraints epropsig epropmetavars epropcs19 epropus
+epropinst19 = solve_unifier_constraints epropheur epropsig epropmetavars epropcs19 epropus
 
 -- Example 20
 epropmt20_1 :: Metaterm
@@ -3033,7 +3040,7 @@ eproperrs20 :: [ConstraintFormErrors]
 eproperrs20 = verify_all_unifier_constraints_wellformed epropsig epropmetavars epropus epropcs20
 
 epropinst20 :: Enumeration (_,Maybe ([UnifierDescription],Instantiation))
-epropinst20 = solve_unifier_constraints epropsig epropmetavars epropcs20 epropus
+epropinst20 = solve_unifier_constraints epropheur epropsig epropmetavars epropcs20 epropus
 
 -- Example 21
 epropmt21_1 :: Metaterm
@@ -3067,10 +3074,10 @@ epropfs21 :: FullSolution
 epropfs21 = (eproprmvs21,[],(eproprinst21,[]),epropg21)
 
 epropres21 :: Enumeration (_,FullSolution)
-epropres21 = enumerate_and_propagate_all epropsig epropfs21
+epropres21 = enumerate_and_propagate_all epropheur epropsig epropfs21
 
 epropinst21 :: Enumeration (_,Maybe ([UnifierDescription],Instantiation))
-epropinst21 = solve_unifier_constraints epropsig epropmetavars epropcs21 epropus
+epropinst21 = solve_unifier_constraints epropheur epropsig epropmetavars epropcs21 epropus
 
 
 epropcs21t = [Tcstr (MTermR u1 (MTermT (read "x1"))) (MTermR u1 (MTermF (read "f1[2]") [MTermT (read "x6"),MTermF (read "f1[2]") [MTermT (read "x6"),MTermT (read "x7")]]))]
@@ -3083,7 +3090,7 @@ epropfs21t :: FullSolution
 epropfs21t = set_all_solutions (eproprmvs21t,[],(eproprinst21t,[]),epropg21t) [(DMetaT mx0,Left (read "f1[2](x1,x0)")),(DRec u0 (DVar x1),Left (read "x6")),(DRec u0 (DVar x2),Left (read "x7")),(DRec u0 (DVar x0),Left (read "f1[2](x6,x7)"))]
 
 epropres21t :: Enumeration (_,FullSolution)
-epropres21t = enumerate_and_propagate_all epropsig epropfs21t
+epropres21t = enumerate_and_propagate_all epropheur epropsig epropfs21t
 
 
 -- Example 22
@@ -3127,10 +3134,10 @@ epropfs22 :: FullSolution
 epropfs22 = (eproprmvs22,[],(eproprinst22,[]),epropg22)
 
 epropres22 :: Enumeration (_,FullSolution)
-epropres22 = enumerate_and_propagate_all epropsig epropfs22
+epropres22 = enumerate_and_propagate_all epropheur epropsig epropfs22
 
 epropinst22 :: Enumeration (_,Maybe ([UnifierDescription],Instantiation))
-epropinst22 = solve_unifier_constraints epropsig epropmetavars epropcs22 epropus
+epropinst22 = solve_unifier_constraints epropheur epropsig epropmetavars epropcs22 epropus
 
 -- Example 23
 epropml23_1 :: Metaliteral
@@ -3157,7 +3164,7 @@ eproperrs23 :: [ConstraintFormErrors]
 eproperrs23 = verify_all_unifier_constraints_wellformed epropsig epropmetavars epropus epropcs23
 
 epropinst23 :: Enumeration (_,Maybe ([UnifierDescription],Instantiation))
-epropinst23 = solve_unifier_constraints epropsig epropmetavars epropcs23 epropus
+epropinst23 = solve_unifier_constraints epropheur epropsig epropmetavars epropcs23 epropus
 
 -- Example 24
 epropml24_1 :: Metaliteral
@@ -3193,7 +3200,7 @@ eproperrs24 :: [ConstraintFormErrors]
 eproperrs24 = verify_all_unifier_constraints_wellformed epropsig epropmetavars epropus epropcs24
 
 epropinst24 :: Enumeration (_,Maybe ([UnifierDescription],Instantiation))
-epropinst24 = solve_unifier_constraints epropsig epropmetavars epropcs24 epropus
+epropinst24 = solve_unifier_constraints epropheur epropsig epropmetavars epropcs24 epropus
 
 -- Example 25
 epropml25_1 :: Metaliteral
@@ -3229,7 +3236,7 @@ eproperrs25 :: [ConstraintFormErrors]
 eproperrs25 = verify_all_unifier_constraints_wellformed epropsig epropmetavars epropus epropcs25
 
 epropinst25 :: Enumeration (_,Maybe ([UnifierDescription],Instantiation))
-epropinst25 = solve_unifier_constraints epropsig epropmetavars epropcs25 epropus
+epropinst25 = solve_unifier_constraints epropheur epropsig epropmetavars epropcs25 epropus
 
 -- Example 26
 epropml26_1 :: Metaliteral
@@ -3272,7 +3279,907 @@ epropfs26 :: FullSolution
 epropfs26 = (eproprmvs26,[],(eproprinst26,[]),epropg26)
 
 epropres26 :: Enumeration (_,FullSolution)
-epropres26 = enumerate_and_propagate_all epropsig epropfs26
+epropres26 = enumerate_and_propagate_all epropheur epropsig epropfs26
 
 epropinst26 :: Enumeration (_,Maybe ([UnifierDescription],Instantiation))
-epropinst26 = solve_unifier_constraints epropsig epropmetavars epropcs26 epropus
+epropinst26 = solve_unifier_constraints epropheur epropsig epropmetavars epropcs26 epropus
+
+-- Obtain the description of a unifier
+extract_unifier_desc :: [Unifier] -> Unifier -> ([UnifierDescription],Instantiation) -> UnifierDescription
+extract_unifier_desc us v (uds,_) = extract_unifier_desc_helper us v uds
+
+extract_unifier_desc_helper :: [Unifier] -> Unifier -> [UnifierDescription] -> UnifierDescription
+extract_unifier_desc_helper (u:_) v (ud:_) | u == v = ud
+extract_unifier_desc_helper (u:us) v (ud:uds) = extract_unifier_desc_helper us v uds
+
+show_mv_inst_value :: Maybe (Either Term Literal) -> String
+show_mv_inst_value Nothing = "nothing"
+show_mv_inst_value (Just (Left t)) = "term " ++ (show t)
+show_mv_inst_value (Just (Right l)) = "literal " ++ (show l)
+
+-- Constraint form errors.
+cferr_at :: [ConstraintFormErrors] -> AutomatedTestResult
+cferr_at cferrs = if (all cferr_at_helper cferrs) then (ATR True "All constraints are well formed.\n") else (ATR False ("Some constraints are not well formed:\n" ++ (concat (map cferr_show (filter (p_not cferr_at_helper) cferrs))))) where cferr_show = (\cferr -> (show cferr) ++ "\n")
+
+cferr_at_helper :: ConstraintFormErrors -> Bool
+cferr_at_helper (CFErrs _ []) = True
+cferr_at_helper (CFErrs _ _) = False
+
+-- Verify that an element with a property is present.
+
+-- Some solution has a unifier assigning a value to a particular variable.
+some_ud_assign :: Int -> [Metavariable] -> [Unifier] -> Enumeration (_,Maybe ([UnifierDescription],Instantiation)) -> Unifier -> Variable -> Term -> AutomatedTestResult
+some_ud_assign n mvs us en u x t = if (any prop (enum_up_to_mb_h n en)) then (ATR True "Solution was found.\n") else (ATR False ("Could not find any solution with unifier " ++ (show u) ++ " assigning value " ++ (show t) ++ " to variable " ++ (show x) ++ ".\n")) where prop = (\sol -> p_assign_value x t (extract_unifier_desc us u sol))
+
+-- Some solution has a particular unifier description
+some_ud :: Int -> [Metavariable] -> [Unifier] -> Enumeration (_,Maybe ([UnifierDescription],Instantiation)) -> Unifier -> UnifierDescription -> AutomatedTestResult
+some_ud n mvs us en u ud = if (any prop (enum_up_to_mb_h n en)) then (ATR True "Solution was found.\n") else (ATR False ("Could not find any solution with unifier " ++ (show u) ++ " having description: " ++ (show ud) ++ ".\n")) where prop = (\sol -> p_ud_equal ud (extract_unifier_desc us u sol))
+
+-- Some solution makes certain terms or literals unify by a particular unifier.
+some_ud_unif :: Int -> [Metavariable] -> [Unifier] -> Enumeration (_,Maybe ([UnifierDescription],Instantiation)) -> Unifier -> Either Term Literal -> Either Term Literal -> AutomatedTestResult
+some_ud_unif n mvs us en u (Left t1) (Left t2) = if (any prop (enum_up_to_mb_h n en)) then (ATR True "Solution was found.\n") else (ATR False ("Could not find any solution with unifier " ++ (show u) ++ " unifying term " ++ (show t1) ++ " with " ++ (show t2) ++ ".\n")) where prop = (\sol -> p_u_app_equal_t n u (extract_unifier_desc us u sol) t1 t2)
+some_ud_unif n mvs us en u (Right l1) (Right l2) = if (any prop (enum_up_to_mb_h n en)) then (ATR True "Solution was found.\n") else (ATR False ("Could not find any solution with unifier " ++ (show u) ++ " unifying literal " ++ (show t1) ++ " with " ++ (show t2) ++ ".\n")) where prop = (\sol -> p_u_app_equal_l n u (extract_unifier_desc us u sol) l1 l2)
+
+
+-- Some solution is exactly like the given one.
+some_sol :: Int -> [Metavariable] -> [Unifier] -> Enumeration (_,Maybe ([UnifierDescription],Instantiation)) -> ([UnifierDescription],Instantiation) -> AutomatedTestResult
+some_sol n mvs us en sol = if (any (p_sol_equal mvs us sol) (enum_up_to_mb_h n en)) then (ATR True "Solution was found.\n") else (ATR False ("Could not find solution: \n" ++ (show_one_inst mvs us (Just sol))))
+
+-- Some instantiation is exactly like a given one.
+some_inst :: Int -> [Metavariable] -> [Unifier] -> Enumeration (_,Maybe ([UnifierDescription],Instantiation)) -> Instantiation -> AutomatedTestResult
+some_inst n mvs us en inst = if (any prop (enum_up_to_mb_h n en)) then (ATR True "Solution was found.\n") else (ATR False ("Could not find any solution with instantiation " ++ (show_inst inst mvs) ++ ".\n")) where prop = (\sol -> p_inst_equal mvs inst (snd sol))
+
+-- Some instantiation has a particular value for a meta-variable.
+some_inst_mv :: Int -> [Metavariable] -> [Unifier] -> Enumeration (_,Maybe ([UnifierDescription],Instantiation)) -> Metavariable -> Maybe (Either Term Literal) -> AutomatedTestResult
+some_inst_mv n mvs us en mv v = if (any prop (enum_up_to_mb_h n en)) then (ATR True "Solution was found.\n") else (ATR False ("Could not find any solution with an instantiation instantiating meta-variable " ++ (show mv) ++ " to " ++ (show_mv_inst_value v) ++ ".\n")) where prop = (\sol -> p_inst_value mv v (snd sol))
+
+-- Verify that an element with a property is not present.
+
+-- No solution has a unifier assigning a value to a particular variable.
+no_ud_assign :: Int -> [Metavariable] -> [Unifier] -> Enumeration (_,Maybe ([UnifierDescription],Instantiation)) -> Unifier -> Variable -> Term -> AutomatedTestResult
+no_ud_assign n mvs us en u x t = if (any prop sols) then (ATR False ("Solutions were found with unifier " ++ (show u) ++ " assigning value " ++ (show t) ++ " to variable " ++ (show x) ++ ":\n" ++ (concat (map sol_show (filter prop sols))))) else (ATR True "No solution was found.\n") where sols = enum_up_to_mb_h n en; prop = (\sol -> p_assign_value x t (extract_unifier_desc us u sol)); sol_show = (\sol -> show_one_inst mvs us (Just sol) ++ "\n")
+
+-- No instantiation includes a particular variable in the instantiation of a particular meta-variable, save specific cases.
+no_inst_contains :: Int -> [Metavariable] -> [Unifier] -> Enumeration (_,Maybe ([UnifierDescription],Instantiation)) -> Metavariable -> Variable -> [Either Term Literal] -> AutomatedTestResult
+no_inst_contains n mvs us en mv x excs = if (any prop sols) then (ATR False ("Solutions were found whose instantiation for " ++ (show mv) ++ " contains variable " ++ (show x) ++ " and is not one of the exceptions: " ++ (show excs) ++ ":\n" ++ (concat (map sol_show (filter prop sols))))) else (ATR True "No solution was found.\n") where sols = enum_up_to_mb_h n en; prop = (\sol -> no_inst_contains_helper mv x excs sol); sol_show = (\sol -> show_one_inst mvs us (Just sol) ++ "\n")
+
+no_inst_contains_helper :: Metavariable -> Variable -> [Either Term Literal] -> ([UnifierDescription],Instantiation) -> Bool
+no_inst_contains_helper mv x excs (uds,inst) = case val of {Nothing -> False; Just v -> (not (elem v excs)) && (p_inst_contains inst mv x)} where val = apply_inst inst mv
+
+-- Verify that there are no repeated solutions.
+unique_list :: (a -> a -> Bool) -> [a] -> [a]
+unique_list cmp l = filter (\x -> (length (filter (cmp x) l)) /= 1) l
+
+unique_sols :: Int -> [Metavariable] -> [Unifier] -> Enumeration (_,Maybe ([UnifierDescription],Instantiation)) -> AutomatedTestResult
+unique_sols n mvs us en = case r of {[] -> (ATR True "No repeated solutions.\n"); reps -> (ATR False ("Found repeated solutions: \n" ++ (concat (map (\x -> (show_one_inst mvs us (Just x)) ++ "\n") reps))))} where l = enum_up_to_mb_h n en; r = unique_list (p_sol_equal mvs us) l
+
+-- Verify that all elements fulfill a certain property.
+
+-- All solutions have a unifier assigning a value to a particular variable.
+all_ud_assign :: Int -> [Metavariable] -> [Unifier] -> Enumeration (_,Maybe ([UnifierDescription],Instantiation)) -> Unifier -> Variable -> Term -> AutomatedTestResult
+all_ud_assign n mvs us en u x t = if (all prop sols) then (ATR True "All solutions verified.\n") else (ATR False ("The following solutions don't have unifier " ++ (show u) ++ " assigning value " ++ (show t) ++ " to variable " ++ (show x) ++ ":\n" ++ (concat (map sol_show (filter (p_not prop) sols))))) where sols = (enum_up_to_mb_h n en); prop = (\sol -> p_assign_value x t (extract_unifier_desc us u sol)); sol_show = (\sol -> show_one_inst mvs us (Just sol) ++ "\n")
+
+-- All solutions have a particular unifier description.
+all_ud :: Int -> [Metavariable] -> [Unifier] -> Enumeration (_,Maybe ([UnifierDescription],Instantiation)) -> Unifier -> UnifierDescription -> AutomatedTestResult
+all_ud n mvs us en u ud = if (all prop sols) then (ATR True "All solutions verified.\n") else (ATR False ("The following solutions don't have unifier " ++ (show u) ++ " with description: " ++ (show ud) ++ ":\n" ++ (concat (map sol_show (filter (p_not prop) sols))))) where sols = (enum_up_to_mb_h n en); prop = (\sol -> p_ud_equal ud (extract_unifier_desc us u sol)); sol_show = (\sol -> show_one_inst mvs us (Just sol) ++ "\n")
+
+-- All solutions have a unifier unify two terms or literals
+all_ud_unif :: Int -> [Metavariable] -> [Unifier] -> Enumeration (_,Maybe ([UnifierDescription],Instantiation)) -> Unifier -> Either Term Literal -> Either Term Literal -> AutomatedTestResult
+all_ud_unif n mvs us en u (Left t1) (Left t2) = if (all prop sols) then (ATR True "All solutions verified.\n") else (ATR False ("The following solutions don't have unifier " ++ (show u) ++ " unifying term " ++ (show t1) ++ " with " ++ (show t2) ++ ":\n" ++ (concat (map sol_show (filter (p_not prop) sols))))) where sols = (enum_up_to_mb_h n en); prop = (\sol -> p_u_app_equal_t n u (extract_unifier_desc us u sol) t1 t2); sol_show = (\sol -> show_one_inst mvs us (Just sol) ++ "\n")
+all_ud_unif n mvs us en u (Right l1) (Right l2) = if (all prop sols) then (ATR True "All solutions verified.\n") else (ATR False ("The following solutions don't have unifier " ++ (show u) ++ " unifying literal " ++ (show t1) ++ " with " ++ (show t2) ++ ":\n" ++ (concat (map sol_show (filter (p_not prop) sols))))) where sols = (enum_up_to_mb_h n en); prop = (\sol -> p_u_app_equal_l n u (extract_unifier_desc us u sol) l1 l2); sol_show = (\sol -> show_one_inst mvs us (Just sol) ++ "\n")
+
+-- All solutions are exactly like the given one.
+all_sol :: Int -> [Metavariable] -> [Unifier] -> Enumeration (_,Maybe ([UnifierDescription],Instantiation)) -> ([UnifierDescription],Instantiation) -> AutomatedTestResult
+all_sol n mvs us en sol = if (all (p_sol_equal mvs us sol) sols) then (ATR True "All solutions verified.\n") else (ATR False ("The following solutions are not exactly like this one: \n" ++ (show_one_inst mvs us (Just sol)) ++ "Non-matching solutions:\n" ++ (concat (map sol_show (filter (p_not (p_sol_equal mvs us sol)) sols))))) where sols = (enum_up_to_mb_h n en); sol_show = (\sol -> show_one_inst mvs us (Just sol) ++ "\n")
+
+-- All instantiations are exactly like the given one.
+all_inst :: Int -> [Metavariable] -> [Unifier] -> Enumeration (_,Maybe ([UnifierDescription],Instantiation)) -> Instantiation -> AutomatedTestResult
+all_inst n mvs us en inst = if (all prop sols) then (ATR True "All solutions verified.\n") else (ATR False ("The following solutions do not have instantiation " ++ (show_inst inst mvs) ++ ":\n" ++ (concat (map sol_show (filter (p_not prop) sols))))) where sols = (enum_up_to_mb_h n en); prop = (\sol -> p_inst_equal mvs inst (snd sol)); sol_show = (\sol -> show_one_inst mvs us (Just sol) ++ "\n")
+
+-- All instantiations have a particular value for a meta-variable.
+all_inst_mv :: Int -> [Metavariable] -> [Unifier] -> Enumeration (_,Maybe ([UnifierDescription],Instantiation)) -> Metavariable -> Maybe (Either Term Literal) -> AutomatedTestResult
+all_inst_mv n mvs us en mv v = if (all prop sols) then (ATR True "All solutions verified.\n") else (ATR False ("The following solutions do not instantiate meta-variable " ++ (show mv) ++ " to " ++ (show_mv_inst_value v) ++ ":\n" ++ (concat (map sol_show (filter (p_not prop) sols))))) where sols = (enum_up_to_mb_h n en); prop = (\sol -> p_inst_value mv v (snd sol)); sol_show = (\sol -> show_one_inst mvs us (Just sol) ++ "\n")
+
+-- All solutions fulfill the constraints.
+all_sol_cstr :: Int -> Int -> [Metavariable] -> [Unifier] -> Enumeration (_,Maybe ([UnifierDescription],Instantiation)) -> [Constraint] -> AutomatedTestResult
+all_sol_cstr n nvars mvs us en cs = if (all prop sols) then (ATR True "All solutions fulfill the constraints.\n") else (ATR False ("The following solutions do not fulfill the constraints. Constraints:\n" ++ (show cs) ++ "\n" ++ "Solutions:\n" ++ (concat (map sol_show (filter (p_not prop) sols))))) where sols = (enum_up_to_mb_h n en); prop = (\sol -> p_sol_constraints nvars mvs us sol cs); sol_show = (\sol -> show_one_inst mvs us (Just sol) ++ "\n")
+
+-- The system is unsatisfiable.
+no_sol :: [Metavariable] -> [Unifier] -> Enumeration (_,Maybe ([UnifierDescription],Instantiation)) -> AutomatedTestResult
+no_sol mvs us en = case (enum_up_to_mb_h 1 en) of {[] -> ATR True "The system is unsatisfiable.\n"; (s:_) -> ATR False ("Found a solution:\n" ++ (show_one_inst mvs us (Just s)))}
+
+-- Unique solution.
+unique_sol :: [Metavariable] -> [Unifier] -> Enumeration (_,Maybe ([UnifierDescription],Instantiation)) -> AutomatedTestResult
+unique_sol mvs us en = case r of {[] -> (ATR False "There is no solution.\n"); [_] -> (ATR True "There is only one solution.\n"); (s1:s2:_) -> (ATR False ("At least two solutions found:\nSolution 1:\n" ++ (show_one_inst mvs us (Just s1)) ++ "\nSolution 2:\n" ++ (show_one_inst mvs us (Just s2))))} where r = enum_up_to_mb_h 2 en
+
+-- Properties for solutions
+type MUnifSolutionArgument = (Int,[Metavariable],[Unifier],([UnifierDescription],Instantiation))
+
+show_munif_sol :: MUnifSolutionArgument -> String
+show_munif_sol (nvars,mvs,us,(uds,inst)) = show_one_inst mvs us (Just (uds,inst))
+
+pargs_from_solutions :: Int -> Int -> [Metavariable] -> [Unifier] -> Enumeration (_,Maybe ([UnifierDescription],Instantiation)) -> [MUnifSolutionArgument]
+pargs_from_solutions n nvars mvs us en = map (\sol -> (nvars,mvs,us,sol)) (enum_up_to_mb_h n en)
+
+-- The property that a unifier assigns a value to a particular variable.
+p_assign_value_sol :: Unifier -> Variable -> Term -> MUnifSolutionArgument -> Bool
+p_assign_value_sol u x t (nvars,mvs,us,(uds,inst)) = p_assign_value x t (extract_unifier_desc_helper us u uds)
+
+p_assign_value :: Variable -> Term -> UnifierDescription -> Bool
+p_assign_value x t ud = elem (UV x t) ud
+
+-- The property that a unifier description corresponds exactly to another one.
+p_ud_equal_sol :: Unifier -> UnifierDescription -> MUnifSolutionArgument -> Bool
+p_ud_equal_sol u1 ud2 (nvars,mvs,us,(uds,inst)) = p_ud_equal (extract_unifier_desc_helper us u1 uds) ud2
+
+p_ud_equal :: UnifierDescription -> UnifierDescription -> Bool
+p_ud_equal ud1 ud2 = (all (p_ud_equal_helper ud1) ud2) && (all (p_ud_equal_helper ud2) ud1)
+
+p_ud_equal_helper :: UnifierDescription -> UnifierValue -> Bool
+p_ud_equal_helper ud (UV x t) = p_assign_value x t ud
+
+-- The property that the application of a unifier to two different terms or literals yields the same result.
+p_u_app_equal_t_sol :: Unifier -> Term -> Term -> MUnifSolutionArgument -> Bool
+p_u_app_equal_t_sol u t1 t2 (nvars,mvs,us,(uds,inst)) = p_u_app_equal_t nvars u (extract_unifier_desc_helper us u uds) t1 t2
+
+p_u_app_equal_t :: Int -> Unifier -> UnifierDescription -> Term -> Term -> Bool
+p_u_app_equal_t nvars u ud t1 t2 = ((sub t1) == (sub t2)) where sub = apply_subst (obtain_substitution nvars u ud)
+
+p_u_app_equal_l_sol :: Unifier -> Literal -> Literal -> MUnifSolutionArgument -> Bool
+p_u_app_equal_l_sol u l1 l2 (nvars,mvs,us,(uds,inst)) = p_u_app_equal_l nvars u (extract_unifier_desc_helper us u uds) l1 l2
+
+p_u_app_equal_l :: Int -> Unifier -> UnifierDescription -> Literal -> Literal -> Bool
+p_u_app_equal_l nvars u ud l1 l2 = ((sub l1) == (sub l2)) where sub = apply_subst_lit (obtain_substitution nvars u ud)
+
+-- The property that an instantiation instantiates a particular meta-variable in a particular way.
+p_inst_value_sol :: Metavariable -> Maybe (Either Term Literal) -> MUnifSolutionArgument -> Bool
+p_inst_value_sol mv val (nvars,mvs,us,(uds,inst)) = p_inst_value mv val inst
+
+p_inst_value :: Metavariable -> Maybe (Either Term Literal) -> Instantiation -> Bool
+p_inst_value mv x i = ((apply_inst i mv) == x)
+
+-- The property that an instantiation is exactly like another one.
+p_inst_equal_sol :: Instantiation -> MUnifSolutionArgument -> Bool
+p_inst_equal_sol inst1 (nvars,mvs,us,(uds,inst2)) = p_inst_equal mvs inst1 inst2
+
+p_inst_equal :: [Metavariable] -> Instantiation -> Instantiation -> Bool
+p_inst_equal mvs i1 i2 = all (p_inst_equal_helper i1 i2) mvs
+
+p_inst_equal_helper :: Instantiation -> Instantiation -> Metavariable -> Bool
+p_inst_equal_helper i1 i2 mv = ((p_inst_value mv (apply_inst i1 mv) i2) && (p_inst_value mv (apply_inst i2 mv) i1))
+
+-- The property that an instantiation of a meta-variable contains a variable.
+p_inst_contains_sol :: Metavariable -> Variable -> MUnifSolutionArgument -> Bool
+p_inst_contains_sol mv x (nvars,mvs,us,(uds,inst)) = p_inst_contains inst mv x
+
+p_inst_contains :: Instantiation -> Metavariable -> Variable -> Bool
+p_inst_contains inst mv x = contains_variable x (apply_inst inst mv)
+
+-- The property that two solutions are exactly equal.
+p_sol_equal_sol :: ([UnifierDescription],Instantiation) -> MUnifSolutionArgument -> Bool
+p_sol_equal_sol (uds1,inst1) (nvars,mvs,us,(uds2,inst2)) = p_sol_equal mvs us (uds1,inst1) (uds2,inst2)
+
+p_sol_equal :: [Metavariable] -> [Unifier] -> ([UnifierDescription],Instantiation) -> ([UnifierDescription],Instantiation) -> Bool
+p_sol_equal mvs us (uds1,i1) (uds2,i2) = (all (p_sol_equal_helper_1 us uds1 uds2) us) && (p_inst_equal mvs i1 i2)
+
+p_sol_equal_helper_1 :: [Unifier] -> [UnifierDescription] -> [UnifierDescription] -> Unifier -> Bool
+p_sol_equal_helper_1 us uds1 uds2 u = p_ud_equal (extract_unifier_desc_helper us u uds1) (extract_unifier_desc_helper us u uds2)
+
+-- The property that a solution satisfies a set of constraints.
+p_sol_constraints_sol :: [Constraint] -> MUnifSolutionArgument -> Bool
+p_sol_constraints_sol cs (nvars,mvs,us,(uds,inst)) = p_sol_constraints nvars mvs us (uds,inst) cs
+
+p_sol_constraints :: Int -> [Metavariable] -> [Unifier] -> ([UnifierDescription],Instantiation) -> [Constraint] -> Bool
+p_sol_constraints nvars mvs us sol cs = all (p_sol_constraint nvars mvs us sol) cs
+
+p_sol_constraint :: Int -> [Metavariable] -> [Unifier] -> ([UnifierDescription],Instantiation) -> Constraint -> Bool
+p_sol_constraint nvars mvs us sol (Tcstr mt1 mt2) = ((val_sol_term nvars mvs us sol mt1) == (val_sol_term nvars mvs us sol mt2))
+p_sol_constraint nvars mvs us sol (Lcstr ml1 ml2) = ((val_sol_lit nvars mvs us sol ml1) == (val_sol_lit nvars mvs us sol ml2))
+
+val_sol_term :: Int -> [Metavariable] -> [Unifier] -> ([UnifierDescription],Instantiation) -> Metaterm -> Term
+val_sol_term nvars mvs us (uds,inst) mt = val_sol_term_noinst nvars us uds (apply_inst_mterm inst mt)
+
+val_sol_term_noinst :: Int -> [Unifier] -> [UnifierDescription] -> Metaterm -> Term
+val_sol_term_noinst nvars us uds (MTermT t) = t
+val_sol_term_noinst nvars us uds (MTermR u mt) = sub rt where rt = val_sol_term_noinst nvars us uds mt; ud = extract_unifier_desc_helper us u uds; sub = apply_subst (obtain_substitution nvars u ud)
+val_sol_term_noinst nvars us uds (MTermF f mts) = (TFun f (map (val_sol_term_noinst nvars us uds) mts))
+
+val_sol_lit :: Int -> [Metavariable] -> [Unifier] -> ([UnifierDescription],Instantiation) -> Metaliteral -> Literal
+val_sol_lit nvars mvs us (uds,inst) ml = val_sol_lit_noinst nvars us uds (apply_inst_mlit inst ml)
+
+val_sol_lit_noinst :: Int -> [Unifier] -> [UnifierDescription] -> Metaliteral -> Literal
+val_sol_lit_noinst nvars us uds (MLitL l) = l
+val_sol_lit_noinst nvars us uds (MLitR u ml) = sub rl where rl = val_sol_lit_noinst nvars us uds ml; ud = extract_unifier_desc_helper us u uds; sub = apply_subst_lit (obtain_substitution nvars u ud)
+val_sol_lit_noinst nvars us uds (MLitP p mts) = (Lit p (map (val_sol_term_noinst nvars us uds) mts))
+
+
+-- Automated tests for eprop examples.
+eprop1_nsols = 100
+-- The following are really just "tests for automated tests". No need to use them later on.
+eprop1_t1 = AT "ux = uf(y)" (some_ud eprop1_nsols epropmetavars epropus epropinst1 (U 0) [UV x0 (read "f3[1](x6)"),UV x1 (read "x6")])
+eprop1_t2 = AT "ux = uf(y)" (some_ud_assign eprop1_nsols epropmetavars epropus epropinst1 (U 0) x0 (read "f3[1](x6)"))
+eprop1_t3 = AT "ux = uf(y)" (some_sol eprop1_nsols epropmetavars epropus epropinst1 ([[UV x0 (read "f3[1](x6)"),UV x1 (read "x6")],[],[]],idinst))
+eprop1_t4 = AT "Identity instantiation" (some_inst eprop1_nsols epropmetavars epropus epropinst1 idinst)
+eprop1_t5 = AT "Identity instantiation" (some_inst_mv eprop1_nsols epropmetavars epropus epropinst1 mx0 Nothing)
+eprop1_t6 = AT "ux != xu" (no_ud_assign eprop1_nsols epropmetavars epropus epropinst1 (U 0) x0 (read "x5"))
+eprop1_t7 = AT "ux = uf(y)" (all_ud_assign eprop1_nsols epropmetavars epropus epropinst1 (U 0) x0 (read "f3[1](x6)"))
+eprop1_t8 = AT "ux = uf(y)" (all_ud eprop1_nsols epropmetavars epropus epropinst1 (U 0) [UV x1 (read "x6"),UV x0 (read "f3[1](x6)")])
+eprop1_t9 = AT "ux = uf(y)" (all_sol eprop1_nsols epropmetavars epropus epropinst1 ([[UV x0 (read "f3[1](x6)"),UV x1 (read "x6")],[],[]],idinst))
+eprop1_t10 = AT "Identity instantiation" (all_inst eprop1_nsols epropmetavars epropus epropinst1 idinst)
+eprop1_t11 = AT "Identity instantiation" (all_inst_mv eprop1_nsols epropmetavars epropus epropinst1 mx0 Nothing)
+eprop1_t12 = AT "All solutions distinct" (unique_sols eprop1_nsols epropmetavars epropus epropinst1)
+eprop1_t13 = AT "Constraints satisfied" (all_sol_cstr eprop1_nsols eprop_n_base_vars epropmetavars epropus epropinst1 epropcs1)
+eprop1_t14 = AT "Unique solution" (unique_sol epropmetavars epropus epropinst1)
+eprop1_t15 = AT "Constraints well formed" (cferr_at eproperrs1)
+
+--eprop1_ts = [eprop1_t1,eprop1_t2,eprop1_t3,eprop1_t4,eprop1_t5,eprop1_t6,eprop1_t7,eprop1_t8,eprop1_t9,eprop1_t10,eprop1_t11]
+eprop1_ts = [eprop1_t9,eprop1_t12,eprop1_t13,eprop1_t14,eprop1_t15]
+
+eprop1_test = putStr (combine_test_results eprop1_ts)
+
+eprop2_nsols = 100
+eprop2_t1 = AT "ux = uf(y,z)" (all_sol eprop2_nsols epropmetavars epropus epropinst2 ([[UV x0 (read "f1[2](x6,x7)"),UV x1 (read "x6"), UV x2 (read "x7")],[],[]],idinst))
+eprop2_t2 = AT "All solutions distinct" (unique_sols eprop2_nsols epropmetavars epropus epropinst2)
+eprop2_t3 = AT "Constraints satisfied" (all_sol_cstr eprop2_nsols eprop_n_base_vars epropmetavars epropus epropinst2 epropcs2)
+eprop2_t4 = AT "Unique solution" (unique_sol epropmetavars epropus epropinst2)
+eprop2_t5 = AT "Constraints well formed" (cferr_at eproperrs2)
+
+eprop2_ts = [eprop2_t1,eprop2_t2,eprop2_t3,eprop2_t4,eprop2_t5]
+
+eprop2_test = putStr (combine_test_results eprop2_ts)
+
+eprop3_nsols = 100
+eprop3_t1 = AT "u = {z -> zu, y -> f(zu), x -> g(f(zu))}" (all_sol eprop3_nsols epropmetavars epropus epropinst3 ([[UV x2 (read "x7"), UV x1 (read "f4[1](x7)"), UV x0 (read "f3[1](f4[1](x7))")],[],[]],idinst))
+eprop3_t2 = AT "All solutions distinct" (unique_sols eprop3_nsols epropmetavars epropus epropinst3)
+eprop3_t3 = AT "Constraints satisfied" (all_sol_cstr eprop3_nsols eprop_n_base_vars epropmetavars epropus epropinst3 epropcs3)
+eprop3_t4 = AT "Unique solution" (unique_sol epropmetavars epropus epropinst3)
+eprop3_t5 = AT "Constraints well formed" (cferr_at eproperrs3)
+
+eprop3_ts = [eprop3_t1,eprop3_t2,eprop3_t3,eprop3_t4,eprop3_t5]
+
+eprop3_test = putStr (combine_test_results eprop3_ts)
+
+eprop4_nsols = 100
+eprop4_t1 = AT "u = {y -> yu, z -> zu, x -> f(yu,zu)}, v = {yu -> yuv, zu -> zuv, y -> f(yuv,zuv)}"
+					(all_sol eprop4_nsols epropmetavars epropus epropinst4 ([[UV x1 (read "x6"),UV x2 (read "x7"),UV x0 (read "f1[2](x6,x7)")],[UV (read "x6") (read "x16"), UV (read "x7") (read "x17"), UV x1 (read "f1[2](x16,x17)")],[]],idinst))
+eprop4_t2 = AT "All solutions distinct" (unique_sols eprop4_nsols epropmetavars epropus epropinst4)
+eprop4_t3 = AT "Constraints satisfied" (all_sol_cstr eprop4_nsols eprop_n_base_vars epropmetavars epropus epropinst4 epropcs4)
+eprop4_t4 = AT "Unique solution" (unique_sol epropmetavars epropus epropinst4)
+eprop4_t5 = AT "Constraints well formed" (cferr_at eproperrs4)
+
+eprop4_ts = [eprop4_t1,eprop4_t2,eprop4_t3,eprop4_t4,eprop4_t5]
+
+eprop4_test = putStr (combine_test_results eprop4_ts)
+
+eprop5_nsols = 100
+eprop5_t1 = AT "Unsatisfiable" (no_sol epropmetavars epropus epropinst5)
+eprop5_t2 = AT "Constraints well formed" (cferr_at eproperrs5)
+
+eprop5_ts = [eprop5_t1,eprop5_t2]
+
+eprop5_test = putStr (combine_test_results eprop5_ts)
+
+eprop6_nsols = 100
+eprop6_t1 = AT "Unsatisfiable" (no_sol epropmetavars epropus epropinst6)
+eprop6_t2 = AT "Constraints well formed" (cferr_at eproperrs6)
+
+eprop6_ts = [eprop6_t1,eprop6_t2]
+
+eprop6_test = putStr (combine_test_results eprop6_ts)
+
+eprop7_nsols = 100
+eprop7_t1 = AT "u = {y -> yu, z -> zu, x -> f(yu,zu), w -> wu}, v = {yu -> yuv, zu -> zuv, wu -> f(yuv,zuv)}"
+					(all_sol eprop7_nsols epropmetavars epropus epropinst7 ([[UV x1 (read "x6"), UV x2 (read "x7"), UV x0 (read "f1[2](x6,x7)"), UV x3 (read "x8")],[UV (read "x6") (read "x16"), UV (read "x7") (read "x17"), UV (read "x8") (read "f1[2](x16,x17)")],[]],idinst))
+eprop7_t2 = AT "All solutions distinct" (unique_sols eprop7_nsols epropmetavars epropus epropinst7)
+eprop7_t3 = AT "Constraints satisfied" (all_sol_cstr eprop7_nsols eprop_n_base_vars epropmetavars epropus epropinst7 epropcs7)
+eprop7_t4 = AT "Unique solution" (unique_sol epropmetavars epropus epropinst7)
+eprop7_t5 = AT "Constraints well formed" (cferr_at eproperrs7)
+
+eprop7_ts = [eprop7_t1,eprop7_t2,eprop7_t3,eprop7_t4,eprop7_t5]
+
+eprop7_test = putStr (combine_test_results eprop7_ts)
+
+eprop8_nsols = 100
+eprop8_t1 = AT "u = {y -> yu, z -> zu, x -> f(yu,zu), w -> wu}"
+					(all_ud eprop8_nsols epropmetavars epropus epropinst8 u0 [UV x1 (read "x6"), UV x2 (read "x7"), UV x0 (read "f1[2](x6,x7)"), UV x3 (read "x8")])
+eprop8_t2 = AT "v = {yu -> yuv, zu -> zuv, w -> f(yuv,zuv)}"
+					(all_ud eprop8_nsols epropmetavars epropus epropinst8 u1 [UV (read "x6") (read "x16"), UV (read "x7") (read "x17"), UV x3 (read "f1[2](x16,x17)"), UV (read "x8") (read "f1[2](x16,x17)")])
+eprop8_t3 = AT "syu = syuv" (all_ud_unif eprop8_nsols epropmetavars epropus epropinst8 u2 (Left (read "x6")) (Left (read "x16")))
+eprop8_t4 = AT "szu = szuv" (all_ud_unif eprop8_nsols epropmetavars epropus epropinst8 u2 (Left (read "x7")) (Left (read "x17")))
+eprop8_t5 = AT "All solutions distinct" (unique_sols eprop8_nsols epropmetavars epropus epropinst8)
+eprop8_t6 = AT "Constraints satisfied" (all_sol_cstr eprop8_nsols eprop_n_base_vars epropmetavars epropus epropinst8 epropcs8)
+eprop8_t7 = AT "Unique solution" (unique_sol epropmetavars epropus epropinst8)
+eprop8_t8 = AT "Constraints well formed" (cferr_at eproperrs8)
+
+eprop8_ts = [eprop8_t1,eprop8_t2,eprop8_t3,eprop8_t4,eprop8_t5,eprop8_t6,eprop8_t7,eprop8_t8]
+
+eprop8_test = putStr (combine_test_results eprop8_ts)
+
+eprop9_nsols = 100
+eprop9_t1 = AT "u = {y -> yu, z -> zu, x -> f(yu,zu), w -> wu}"
+					(all_ud eprop9_nsols epropmetavars epropus epropinst9 u0 [UV x1 (read "x6"), UV x2 (read "x7"), UV x0 (read "f1[2](x6,x7)"), UV x3 (read "x8")])
+eprop9_t2 = AT "v = {yu -> yuv, zu -> zuv, w -> f(yuv,zuv)}"
+					(all_ud eprop9_nsols epropmetavars epropus epropinst9 u1 [UV (read "x6") (read "x16"), UV (read "x7") (read "x17"), UV x3 (read "f1[2](x16,x17)"), UV (read "x8") (read "f1[2](x16,x17)")])
+eprop9_t3 = AT "syu = szuv" (all_ud_unif eprop9_nsols epropmetavars epropus epropinst9 u2 (Left (read "x6")) (Left (read "x17")))
+eprop9_t4 = AT "szu = syuv" (all_ud_unif eprop9_nsols epropmetavars epropus epropinst9 u2 (Left (read "x7")) (Left (read "x16")))
+eprop9_t5 = AT "All solutions distinct" (unique_sols eprop9_nsols epropmetavars epropus epropinst9)
+eprop9_t6 = AT "Constraints satisfied" (all_sol_cstr eprop9_nsols eprop_n_base_vars epropmetavars epropus epropinst9 epropcs9)
+eprop9_t7 = AT "Unique solution" (unique_sol epropmetavars epropus epropinst9)
+eprop9_t8 = AT "Constraints well formed" (cferr_at eproperrs9)
+
+eprop9_ts = [eprop9_t1,eprop9_t2,eprop9_t3,eprop9_t4,eprop9_t5,eprop9_t6,eprop9_t7,eprop9_t8]
+
+eprop9_test = putStr (combine_test_results eprop9_ts)
+
+eprop10_nsols = 100
+eprop10_t1 = AT "Unsatisfiable" (no_sol epropmetavars epropus epropinst10)
+eprop10_t2 = AT "Constraints well formed" (cferr_at eproperrs10)
+
+eprop10_ts = [eprop10_t1,eprop10_t2]
+
+eprop10_test = putStr (combine_test_results eprop10_ts)
+
+eprop11_nsols = 100
+eprop11_t1 = AT "Unsatisfiable" (no_sol epropmetavars epropus epropinst11)
+eprop11_t2 = AT "Constraints well formed" (cferr_at eproperrs11)
+
+eprop11_ts = [eprop11_t1,eprop11_t2]
+
+eprop11_test = putStr (combine_test_results eprop11_ts)
+
+eprop12_nsols = 100
+eprop12_t1 = AT "Unsatisfiable" (no_sol epropmetavars epropus epropinst12)
+eprop12_t2 = AT "Constraints well formed" (cferr_at eproperrs12)
+
+eprop12_ts = [eprop12_t1,eprop12_t2]
+
+eprop12_test = putStr (combine_test_results eprop12_ts)
+
+eprop13_nsols = 100
+eprop13_t1 = AT "u = {y -> yu, z -> zu, x -> f(yu,zu)}, v = {y -> yv, x -> g(yv)}"
+						(all_sol eprop13_nsols epropmetavars epropus epropinst13 ([[UV x1 (read "x6"), UV x2 (read "x7"), UV x0 (read "f1[2](x6,x7)")],[UV (read "x1") (read "x11"), UV (read "x0") (read "f3[1](x11)")],[]],idinst))
+eprop13_t2 = AT "All solutions distinct" (unique_sols eprop13_nsols epropmetavars epropus epropinst13)
+eprop13_t3 = AT "Constraints satisfied" (all_sol_cstr eprop13_nsols eprop_n_base_vars epropmetavars epropus epropinst13 epropcs13)
+eprop13_t4 = AT "Unique solution" (unique_sol epropmetavars epropus epropinst13)
+eprop13_t5 = AT "Constraints well formed" (cferr_at eproperrs13)
+
+eprop13_ts = [eprop13_t1,eprop13_t2,eprop13_t3,eprop13_t4,eprop13_t5]
+
+eprop13_test = putStr (combine_test_results eprop13_ts)
+
+eprop14_nsols = 100
+eprop14_t1 = AT "All solutions distinct" (unique_sols eprop14_nsols epropmetavars epropus epropinst14)
+eprop14_t2 = AT "Constraints satisfied" (all_sol_cstr eprop14_nsols eprop_n_base_vars epropmetavars epropus epropinst14 epropcs14)
+eprop14_t3 = AT "Unique solution" (unique_sol epropmetavars epropus epropinst14)
+eprop14_t4 = AT "Constraints well formed" (cferr_at eproperrs14)
+
+eprop14_ts = [eprop14_t1,eprop14_t2,eprop14_t3,eprop14_t4]
+
+eprop14_test = putStr (combine_test_results eprop14_ts)
+
+eprop15_nsols = 48
+eprop15_t1 = AT "All solutions distinct" (unique_sols eprop15_nsols epropmetavars epropus epropinst15)
+eprop15_t2 = AT "Constraints satisfied" (all_sol_cstr eprop15_nsols eprop_n_base_vars epropmetavars epropus epropinst15 epropcs15)
+eprop15_t3 = AT "y notin A unless A := f(y)" (no_inst_contains eprop15_nsols epropmetavars epropus epropinst15 mx0 x1 [Left (read "f3[1](x1)")])
+eprop15_t4 = AT "Constraints well formed" (cferr_at eproperrs15)
+eprop15_t5 = AT "A := f(y), u = {y -> yu}" (some_sol eprop15_nsols epropmetavars epropus epropinst15
+					([[UV x1 (read "x6")],[],[]],build_inst mx0 (Left (read "f3[1](x1)"))))
+eprop15_t6 = AT "A := x" (some_inst eprop15_nsols epropmetavars epropus epropinst15 (build_inst mx0 (Left (read "x0"))))
+eprop15_t7 = AT "A := z" (some_inst eprop15_nsols epropmetavars epropus epropinst15 (build_inst mx0 (Left (read "x2"))))
+
+-- some_inst :: Int -> [Metavariable] -> [Unifier] -> Enumeration (_,Maybe ([UnifierDescription],Instantiation)) -> Instantiation -> AutomatedTestResult
+
+eprop15_ts = [eprop15_t1,eprop15_t2,eprop15_t3,eprop15_t4,eprop15_t5,eprop15_t6,eprop15_t7]
+
+eprop15_test = putStr (combine_test_results eprop15_ts)
+
+eprop16_nsols = 700
+eprop16_t1 = AT "Constraints well formed" (cferr_at eproperrs16)
+eprop16_t2 = AT "All solutions distinct" (unique_sols eprop16_nsols epropmetavars epropus epropinst16)
+eprop16_t3 = AT "Constraints satisfied" (all_sol_cstr eprop16_nsols eprop_n_base_vars epropmetavars epropus epropinst16 epropcs16)
+eprop16_t4 = AT "A := x" (some_inst eprop16_nsols epropmetavars epropus epropinst16 (build_inst mx0 (Left (read "x0"))))
+eprop16_t5 = AT "A := z" (some_inst eprop16_nsols epropmetavars epropus epropinst16 (build_inst mx0 (Left (read "x2"))))
+eprop16_t6 = AT "y notin A" (no_inst_contains eprop16_nsols epropmetavars epropus epropinst16 mx0 x1 [])
+
+eprop16_ts = [eprop16_t1,eprop16_t2,eprop16_t3,eprop16_t4,eprop16_t5,eprop16_t6]
+
+eprop16_test = putStr (combine_test_results eprop16_ts)
+
+eprop17_nsols = 400
+eprop17_t1 = AT "Constraints well formed" (cferr_at eproperrs17)
+eprop17_t2 = AT "All solutions distinct" (unique_sols eprop17_nsols epropmetavars epropus epropinst17)
+eprop17_t3 = AT "Constraints satisfied" (all_sol_cstr eprop17_nsols eprop_n_base_vars epropmetavars epropus epropinst17 epropcs17)
+eprop17_t4 = AT "A := x" (some_inst eprop17_nsols epropmetavars epropus epropinst17 (build_inst mx0 (Left (read "x0"))))
+eprop17_t5 = AT "A := y" (some_inst eprop17_nsols epropmetavars epropus epropinst17 (build_inst mx0 (Left (read "x1"))))
+eprop17_t6 = AT "A := z" (some_inst eprop17_nsols epropmetavars epropus epropinst17 (build_inst mx0 (Left (read "x2"))))
+eprop17_t7 = AT "A := w" (some_inst eprop17_nsols epropmetavars epropus epropinst17 (build_inst mx0 (Left (read "x3"))))
+eprop17_t8 = AT "A := t" (some_inst eprop17_nsols epropmetavars epropus epropinst17 (build_inst mx0 (Left (read "x4"))))
+eprop17_t9 = AT "u = {y -> yu, z -> zu, x -> f(yu,zu)}" (all_ud eprop17_nsols epropmetavars epropus epropinst17 u0 [UV x1 (read "x6"),UV x2 (read "x7"), UV x0 (read "f1[2](x6,x7)")])
+eprop17_t10 = AT "No solution A := f(yu,zu)" (no_inst_contains eprop17_nsols epropmetavars epropus epropinst17 mx0 (read "x6") [])
+eprop17_t11 = AT "No solution A := f(yu,zu)" (no_inst_contains eprop17_nsols epropmetavars epropus epropinst17 mx0 (read "x7") [])
+
+eprop17_ts = [eprop17_t1,eprop17_t2,eprop17_t3,eprop17_t4,eprop17_t5,eprop17_t6,eprop17_t7,eprop17_t8,eprop17_t9,eprop17_t10,eprop17_t11]
+
+eprop17_test = putStr (combine_test_results eprop17_ts)
+
+eprop18_nsols = 200
+eprop18_t1 = AT "Constraints well formed" (cferr_at eproperrs18)
+eprop18_t2 = AT "All solutions distinct" (unique_sols eprop18_nsols epropmetavars epropus epropinst18)
+eprop18_t3 = AT "Constraints satisfied" (all_sol_cstr eprop18_nsols eprop_n_base_vars epropmetavars epropus epropinst18 epropcs18)
+--eprop18_t4 = AT "u = {y -> yu, z -> zu, x -> f(yu,zu)}" (all_ud eprop18_nsols epropmetavars epropus epropinst18 u0 [UV x1 (read "x6"), UV x2 (read "x7"), UV x0 (read "f1[2](x6,x7)")])
+eprop18_t4 = AT "u = {y -> yu, z -> zu, x -> f(yu,zu)}" (atr_all_p (pargs_from_solutions eprop18_nsols eprop_n_base_vars epropmetavars epropus epropinst18)
+								(p_or
+									(p_or (p_inst_contains_sol mx0 x3) (p_inst_contains_sol mx0 x4))
+									(p_ud_equal_sol u0 [UV x1 (read "x6"), UV x2 (read "x7"), UV x0 (read "f1[2](x6,x7)")])
+								)
+								"All solutions verified.\n"
+								(\l -> "Some solutions do not instantiate to variables not originally in the system (x3,x4), and still have the unifier for description u0 incorrect.\nIncorrect solutions:\n\n" ++ concat (map show_munif_sol l))
+							)
+eprop18_t5 = AT "vx = vyu" (some_ud_unif eprop18_nsols epropmetavars epropus epropinst18 u1 (Left (read "x0")) (Left (read "x6")))
+eprop18_t6 = AT "vx = vzu" (some_ud_unif eprop18_nsols epropmetavars epropus epropinst18 u1 (Left (read "x0")) (Left (read "x7")))
+eprop18_t7 = AT "vx = vf(yu,zu)" (some_ud_unif eprop18_nsols epropmetavars epropus epropinst18 u1 (Left (read "x0")) (Left (read "f1[2](x6,x7)")))
+eprop18_t8 = AT "A := f(z,x)" (some_inst eprop18_nsols epropmetavars epropus epropinst18 (build_inst mx0 (Left (read "f1[2](x2,x0)"))))
+eprop18_t9 = AT "A := f(w,w)" (some_inst eprop18_nsols epropmetavars epropus epropinst18 (build_inst mx0 (Left (read "f1[2](x3,x3)"))))
+
+eprop18_ts = [eprop18_t1,eprop18_t2,eprop18_t3,eprop18_t4,eprop18_t5,eprop18_t6,eprop18_t7,eprop18_t8,eprop18_t9]
+
+eprop18_test = putStr (combine_test_results eprop18_ts)
+
+eprop19_nsols = 100
+eprop19_t1 = AT "Constraints well formed" (cferr_at eproperrs19)
+eprop19_t2 = AT "All solutions distinct" (unique_sols eprop19_nsols epropmetavars epropus epropinst19)
+eprop19_t3 = AT "Constraints satisfied" (all_sol_cstr eprop19_nsols eprop_n_base_vars epropmetavars epropus epropinst19 epropcs19)
+eprop19_t4 = AT "u = {y -> yu, z -> zu, x -> f(yu,zu)}" (atr_all_p (pargs_from_solutions eprop19_nsols eprop_n_base_vars epropmetavars epropus epropinst19)
+								(p_or
+									(p_or (p_inst_contains_sol mx0 x3) (p_inst_contains_sol mx0 x4))
+									(p_ud_equal_sol u0 [UV x1 (read "x6"), UV x2 (read "x7"), UV x0 (read "f1[2](x6,x7)")])
+								)
+								"All solutions verified.\n"
+								(\l -> "Some solutions do not instantiate to variables not originally in the system (x3,x4), and still have the unifier for description u0 incorrect.\nIncorrect solutions:\n\n" ++ concat (map show_munif_sol l))
+							)
+eprop19_t5 = AT "A := x" (some_inst eprop19_nsols epropmetavars epropus epropinst19 (build_inst mx0 (Left (read "x0"))))
+eprop19_t6 = AT "A := f(y,z)" (some_inst eprop19_nsols epropmetavars epropus epropinst19 (build_inst mx0 (Left (read "x0"))))
+eprop19_t7 = AT "A neq y" (atr_all_p (pargs_from_solutions eprop19_nsols eprop_n_base_vars epropmetavars epropus epropinst19)
+				(p_not (p_inst_equal_sol (build_inst mx0 (Left (read "x1")))))
+				"All solutions verified.\n"
+				(\l -> "Some solutions instantiate " ++ (show mx0) ++ " to " ++ (show x1) ++ ".\nIncorrect solutions:\n\n" ++ (concat (map show_munif_sol l))))
+eprop19_t8 = AT "A neq z" (atr_all_p (pargs_from_solutions eprop19_nsols eprop_n_base_vars epropmetavars epropus epropinst19)
+				(p_not (p_inst_equal_sol (build_inst mx0 (Left (read "x2")))))
+				"All solutions verified.\n"
+				(\l -> "Some solutions instantiate " ++ (show mx0) ++ " to " ++ (show x2) ++ ".\nIncorrect solutions:\n\n" ++ (concat (map show_munif_sol l))))
+eprop19_t9 = AT "A := w" (some_inst eprop19_nsols epropmetavars epropus epropinst19 (build_inst mx0 (Left (read "x0"))))
+
+eprop19_ts = [eprop19_t1,eprop19_t2,eprop19_t3,eprop19_t4,eprop19_t5,eprop19_t6,eprop19_t7,eprop19_t8,eprop19_t9]
+
+eprop19_test = putStr (combine_test_results eprop19_ts)
+
+eprop20_nsols = 700
+eprop20_t1 = AT "Constraints well formed" (cferr_at eproperrs20)
+eprop20_t2 = AT "All solutions distinct" (unique_sols eprop20_nsols epropmetavars epropus epropinst20)
+eprop20_t3 = AT "Constraints satisfied" (all_sol_cstr eprop20_nsols eprop_n_base_vars epropmetavars epropus epropinst20 epropcs20)
+eprop20_t4 = AT "y notin A" (no_inst_contains eprop20_nsols epropmetavars epropus epropinst20 mx0 x1 [])
+eprop20_t5 = AT "A := x" (some_inst_mv eprop20_nsols epropmetavars epropus epropinst20 mx0 (Just (Left (read "x0"))))
+eprop20_t6 = AT "A := z" (some_inst_mv eprop20_nsols epropmetavars epropus epropinst20 mx0 (Just (Left (read "x2"))))
+eprop20_t7 = AT "A := w" (some_inst_mv eprop20_nsols epropmetavars epropus epropinst20 mx0 (Just (Left (read "x3"))))
+eprop20_t8 = AT "vuA = vB" (all_sol_cstr eprop20_nsols eprop_n_base_vars epropmetavars epropus epropinst20 [Tcstr (MTermR u1 (MTermR u0 (MTermT (TMeta mx0)))) (MTermR u1 (MTermT (TMeta mx1)))])
+
+eprop20_ts = [eprop20_t1,eprop20_t2,eprop20_t3,eprop20_t4,eprop20_t5,eprop20_t6,eprop20_t7,eprop20_t8]
+
+eprop20_test = putStr (combine_test_results eprop20_ts)
+
+eprop21_nsols = 817
+eprop21_t1 = AT "Constraints well formed" (cferr_at eproperrs21)
+eprop21_t2 = AT "All solutions distinct" (unique_sols eprop21_nsols epropmetavars epropus epropinst21)
+eprop21_t3 = AT "Constraints satisfied" (all_sol_cstr eprop21_nsols eprop_n_base_vars epropmetavars epropus epropinst21 epropcs21)
+eprop21_t4 = AT "A neq y" (atr_all_p (pargs_from_solutions eprop21_nsols eprop_n_base_vars epropmetavars epropus epropinst21)
+				(p_not (p_inst_value_sol mx0 (Just (Left (read "x1")))))
+				"All solutions verified.\n"
+				(\l -> "Some solutions instantiate " ++ (show mx0) ++ " to " ++ (show x1) ++ ".\nIncorrect solutions:\n\n" ++ (concat (map show_munif_sol l))))
+eprop21_t5 = AT "A := f(y), B := f(y)" (some_inst eprop20_nsols epropmetavars epropus epropinst21 (compose_inst (build_inst mx0 (Left (read "f3[1](x1)"))) (build_inst mx1 (Left (read "f3[1](x1)")))))
+eprop21_t6 = AT "A := f(y), B := f(x)" (some_inst eprop20_nsols epropmetavars epropus epropinst21 (compose_inst (build_inst mx0 (Left (read "f3[1](x1)"))) (build_inst mx1 (Left (read "f3[1](x2)")))))
+
+eprop21_ts = [eprop21_t1,eprop21_t2,eprop21_t3,eprop21_t4,eprop21_t5,eprop21_t6]
+
+eprop21_test = putStr (combine_test_results eprop21_ts)
+
+eprop22_nsols = 200
+eprop22_t1 = AT "Constraints well formed" (cferr_at eproperrs22)
+eprop22_t2 = AT "All solutions distinct" (unique_sols eprop22_nsols epropmetavars epropus epropinst22)
+eprop22_t3 = AT "Constraints satisfied" (all_sol_cstr eprop22_nsols eprop_n_base_vars epropmetavars epropus epropinst22 epropcs22)
+
+eprop22_ts = [eprop22_t1,eprop22_t2,eprop22_t3]
+
+eprop22_test = putStr (combine_test_results eprop22_ts)
+
+eprop23_nsols = 250
+eprop23_t1 = AT "Constraints well formed" (cferr_at eproperrs23)
+eprop23_t2 = AT "All solutions distinct" (unique_sols eprop23_nsols epropmetavars epropus epropinst23)
+eprop23_t3 = AT "Constraints satisfied" (all_sol_cstr eprop23_nsols eprop_n_base_vars epropmetavars epropus epropinst23 epropcs23)
+
+eprop23_ts = [eprop23_t1,eprop23_t2,eprop23_t3]
+
+eprop23_test = putStr (combine_test_results eprop23_ts)
+
+eprop24_nsols = 400
+eprop24_t1 = AT "Constraints well formed" (cferr_at eproperrs24)
+eprop24_t2 = AT "All solutions distinct" (unique_sols eprop24_nsols epropmetavars epropus epropinst24)
+eprop24_t3 = AT "Constraints satisfied" (all_sol_cstr eprop24_nsols eprop_n_base_vars epropmetavars epropus epropinst24 epropcs24)
+eprop24_t4 = AT "suA = sp(x,y)" (all_sol_cstr eprop24_nsols eprop_n_base_vars epropmetavars epropus epropinst24 [Lcstr (MLitR u2 (MLitR u0 (MLitL (LitM mx0)))) (MLitR u2 (MLitL (read "p1[2](x0,x1)")))])
+eprop24_t5 = AT "vuB = vp(x,y)" (all_sol_cstr eprop24_nsols eprop_n_base_vars epropmetavars epropus epropinst24 [Lcstr (MLitR u1 (MLitR u0 (MLitL (LitM mx1)))) (MLitR u1 (MLitL (read "p1[2](x0,x1)")))])
+
+eprop24_ts = [eprop24_t1,eprop24_t2,eprop24_t3,eprop24_t4,eprop24_t5]
+
+eprop24_test = putStr (combine_test_results eprop24_ts)
+
+eprop25_nsols = 400
+eprop25_t1 = AT "Constraints well formed" (cferr_at eproperrs25)
+eprop25_t2 = AT "All solutions distinct" (unique_sols eprop25_nsols epropmetavars epropus epropinst25)
+eprop25_t3 = AT "Constraints satisfied" (all_sol_cstr eprop25_nsols eprop_n_base_vars epropmetavars epropus epropinst25 epropcs25)
+eprop25_t4 = AT "suA = sp(y,x)" (all_sol_cstr eprop25_nsols eprop_n_base_vars epropmetavars epropus epropinst25 [Lcstr (MLitR u2 (MLitR u0 (MLitL (LitM mx0)))) (MLitR u2 (MLitL (read "p1[2](x1,x0)")))])
+eprop25_t5 = AT "vuB = vp(x,y)" (all_sol_cstr eprop25_nsols eprop_n_base_vars epropmetavars epropus epropinst25 [Lcstr (MLitR u1 (MLitR u0 (MLitL (LitM mx1)))) (MLitR u1 (MLitL (read "p1[2](x0,x1)")))])
+
+eprop25_ts = [eprop25_t1,eprop25_t2,eprop25_t3,eprop25_t4,eprop25_t5]
+
+eprop25_test = putStr (combine_test_results eprop25_ts)
+
+eprop26_nsols = 400
+eprop26_t1 = AT "Constraints well formed" (cferr_at eproperrs26)
+eprop26_t2 = AT "All solutions distinct" (unique_sols eprop26_nsols epropmetavars epropus epropinst26)
+eprop26_t3 = AT "Constraints satisfied" (all_sol_cstr eprop26_nsols eprop_n_base_vars epropmetavars epropus epropinst26 epropcs26)
+
+eprop26_ts = [eprop26_t1,eprop26_t2,eprop26_t3]
+
+eprop26_test = putStr (combine_test_results eprop26_ts)
+
+eprop_tests :: IO ()
+eprop_tests = (putStr "***EXAMPLE 1***\n\n") >> eprop1_test >>
+					(putStr "***EXAMPLE 2***\n\n") >> eprop2_test >>
+					(putStr "***EXAMPLE 3***\n\n") >> eprop3_test >>
+					(putStr "***EXAMPLE 4***\n\n") >> eprop4_test >>
+					(putStr "***EXAMPLE 5***\n\n") >> eprop5_test >>
+					(putStr "***EXAMPLE 6***\n\n") >> eprop6_test >>
+					(putStr "***EXAMPLE 7***\n\n") >> eprop7_test >>
+					(putStr "***EXAMPLE 8***\n\n") >> eprop8_test >>
+					(putStr "***EXAMPLE 9***\n\n") >> eprop9_test >>
+					(putStr "***EXAMPLE 10***\n\n") >> eprop10_test >>
+					(putStr "***EXAMPLE 11***\n\n") >> eprop11_test >>
+					(putStr "***EXAMPLE 12***\n\n") >> eprop12_test >>
+					(putStr "***EXAMPLE 13***\n\n") >> eprop13_test >>
+					(putStr "***EXAMPLE 14***\n\n") >> eprop14_test >>
+					(putStr "***EXAMPLE 15***\n\n") >> eprop15_test >>
+					(putStr "***EXAMPLE 16***\n\n") >> eprop16_test >>
+					(putStr "***EXAMPLE 17***\n\n") >> eprop17_test >>
+					(putStr "***EXAMPLE 18***\n\n") >> eprop18_test >>
+					(putStr "***EXAMPLE 19***\n\n") >> eprop19_test >>
+					(putStr "***EXAMPLE 20***\n\n") >> eprop20_test >>
+					(putStr "***EXAMPLE 21***\n\n") >> eprop21_test >>
+					(putStr "***EXAMPLE 22***\n\n") >> eprop22_test >>
+					(putStr "***EXAMPLE 23***\n\n") >> eprop23_test >>
+					(putStr "***EXAMPLE 24***\n\n") >> eprop24_test >>
+					(putStr "***EXAMPLE 25***\n\n") >> eprop25_test >>
+					(putStr "***EXAMPLE 26***\n\n") >> eprop26_test
+
+
+-- Testing extended signature.
+
+-- Example 27
+
+epropsig_ext_1 :: ExtendedSignature
+epropsig_ext_1 = (([read "p1[2]",read "p2[1]"],[read "f1[2]",read "f2[2]",read "f3[1]",read "f4[1]"],eprop_n_base_vars),([[mx0],[mx1,mx2]],eprop_n_base_vars - 3,[1,2]),[],[])
+
+epropmt27_1 :: Metaterm
+epropmt27_1 = MTermR u0 (MTermT (read "x1"))
+
+epropmt27_2 :: Metaterm
+epropmt27_2 = MTermR u0 (MTermT (read "f3[1](X0)"))
+
+epropc27_1 :: Constraint
+epropc27_1 = Tcstr epropmt27_1 epropmt27_2
+
+epropcs27 = [epropc27_1]
+
+eproperrs27 :: [ConstraintFormErrors]
+eproperrs27 = verify_all_unifier_constraints_wellformed epropsig_ext_1 epropmetavars epropus epropcs27
+
+(eproprmvs27,(eproprinst27,epropscs27)) = all_simpl_cstr epropmetavars (idinst,epropcs27)
+
+epropg27 = build_graph_from_constraints epropscs27
+
+epropfs27 :: FullSolution
+epropfs27 = (eproprmvs27,[],(eproprinst27,[]),epropg27)
+
+epropres27 :: Enumeration (_,FullSolution)
+epropres27 = enumerate_and_propagate_all epropheur epropsig_ext_1 epropfs27
+
+epropinst27 :: Enumeration (_,Maybe ([UnifierDescription],Instantiation))
+epropinst27 = solve_unifier_constraints epropheur epropsig_ext_1 epropmetavars epropcs27 epropus
+
+eprop27_nsols = 700
+eprop27_t1 = AT "Constraints well formed" (cferr_at eproperrs27)
+eprop27_t2 = AT "All solutions distinct" (unique_sols eprop27_nsols epropmetavars epropus epropinst27)
+eprop27_t3 = AT "Constraints satisfied" (all_sol_cstr eprop16_nsols eprop_n_base_vars epropmetavars epropus epropinst27 epropcs27)
+eprop27_t4 = AT "A := x" (some_inst eprop27_nsols epropmetavars epropus epropinst27 (build_inst mx0 (Left (read "x0"))))
+eprop27_t5 = AT "A := z" (some_inst eprop27_nsols epropmetavars epropus epropinst27 (build_inst mx0 (Left (read "x2"))))
+eprop27_t6 = AT "y notin A" (no_inst_contains eprop27_nsols epropmetavars epropus epropinst27 mx0 x1 [])
+eprop27_t7 = AT "w notin A" (no_inst_contains eprop27_nsols epropmetavars epropus epropinst27 mx0 x3 [])
+eprop27_t8 = AT "r notin A" (no_inst_contains eprop27_nsols epropmetavars epropus epropinst27 mx0 x4 [])
+
+eprop27_ts = [eprop27_t1,eprop27_t2,eprop27_t3,eprop27_t4,eprop27_t5,eprop27_t6,eprop27_t7,eprop27_t8]
+
+eprop27_test = putStr (combine_test_results eprop27_ts)
+
+-- Example 28
+epropmt28_1 :: Metaterm
+epropmt28_1 = MTermR u0 (MTermT (read "f3[1](x1)"))
+
+epropmt28_2 :: Metaterm
+epropmt28_2 = MTermR u0 (MTermT (read "X0"))
+
+epropc28_1 :: Constraint
+epropc28_1 = Tcstr epropmt28_1 epropmt28_2
+
+epropcs28 = [epropc15_1]
+
+eproperrs28 :: [ConstraintFormErrors]
+eproperrs28 = verify_all_unifier_constraints_wellformed epropsig_ext_1 epropmetavars epropus epropcs28
+
+(eproprmvs28,(eproprinst28,epropscs28)) = all_simpl_cstr epropmetavars (idinst,epropcs28)
+
+epropg28 = build_graph_from_constraints epropscs28
+
+epropfs28 :: FullSolution
+epropfs28 = (eproprmvs28,[],(eproprinst28,[]),epropg28)
+
+epropres28 :: Enumeration (_,FullSolution)
+epropres28 = enumerate_and_propagate_all epropheur epropsig_ext_1 epropfs28
+
+epropinst28 :: Enumeration (_,Maybe ([UnifierDescription],Instantiation))
+epropinst28 = solve_unifier_constraints epropheur epropsig_ext_1 epropmetavars epropcs28 epropus
+
+eprop28_nsols = 16
+eprop28_t1 = AT "All solutions distinct" (unique_sols eprop28_nsols epropmetavars epropus epropinst28)
+eprop28_t2 = AT "Constraints satisfied" (all_sol_cstr eprop28_nsols eprop_n_base_vars epropmetavars epropus epropinst28 epropcs28)
+eprop28_t3 = AT "y notin A unless A := f(y)" (no_inst_contains eprop28_nsols epropmetavars epropus epropinst28 mx0 x1 [Left (read "f3[1](x1)")])
+eprop28_t4 = AT "Constraints well formed" (cferr_at eproperrs28)
+eprop28_t5 = AT "A := f(y), u = {y -> yu}" (some_sol eprop28_nsols epropmetavars epropus epropinst28
+					([[UV x1 (read "x6")],[],[]],build_inst mx0 (Left (read "f3[1](x1)"))))
+eprop28_t6 = AT "A := x" (some_inst eprop28_nsols epropmetavars epropus epropinst28 (build_inst mx0 (Left (read "x0"))))
+eprop28_t7 = AT "A := z" (some_inst eprop28_nsols epropmetavars epropus epropinst28 (build_inst mx0 (Left (read "x2"))))
+eprop28_t8 = AT "w notin A" (no_inst_contains eprop28_nsols epropmetavars epropus epropinst28 mx0 x3 [])
+eprop28_t9 = AT "r notin A" (no_inst_contains eprop28_nsols epropmetavars epropus epropinst28 mx0 x4 [])
+
+eprop28_ts = [eprop28_t1,eprop28_t2,eprop28_t3,eprop28_t4,eprop28_t5,eprop28_t6,eprop28_t7,eprop28_t8,eprop28_t9]
+
+eprop28_test = putStr (combine_test_results eprop28_ts)
+
+-- Example 29
+
+epropsig_ext_2 :: ExtendedSignature
+epropsig_ext_2_tmp = (([read "p1[2]",read "p2[1]"],[read "f1[2]",read "f2[2]",read "f3[1]",read "f4[1]"],eprop_n_base_vars),([[mx0],[mx1],[mx2]],eprop_n_base_vars,[0,0,0]),[],[])
+epropsig_ext_2 = (([read "p1[2]",read "p2[1]"],[read "f1[2]",read "f2[2]",read "f3[1]",read "f4[1]"],eprop_n_base_vars),([[mx0],[mx1],[mx2]],eprop_n_base_vars,[0,0,0]),[obtain_skolem_term epropsig_ext_2_tmp (read "X0")],[])
+
+epropmt29_1 :: Metaterm
+epropmt29_1 = MTermR u0 (MTermT (read "x1"))
+
+epropmt29_2 :: Metaterm
+epropmt29_2 = MTermR u0 (MTermT (read "f3[1](X0)"))
+
+epropc29_1 :: Constraint
+epropc29_1 = Tcstr epropmt29_1 epropmt29_2
+
+epropcs29 = [epropc29_1]
+
+eproperrs29 :: [ConstraintFormErrors]
+eproperrs29 = verify_all_unifier_constraints_wellformed epropsig_ext_2 epropmetavars epropus epropcs29
+
+(eproprmvs29,(eproprinst29,epropscs29)) = all_simpl_cstr epropmetavars (idinst,epropcs29)
+
+epropg29 = build_graph_from_constraints epropscs29
+
+epropfs29 :: FullSolution
+epropfs29 = (eproprmvs29,[],(eproprinst29,[]),epropg29)
+
+epropres29 :: Enumeration (_,FullSolution)
+epropres29 = enumerate_and_propagate_all epropheur epropsig_ext_2 epropfs29
+
+epropinst29 :: Enumeration (_,Maybe ([UnifierDescription],Instantiation))
+epropinst29 = solve_unifier_constraints epropheur epropsig_ext_2 epropmetavars epropcs29 epropus
+
+eprop29_nsols = 700
+eprop29_t1 = AT "Constraints well formed" (cferr_at eproperrs27)
+eprop29_t2 = AT "All solutions distinct" (unique_sols eprop27_nsols epropmetavars epropus epropinst27)
+eprop29_t3 = AT "Constraints satisfied" (all_sol_cstr eprop16_nsols eprop_n_base_vars epropmetavars epropus epropinst27 epropcs27)
+eprop29_t4 = AT "A := x" (some_inst eprop27_nsols epropmetavars epropus epropinst27 (build_inst mx0 (Left (read "x0"))))
+eprop29_t5 = AT "A := z" (some_inst eprop27_nsols epropmetavars epropus epropinst27 (build_inst mx0 (Left (read "x2"))))
+eprop29_t6 = AT "y notin A" (no_inst_contains eprop27_nsols epropmetavars epropus epropinst27 mx0 x1 [])
+eprop29_t7 = AT "w notin A" (no_inst_contains eprop27_nsols epropmetavars epropus epropinst27 mx0 x3 [])
+eprop29_t8 = AT "r notin A" (no_inst_contains eprop27_nsols epropmetavars epropus epropinst27 mx0 x4 [])
+
+eprop29_ts = [eprop29_t1,eprop29_t2,eprop29_t3,eprop29_t4,eprop29_t5,eprop29_t6,eprop29_t7,eprop29_t8]
+
+eprop29_test = putStr (combine_test_results eprop29_ts)
+
+-- Example 30
+
+epropsig_ext_3 :: ExtendedSignature
+epropsig_ext_3_tmp = (([read "p1[2]",read "p2[1]"],[read "f1[2]",read "f2[2]",read "f3[1]",read "f4[1]"],eprop_n_base_vars),([[mx2],[mx0,mx1]],eprop_n_base_vars - 3,[1,2]),[],[])
+epropsig_ext_3 = (([read "p1[2]",read "p2[1]"],[read "f1[2]",read "f2[2]",read "f3[1]",read "f4[1]"],eprop_n_base_vars),([[mx2],[mx0,mx1]],eprop_n_base_vars - 3,[1,2]),[obtain_skolem_term epropsig_ext_3_tmp mx0],[])
+
+epropmt30_1 :: Metaterm
+epropmt30_1 = MTermR u0 (MTermT (read "f3[1](x1)"))
+
+epropmt30_2 :: Metaterm
+epropmt30_2 = MTermR u0 (MTermT (read "X0"))
+
+epropc30_1 :: Constraint
+epropc30_1 = Tcstr epropmt30_1 epropmt30_2
+
+epropcs30 = [epropc30_1]
+
+eproperrs30 :: [ConstraintFormErrors]
+eproperrs30 = verify_all_unifier_constraints_wellformed epropsig_ext_3 epropmetavars epropus epropcs30
+
+(eproprmvs30,(eproprinst30,epropscs30)) = all_simpl_cstr epropmetavars (idinst,epropcs30)
+
+epropg30 = build_graph_from_constraints epropscs30
+
+epropfs30 :: FullSolution
+epropfs30 = (eproprmvs30,[],(eproprinst30,[]),epropg30)
+
+epropres30 :: Enumeration (_,FullSolution)
+epropres30 = enumerate_and_propagate_all epropheur epropsig_ext_3 epropfs30
+
+epropinst30 :: Enumeration (_,Maybe ([UnifierDescription],Instantiation))
+epropinst30 = solve_unifier_constraints epropheur epropsig_ext_3 epropmetavars epropcs30 epropus
+
+eprop30_nsols = 16
+eprop30_t1 = AT "All solutions distinct" (unique_sols eprop30_nsols epropmetavars epropus epropinst30)
+eprop30_t2 = AT "Constraints satisfied" (all_sol_cstr eprop30_nsols eprop_n_base_vars epropmetavars epropus epropinst30 epropcs30)
+eprop30_t3 = AT "y notin A unless A := f(y)" (no_inst_contains eprop30_nsols epropmetavars epropus epropinst30 mx0 x1 [Left (read "f3[1](x1)")])
+eprop30_t4 = AT "Constraints well formed" (cferr_at eproperrs30)
+eprop30_t5 = AT "A := f(y), u = {y -> yu}" (some_sol eprop30_nsols epropmetavars epropus epropinst30
+					([[UV x1 (read "x6")],[],[]],build_inst mx0 (Left (read "f3[1](x1)"))))
+eprop30_t6 = AT "A := x" (some_inst eprop30_nsols epropmetavars epropus epropinst30 (build_inst mx0 (Left (read "x0"))))
+eprop30_t7 = AT "A := w" (some_inst eprop30_nsols epropmetavars epropus epropinst30 (build_inst mx0 (Left (read "x3"))))
+eprop30_t8 = AT "z notin A" (no_inst_contains eprop30_nsols epropmetavars epropus epropinst30 mx0 x2 [])
+
+eprop30_ts = [eprop30_t1,eprop30_t2,eprop30_t3,eprop30_t4,eprop30_t5,eprop30_t6,eprop30_t7,eprop30_t8]
+
+eprop30_test = putStr (combine_test_results eprop30_ts)
+
+-- Example 31
+
+epropmt31_1 :: Metaterm
+epropmt31_1 = MTermR u0 (MTermT (read "X0"))
+
+epropmt31_2 :: Metaterm
+epropmt31_2 = MTermR u0 (MTermT (read "f3[1](X1)"))
+
+epropc31_1 :: Constraint
+epropc31_1 = Tcstr epropmt31_1 epropmt31_2
+
+epropcs31 = [epropc31_1]
+
+eproperrs31 :: [ConstraintFormErrors]
+eproperrs31 = verify_all_unifier_constraints_wellformed epropsig_ext_3 epropmetavars epropus epropcs31
+
+(eproprmvs31,(eproprinst31,epropscs31)) = all_simpl_cstr epropmetavars (idinst,epropcs31)
+
+epropg31 = build_graph_from_constraints epropscs31
+
+epropfs31 :: FullSolution
+epropfs31 = (eproprmvs31,[],(eproprinst31,[]),epropg31)
+
+epropres31 :: Enumeration (_,FullSolution)
+epropres31 = enumerate_and_propagate_all epropheur epropsig_ext_3 epropfs31
+
+epropinst31 :: Enumeration (_,Maybe ([UnifierDescription],Instantiation))
+epropinst31 = solve_unifier_constraints epropheur epropsig_ext_3 epropmetavars epropcs31 epropus
+
+eprop31_nsols = 200
+eprop31_t1 = AT "Constraints well formed" (cferr_at eproperrs31)
+eprop31_t2 = AT "All solutions distinct" (unique_sols eprop31_nsols epropmetavars epropus epropinst31)
+eprop31_t3 = AT "Constraints satisfied" (all_sol_cstr eprop31_nsols eprop_n_base_vars epropmetavars epropus epropinst31 epropcs31)
+eprop31_t4 = AT "A := x, B := y" (some_inst eprop31_nsols epropmetavars epropus epropinst31 (compose_inst (build_inst mx0 (Left (read "x0"))) (build_inst mx1 (Left (read "x1")))))
+eprop31_t5 = AT "A := y, B := x" (some_inst eprop31_nsols epropmetavars epropus epropinst31 (compose_inst (build_inst mx0 (Left (read "x1"))) (build_inst mx1 (Left (read "x0")))))
+eprop31_t6 = AT "not (A := x, B := x)" (atr_none_p (pargs_from_solutions eprop31_nsols eprop_n_base_vars epropmetavars epropus epropinst31)
+								(p_and
+									(p_inst_value_sol mx0 (Just (Left (read "x0"))))
+									(p_inst_value_sol mx1 (Just (Left (read "x0"))))
+								)
+								"All solutions verified.\n"
+								(\l -> "Some solutions instantiate both meta-variables to the same variable.\nIncorrect solutions:\n\n" ++ concat (map show_munif_sol l))
+	)
+eprop31_t7 = AT "not (A := y, B := y)" (atr_none_p (pargs_from_solutions eprop31_nsols eprop_n_base_vars epropmetavars epropus epropinst31)
+								(p_and
+									(p_inst_value_sol mx0 (Just (Left (read "x1"))))
+									(p_inst_value_sol mx1 (Just (Left (read "x1"))))
+								)
+								"All solutions verified.\n"
+								(\l -> "Some solutions instantiate both meta-variables to the same variable.\nIncorrect solutions:\n\n" ++ concat (map show_munif_sol l))
+	)
+eprop31_t8 = AT "A := w, B := r" (some_inst eprop31_nsols epropmetavars epropus epropinst31 (compose_inst (build_inst mx0 (Left (read "x3"))) (build_inst mx1 (Left (read "x4")))))
+eprop31_t9 = AT "not (B := z)" (atr_none_p (pargs_from_solutions eprop31_nsols eprop_n_base_vars epropmetavars epropus epropinst31)
+								(p_inst_value_sol mx1 (Just (Left (read "x2"))))
+								"All solutions verified.\n"
+								(\l -> "Some solutions instantiate B directly to z. \nIncorrect solutions:\n\n" ++ concat (map show_munif_sol l))
+	)
+eprop31_t10 = AT "not (A := z)" (atr_none_p (pargs_from_solutions eprop31_nsols eprop_n_base_vars epropmetavars epropus epropinst31)
+								(p_inst_value_sol mx0 (Just (Left (read "x2"))))
+								"All solutions verified.\n"
+								(\l -> "Some solutions instantiate A directly to w. \nIncorrect solutions:\n\n" ++ concat (map show_munif_sol l))
+	)
+eprop31_t11 = AT "A := f(Sk(xs)), B := Sk(xs)" (some_inst eprop31_nsols epropmetavars epropus epropinst31 (compose_inst (build_inst mx0 (Left (read "f3[1](f5[4](x0,x1,x3,x4))"))) (build_inst mx1 (Left (read "f5[4](x0,x1,x3,x4)")))))
+--eprop31_t12 = AT "A := f(f(Sk(xs)), B := f(Sk(xs))" (some_inst eprop31_nsols epropmetavars epropus epropinst31 (compose_inst (build_inst mx0 (Left (read "f3[1](f3[1](f5[5](x4,x3,x2,x1,x0)))"))) (build_inst mx1 (Left (read "f3[1](f5[5](x4,x3,x2,x1,x0))")))))
+eprop31_t13 = AT "Sk not changed order" (atr_none_p (pargs_from_solutions eprop31_nsols eprop_n_base_vars epropmetavars epropus epropinst31)
+								(p_inst_value_sol mx1 (Just (Left (read "f5[4](x0,x1,x2,x3)"))))
+								"All solutions verified.\n"
+								(\l -> "Some solutions use the Skolem function with the arguments swapped.\nIncorrect solutions:\n\n" ++ concat (map show_munif_sol l))
+	)
+
+eprop31_ts = [eprop31_t1,eprop31_t2,eprop31_t3,eprop31_t4,eprop31_t5,eprop31_t6,eprop31_t7,eprop31_t8,eprop31_t9,eprop31_t10,eprop31_t11,eprop31_t13]
+
+eprop31_test = putStr (combine_test_results eprop31_ts)
+
+-- Example 32
+
+epropsig_ext_4 :: ExtendedSignature
+epropsig_ext_4_tmp = (([read "p1[2]",read "p2[1]"],[read "f1[2]",read "f2[2]",read "f3[1]",read "f4[1]"],eprop_n_base_vars),([[mx0],[mx1,mx2]],0,[1,4]),[],[])
+epropsig_ext_4 = (([read "p1[2]",read "p2[1]"],[read "f1[2]",read "f2[2]",read "f3[1]",read "f4[1]"],eprop_n_base_vars),([[mx0],[mx1,mx2]],0,[1,4]),[obtain_skolem_term epropsig_ext_4_tmp mx0],[])
+
+
+epropmt32_1 :: Metaterm
+epropmt32_1 = MTermR u0 (MTermT (read "f3[1](x2)"))
+
+epropmt32_2 :: Metaterm
+epropmt32_2 = MTermR u0 (MTermT (read "X0"))
+
+epropc32_1 :: Constraint
+epropc32_1 = Tcstr epropmt32_1 epropmt32_2
+
+epropcs32 = [epropc32_1]
+
+eproperrs32 :: [ConstraintFormErrors]
+eproperrs32 = verify_all_unifier_constraints_wellformed epropsig_ext_4 epropmetavars epropus epropcs32
+
+(eproprmvs32,(eproprinst32,epropscs32)) = all_simpl_cstr epropmetavars (idinst,epropcs32)
+
+epropg32 = build_graph_from_constraints epropscs32
+
+epropfs32 :: FullSolution
+epropfs32 = (eproprmvs32,[],(eproprinst32,[]),epropg32)
+
+epropres32 :: Enumeration (_,FullSolution)
+epropres32 = enumerate_and_propagate_all epropheur epropsig_ext_4 epropfs32
+
+epropinst32 :: Enumeration (_,Maybe ([UnifierDescription],Instantiation))
+epropinst32 = solve_unifier_constraints epropheur epropsig_ext_4 epropmetavars epropcs32 epropus
+
+eprop32_nsols = 14
+eprop32_t1 = AT "All solutions distinct" (unique_sols eprop32_nsols epropmetavars epropus epropinst32)
+eprop32_t2 = AT "Constraints satisfied" (all_sol_cstr eprop32_nsols eprop_n_base_vars epropmetavars epropus epropinst32 epropcs32)
+eprop32_t3 = AT "y notin A" (no_inst_contains eprop32_nsols epropmetavars epropus epropinst32 mx0 x1 [])
+eprop32_t4 = AT "Constraints well formed" (cferr_at eproperrs32)
+--eprop32_t5 = AT "A := f(y), u = {y -> yu}" (some_sol eprop32_nsols epropmetavars epropus epropinst32
+--					([[UV x1 (read "x6")],[],[]],build_inst mx0 (Left (read "f3[1](x1)"))))
+eprop32_t6 = AT "A := x" (some_inst eprop32_nsols epropmetavars epropus epropinst32 (build_inst mx0 (Left (read "x0"))))
+--eprop32_t7 = AT "A := z" (some_inst eprop32_nsols epropmetavars epropus epropinst32 (build_inst mx0 (Left (read "x2"))))
+eprop32_t8 = AT "w notin A" (no_inst_contains eprop32_nsols epropmetavars epropus epropinst32 mx0 x3 [])
+eprop32_t9 = AT "r notin A" (no_inst_contains eprop32_nsols epropmetavars epropus epropinst32 mx0 x4 [])
+eprop32_t10 = AT "A := f(Sk(x))" (some_inst eprop32_nsols epropmetavars epropus epropinst32 (build_inst mx0 (Left (read "f3[1](f5[1](x0))"))))
+
+eprop32_ts = [eprop32_t1,eprop32_t2,eprop32_t3,eprop32_t4,eprop32_t6,eprop32_t8,eprop32_t9,eprop32_t10]
+
+eprop32_test = putStr (combine_test_results eprop32_ts)
+
+
+eprop_ext_tests :: IO ()
+eprop_ext_tests = (putStr "***EXAMPLE 27***\n\n") >> eprop27_test >>
+						(putStr "***EXAMPLE 28***\n\n") >> eprop28_test >>
+						(putStr "***EXAMPLE 29***\n\n") >> eprop29_test >>
+						(putStr "***EXAMPLE 30***\n\n") >> eprop30_test >>
+						(putStr "***EXAMPLE 31***\n\n") >> eprop31_test >>
+						(putStr "***EXAMPLE 32***\n\n") >> eprop32_test
+
+all_standard_tests :: IO ()
+all_standard_tests = eprop_tests >> eprop_ext_tests
