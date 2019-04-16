@@ -1642,3 +1642,12 @@ metares_all_insts_diff_helper (Just (_,_,_,_,uds1,inst1)) (Just (_,_,_,_,uds2,in
 metares_all_insts_diff_helper_2 :: [Metavariable] -> Maybe (LogicalInstantiation,[Unifier],ResolutionProof,FullSolution,[UnifierDescription],Instantiation) -> String
 metares_all_insts_diff_helper_2 _ Nothing = "Unsatisfiable solution\n"
 metares_all_insts_diff_helper_2 mvs (Just (_,_,_,_,uds1,inst1)) = (show_inst inst1 mvs) ++ "\nwith\n" ++ (show uds1) ++ "\n"
+
+-- Apply the logical instantiation, then apply the instantiation, then apply the unifiers. The result should be the same literal (positive and negative, respectively).
+metares_inst_correct_step :: ExtendedSignature -> [Metavariable] -> [Unifier] -> [UnifierDescription] -> LogicalInstantiation -> Instantiation -> ResolutionStep -> Bool
+metares_inst_correct_step ((_,_,nvars),_,_,_) mvs us uds loginst inst (RStep _ _ (PosLit plit) (NegLit nlit) _ _ _) = where
+
+
+
+-- obtain_substitution :: Int -> Unifier ->  UnifierDescription -> Substitution
+-- data ResolutionStep = RStep Clause Clause ActualLiteral ActualLiteral Clause CNF CNF

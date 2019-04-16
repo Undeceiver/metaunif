@@ -653,6 +653,31 @@ obtain_substitution nvars u [] v = TVar (get_image_var nvars u v)
 obtain_substitution nvars u ((UV v1 t):uvs) v2 | v1 == v2 = t
 obtain_substitution nvars u ((UV v1 t):uvs) v2 | v1 /= v2 = obtain_substitution nvars u uvs v2
 
+
+-- This is under the last unifier. If there are any remaining unifiers, we throw a non-exhaustive exception, to flag this up.
+apply_subst_mterm :: Substitution -> Metaterm -> Metaterm
+apply_subst_mterm subst (MTermT t) = MTermT (apply_subst subst t)
+apply_subst_mterm subst (MTermF f mts) = MTermF f (map (apply_subst_mterm subst) mts)
+--apply_subst_mterm subst (MTermR u mt) = MTermR u mt
+
+apply_subst_mlit :: Substitution -> Metaliteral -> Metaliteral
+apply_subst_mlit subst (MLitL l) = MLitL (apply_subst_lit subst l)
+apply_subst_mlit subst (MLitP p mts) = MLitP p (map (apply_subst_mterm subst) mts)
+--apply_subst_mlit subst (MLitR u ml) = MLitR u ml
+
+-- The substitutions need to be applied in order, the first unifier first. This is essential.
+apply_substitution_mterm :: Int -> Unifier -> UnifierDescription -> Metaterm -> Metaterm
+apply_substitution_mterm nvars u ud (MTermT t) = MTermT t
+apply_substitution_mterm nvars u ud (MTermF f mts) = MTermF f (map (apply_substitution_mterm nvars u ud) mts)
+apply_substitution_mterm nvars u ud (MTermR v mt) | u == v = apply_subst_mterm (obtain_substitution nvars u ud) mt
+apply_substitution_mterm nvars u ud (MTermR v mt) = MTermR v (apply_substitution_mterm nvars u ud mt)
+
+apply_substitution_mlit :: Int -> Unifier -> UnifierDescription -> Metaliteral -> Metaliteral
+apply_substitution_mlit nvars u ud (MLitL l) = MLitL l
+apply_substitution_mlit nvars u ud (MLitP p mts) = MLitP p (map (apply_substitution_mterm nvars u ud) mts)
+apply_substitution_mlit nvars u ud (MLitR v ml) | u == v = apply_subst_mlit (obtain_substitution nvars u ud) ml
+apply_substitution_mlit nvars u ud (MLitR v ml) = MLitR v (apply_substitution_mlit nvars u ud ml)
+
 data Dependent = DVar Variable | DMetaT Metavariable | DMetaL Metavariable | DRec Unifier Dependent deriving Eq
 metaterm_from_depnode :: Dependent -> Metaterm
 metaterm_from_depnode (DVar x) = (MTermT (TVar x))

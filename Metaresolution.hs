@@ -112,7 +112,7 @@ apply_lambdaformula f (LFRightOrVar v) = case (apply_lambdaformula f v) of {FOr 
 apply_lambdaformula_lit :: Formula -> (LambdaFormulaVar -> Literal)
 apply_lambdaformula_lit f v = case (apply_lambdaformula f v) of {FLit l -> l}
 
-data LambdaAtom = LAtomVar LambdaFormulaVar | LAtomLit Metaliteral deriving Eq
+data LambdaAtom = LAtomVar LambdaFormulaVar | LAtomLit Metaliteral | LAtomR Unifier LambdaAtom deriving Eq
 
 data LambdaLiteral = LPosLit LambdaAtom | LNegLit LambdaAtom
 
@@ -135,6 +135,7 @@ apply_lambdalit_lit f (LNegLit a) = NegLit (apply_lambdaatom_lit f a)
 apply_lambdaatom_lit :: Formula -> LambdaAtom -> Metaliteral
 apply_lambdaatom_lit f (LAtomVar v) = MLitL (apply_lambdaformula_lit f v)
 apply_lambdaatom_lit _ (LAtomLit ml) = ml
+apply_lambdaatom_lit f (LAtomR u at) = MLitR u (apply_lambdaatom_lit f at)
 
 apply_loginst_cnf :: [Metavariable] -> LogicalInstantiation -> CNF -> CNF
 apply_loginst_cnf mvs i cnf = foldl (\cnf2 -> \mv -> apply_loginst_cnf_helper mv cnf2 (i mv)) cnf mvs
@@ -200,10 +201,13 @@ apply_loginst_clause_lit :: Metavariable -> Clause -> LambdaClause
 apply_loginst_clause_lit mv cl = map (apply_loginst_lit_lit mv) cl
 
 apply_loginst_lit_lit :: Metavariable -> ActualLiteral -> LambdaLiteral
-apply_loginst_lit_lit mv1 (PosLit ml) | isJust aslit && mv1 == mv2 = LPosLit (LAtomVar LFBaseVar) where aslit = is_metavar_lit ml; (mv2,us) = fromJust aslit
-apply_loginst_lit_lit mv1 (PosLit ml) = LPosLit (LAtomLit ml)
-apply_loginst_lit_lit mv1 (NegLit ml) | isJust aslit && mv1 == mv2 = LNegLit (LAtomVar LFBaseVar) where aslit = is_metavar_lit ml; (mv2,us) = fromJust aslit
-apply_loginst_lit_lit mv1 (NegLit ml) = LNegLit (LAtomLit ml)
+apply_loginst_lit_lit mv1 (PosLit ml) = LPosLit (apply_loginst_lit_atom mv1 ml)
+apply_loginst_lit_lit mv1 (NegLit ml) = LNegLit (apply_loginst_lit_atom mv1 ml)
+
+apply_loginst_lit_atom :: Metavariable -> Metaliteral -> LambdaAtom
+apply_loginst_lit_atom mv1 (MLitR u ml) = LAtomR u (apply_loginst_lit_atom mv1 ml)
+apply_loginst_lit_atom mv1 ml | isJust aslit && mv1 == mv2 = LAtomVar LFBaseVar where aslit = is_metavar_lit ml; (mv2,us) = fromJust aslit
+apply_loginst_lit_atom mv1 ml = LAtomLit ml
 
 compose_loginst :: LogicalInstantiation -> LogicalInstantiation -> LogicalInstantiation
 compose_loginst i1 i2 mv = apply_loginst_formula i1 (i2 mv)
@@ -647,9 +651,25 @@ apply_graph_solution_cnf sol = map (apply_graph_solution_clause sol)
 apply_graph_solution_cnf_fs :: FullSolution -> CNF -> CNF
 apply_graph_solution_cnf_fs (_,_,_,(_,sol,_)) = apply_graph_solution_cnf sol
 
---apply_inst_actual_lit :: Instantiation -> ActualLiteral -> ActualLiteral
---apply_inst_actual_lit inst (PosLit x) = PosLit (apply_inst_mlit x)
---apply_inst_actual_lit inst (NegLit x) = NegLit (apply_inst_mlit x)
+apply_inst_actual_lit :: Instantiation -> ActualLiteral -> ActualLiteral
+apply_inst_actual_lit inst (PosLit x) = PosLit (apply_inst_mlit inst x)
+apply_inst_actual_lit inst (NegLit x) = NegLit (apply_inst_mlit inst x)
+
+apply_inst_clause :: Instantiation -> Clause -> Clause
+apply_inst_clause inst cl = map (apply_inst_actual_lit inst) cl
+
+apply_inst_cnf :: Instantiation -> CNF -> CNF
+apply_inst_cnf inst cnf = map (apply_inst_clause inst) cnf
+
+apply_substitution_actual_lit :: Int -> Unifier -> UnifierDescription -> ActualLiteral -> ActualLiteral
+apply_substitution_actual_lit nvars u ud (PosLit x) = PosLit (apply_substitution_mlit x)
+apply_substitution_actual_lit nvars u ud (NegLit x) = NegLit (apply_substitution_mlit x)
+
+apply_substitution_clause :: Int -> Unifier -> UnifierDescription -> Clause -> Clause
+apply_substitution_clause nvars u ud cl = map (apply_substitution_actual_lit nvars u ud) cl
+
+apply_substitution_cnf :: Int -> Unifier -> UnifierDescription -> CNF -> CNF
+apply_substitution_cnf nvars u ud cnf = map (apply_substitution_cnf nvars u ud) cnf
 
 update_constraints_in_graph_maybe_loginst :: ExtendedSignature -> Maybe (FullSolution,LogicalInstantiation,ResolutionProof) -> Maybe (FullSolution,LogicalInstantiation,ResolutionProof)
 update_constraints_in_graph_maybe_loginst _ Nothing = Nothing
