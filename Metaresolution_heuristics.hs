@@ -150,6 +150,25 @@ least_new_resolvent_enum_helper_2 ((pcl,plit,pclen):rs) (ccl,clit,cclen) = (pcl,
 least_new_resolvent_enum_helper_3 :: Clause -> Clause -> Int
 least_new_resolvent_enum_helper_3 scl pcl = count (\lit -> not (any (can_resolve_literals lit) scl)) pcl
 
+-- Same as before, but we use the clause enumeration to only enumerate resolvents in clauses that come afterwards in the clause enumeration
+least_new_resolvent_enum_norep :: ClauseEnumeration t -> ResolventEnumeration _
+-- When it is the last one, it means it might be fixed due to a continuation. We don't do too clever things then. This is not beautiful, to be honest.
+least_new_resolvent_enum_norep cenum sig otherstuff cnf iclause ilit | iclause == ((length cnf) - 1) = least_new_resolvent_enum sig otherstuff cnf iclause ilit
+least_new_resolvent_enum_norep cenum sig otherstuff cnf iclause ilit = case aslist of {[] -> Nothing; otherwise -> Just (enum_from_list (map (\(a,b,_) -> (a,b)) aslist))} where clause = cnf !! iclause; lit = clause !! ilit; all_clauses = (enum_up_to_h infinity (cenum sig cnf)); clauses = least_new_resolvent_enum_norep_helper_666 iclause all_clauses; aslist = least_new_resolvent_enum_norep_helper cnf clause lit clauses 0 (case clauses of {[] -> 0; _ -> length (cnf !! (head clauses))}) iclause
+
+-- Start with the next clause.
+least_new_resolvent_enum_norep_helper_666 :: Int -> [Int] -> [Int]
+least_new_resolvent_enum_norep_helper_666 i0 [] = []
+least_new_resolvent_enum_norep_helper_666 i0 (i1:is) | i0 == i1 = is
+least_new_resolvent_enum_norep_helper_666 i0 (i1:is) = least_new_resolvent_enum_norep_helper_666 i0 is
+
+least_new_resolvent_enum_norep_helper :: CNF -> Clause -> ActualLiteral -> [Int] -> Int -> Int -> Int -> [(Int,Int,Int)]
+least_new_resolvent_enum_norep_helper cnf clause lit [] clit lclause bcl = []
+least_new_resolvent_enum_norep_helper cnf clause lit (ccl:cls) clit lclause bcl | clit >= lclause = least_new_resolvent_enum_norep_helper cnf clause lit cls 0 (length (cnf !! (head cls))) bcl
+least_new_resolvent_enum_norep_helper cnf clause lit (ccl:cls) clit lclause bcl | ccl == bcl = least_new_resolvent_enum_norep_helper cnf clause lit cls 0 (length (cnf !! (head cls))) bcl
+least_new_resolvent_enum_norep_helper cnf clause lit (ccl:cls) clit lclause bcl | (can_resolve_literals lit plit) = least_new_resolvent_enum_helper_2 (least_new_resolvent_enum_norep_helper cnf clause lit (ccl:cls) (clit+1) lclause bcl) (ccl,clit,least_new_resolvent_enum_helper_3 clause pclause) where pclause = cnf !! ccl; plit = pclause !! clit
+least_new_resolvent_enum_norep_helper cnf clause lit (ccl:cls) clit lclause bcl = least_new_resolvent_enum_norep_helper cnf clause lit (ccl:cls) (clit+1) lclause bcl
+
 simple_numeric_metaresolution_heuristic :: Int -> MetaresolutionHeuristic _ _
 simple_numeric_metaresolution_heuristic maxdepth = (least_frequent_lit_choice,least_size_resolvent_enum,least_size_clause_enum,maxdepth)
 

@@ -1,6 +1,14 @@
 {-# LANGUAGE PartialTypeSignatures #-}
 module AutoTests where
 
+import Data.Time
+import System.CPUTime
+import Control.Exception
+import Control.DeepSeq
+import Data.Time.Clock
+import Data.Time.Calendar
+
+
 -- Automated testing
 
 -- Correct/incorrect and message.
@@ -45,4 +53,35 @@ p_or = p_2_op (||)
 
 p_not :: (a -> Bool) -> (a -> Bool)
 p_not p x = not (p x)
+
+
+-- Measuring running time
+
+old_measure_time :: NFData t => t -> IO Integer
+old_measure_time op = (do
+	start <- getCPUTime	
+	end <- op `deepseq` getCPUTime
+	return (end - start))
+	
+measure_time_and_run :: Fractional t => IO x -> IO t
+measure_time_and_run op = (do
+	start <- getCPUTime
+	op
+	end <- getCPUTime
+	op >> (return ((fromInteger (end - start))/1000000000000)))
+
+measure_time :: (Fractional t, NFData x) => x -> IO t
+measure_time op = (do
+	start <- getCPUTime
+	end <- deepseq op getCPUTime
+	return ((fromInteger (end - start))/1000000000000))
+
+--instance NFData t => NFData (IO t) where
+--	rnf op = seq op ()
+
+--measure_time :: (Fractional t, NFData x) => x -> IO t
+--measure_time exp = ((\start -> do end <- getCPUTime; start >>= (\start2 -> return ((fromInteger (end - start2)/1000000000000)))) $!!
+--	((\start -> deepseq exp start) $!!
+--	(getCPUTime)
+--	))
 

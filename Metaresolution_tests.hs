@@ -9,6 +9,7 @@ import Metaresolution_heuristics
 import Data.List
 import Data.Maybe
 import Data.Either
+import Data.Time
 
 -- Unifiers
 u0 :: Unifier
@@ -1364,7 +1365,8 @@ resrule_tests = (putStr "***EXAMPLE 1***\n\n") >> resrule1_test >>
 		(putStr "***EXAMPLE 20***\n\n") >> resrule20_test
 
 
-pepper_maxproofdepth = 10
+-- There are proofs as short as 9 steps (8 proof depth), but first ones to appear are 12 steps (11 proof depth)
+pepper_maxproofdepth = 11
 pepper_nvars = 2
 
 pepper_mvs :: [Metavariable]
@@ -1413,10 +1415,12 @@ pepper_cnf :: CNF
 --	[+X1,-p1[1](f1[0]())],\
 --	[-p1[1](f1[0]()),p3[2](f2[0](),f3[0]())]\
 --]"
-pepper_cnf = read "[[-p1[1](x0),+p2[1](x0)],[-p1[1](x0),-p3[2](x0,x1),+p4[1](x1)],[-p2[1](x0),+p3[2](x0,f4[1](x0)),+p1[1](x0)],[-p2[1](x0),-p4[1](f4[1](x0)),+p1[1](x0)],[-p5[1](x0),+p2[1](x0)],[-p5[1](x0),-p3[2](x0,x1)],[-p2[1](x0),+p3[2](x0,f5[1](x0)),+p5[1](x0)],[+X0,+X1],[+X0,+p3[2](f2[0](),f3[0]())],[+X1,-p1[1](f1[0]())],[-p1[1](f1[0]()),+p3[2](f2[0](),f3[0]())]]"
+--pepper_cnf = read "[[-p1[1](x0),+p2[1](x0)],[-p1[1](x0),-p3[2](x0,x1),+p4[1](x1)],[-p2[1](x0),+p3[2](x0,f4[1](x0)),+p1[1](x0)],[-p2[1](x0),-p4[1](f4[1](x0)),+p1[1](x0)],[-p5[1](x0),+p2[1](x0)],[-p5[1](x0),-p3[2](x0,x1)],[-p2[1](x0),+p3[2](x0,f5[1](x0)),+p5[1](x0)],[+X0,+X1],[+X0,+p3[2](f2[0](),f3[0]())],[+X1,-p1[1](f1[0]())],[-p1[1](f1[0]()),+p3[2](f2[0](),f3[0]())]]"
+pepper_cnf = read "[[-p2[1](x0),+p3[2](x0,f4[1](x0)),+p1[1](x0)],[-p5[1](x0),+p2[1](x0)],[-p5[1](x0),-p3[2](x0,x1)],[+X0,+X1],[+X0,+p3[2](f2[0](),f3[0]())],[+X1,-p1[1](f1[0]())],[-p1[1](f1[0]()),+p3[2](f2[0](),f3[0]())]]"
 
 --pepper_sols = enumerate_cnf_unsat_instantiations default_metaresolution_heuristic default_metaunification_heuristic pepper_sig pepper_mvs pepper_cnf
-pepper_sols = enumerate_cnf_unsat_instantiations (simple_numeric_metaresolution_heuristic pepper_maxproofdepth) default_metaunification_heuristic pepper_sig pepper_mvs pepper_cnf
+--pepper_sols = enumerate_cnf_unsat_instantiations (simple_numeric_metaresolution_heuristic pepper_maxproofdepth) default_metaunification_heuristic pepper_sig pepper_mvs pepper_cnf
+pepper_sols = enumerate_cnf_unsat_instantiations (numeric_metaresolution_heuristic_2 pepper_maxproofdepth) default_metaunification_heuristic pepper_sig pepper_mvs pepper_cnf
 
 -- With no meta-variables, for the purpose of sanity checking.
 pepper_nmv_nvars = 2
@@ -1452,16 +1456,8 @@ pepper_nmv_cnf :: CNF
 --	[-p1[1](f1[0]()),p3[2](f2[0](),f3[0]())]\
 --]"
 --pepper_nmv_cnf = read "[[-p1[1](x0),+p2[1](x0)],[-p1[1](x0),-p3[2](x0,x1),+p4[1](x1)],[-p2[1](x0),+p3[2](x0,f4[1](x0)),+p1[1](x0)],[-p2[1](x0),-p4[1](f4[1](x0)),+p1[1](x0)],[-p5[1](x0),+p2[1](x0)],[-p5[1](x0),-p3[2](x0,x1)],[-p2[1](x0),+p3[2](x0,f5[1](x0)),+p5[1](f1[0]())],[+p5[1](f1[0]()),+p5[1](f2[0]())],[+p5[1](f1[0]()),+p3[2](f2[0](),f3[0]())],[+p5[1](f2[0]()),-p1[1](f1[0]())],[-p1[1](f1[0]()),+p3[2](f2[0](),f3[0]())]]"
---pepper_nmv_cnf = read "[[-p2[1](x0),+p3[2](x0,f4[1](x0)),+p1[1](x0)],[-p5[1](x0),+p2[1](x0)],[-p5[1](x0),-p3[2](x0,x1)],[+p5[1](f1[0]()),+p5[1](f2[0]())],[+p5[1](f1[0]()),+p3[2](f2[0](),f3[0]())],[+p5[1](f2[0]()),-p1[1](f1[0]())],[-p1[1](f1[0]()),+p3[2](f2[0](),f3[0]())]]"
---pepper_nmv_cnf = read "[[-p2[1](f1[0]()),+p3[2](f1[0](),f4[1](f1[0]())),+p5[1](f2[0]())],[-p2[1](x0),+p3[2](x0,f4[1](x0)),+p1[1](x0)],[-p5[1](x0),+p2[1](x0)],[-p5[1](x0),-p3[2](x0,x1)],[+p5[1](f1[0]()),+p5[1](f2[0]())],[+p5[1](f1[0]()),+p3[2](f2[0](),f3[0]())],[-p1[1](f1[0]()),+p3[2](f2[0](),f3[0]())]]"
-pepper_nmv_cnf = read "[[-p2[1](f1[0]()),+p5[1](f2[0]()),+p5[1](x0),+p5[1](x1),-p5[1](f1[0]())],[-p2[1](x0),+p3[2](x0,f4[1](x0)),+p1[1](x0)],[-p5[1](x0),+p2[1](x0)],[-p5[1](x0),-p3[2](x0,x1)],[+p5[1](f1[0]()),+p5[1](f2[0]())],[+p5[1](f1[0]()),+p3[2](f2[0](),f3[0]())],[-p1[1](f1[0]()),+p3[2](f2[0](),f3[0]())]]"
-
--- These work.
-pepper_nmv_cnf_works :: CNF
-pepper_nmv_cnf_works = read "[[-p2[1](f1[0]()),+p5[1](f2[0]()),-p5[1](f1[0]())],[-p2[1](x0),+p3[2](x0,f4[1](x0)),+p1[1](x0)],[-p5[1](x0),+p2[1](x0)],[-p5[1](x0),-p3[2](x0,x1)],[+p5[1](f1[0]()),+p5[1](f2[0]())],[+p5[1](f1[0]()),+p3[2](f2[0](),f3[0]())],[-p1[1](f1[0]()),+p3[2](f2[0](),f3[0]())],[-p5[1](f1[0]()),-p5[1](f1[0]()),+p5[1](f2[0]()),+p5[1](f2[0]()),+p5[1](x0)]]"
---pepper_nmv_cnf = read "[[-p2[1](f1[0]()),+p5[1](f2[0]()),-p5[1](f1[0]())],[-p2[1](x0),+p3[2](x0,f4[1](x0)),+p1[1](x0)],[-p5[1](x0),+p2[1](x0)],[-p5[1](x0),-p3[2](x0,x1)],[+p5[1](f1[0]()),+p5[1](f2[0]())],[+p5[1](f1[0]()),+p3[2](f2[0](),f3[0]())],[-p1[1](f1[0]()),+p3[2](f2[0](),f3[0]())],[-p5[1](f1[0]()),-p5[1](f1[0]()),+p5[1](f2[0]())]]"
---pepper_nmv_cnf = read "[[+p5[1](f2[0]()),-p5[1](f1[0]())],[-p2[1](x0),+p3[2](x0,f4[1](x0)),+p1[1](x0)],[-p5[1](x0),+p2[1](x0)],[-p5[1](x0),-p3[2](x0,x1)],[+p5[1](f1[0]()),+p5[1](f2[0]())],[+p5[1](f1[0]()),+p3[2](f2[0](),f3[0]())],[-p1[1](f1[0]()),+p3[2](f2[0](),f3[0]())]]"
---pepper_nmv_cnf = read "[[+p5[1](f2[0]())],[-p2[1](x0),+p3[2](x0,f4[1](x0)),+p1[1](x0)],[-p5[1](x0),+p2[1](x0)],[-p5[1](x0),-p3[2](x0,x1)],[+p5[1](f1[0]()),+p3[2](f2[0](),f3[0]())],[-p1[1](f1[0]()),+p3[2](f2[0](),f3[0]())]]"
+-- ALL FROM HERE DOWNWARDS WORK
+pepper_nmv_cnf = read "[[-p2[1](x0),+p3[2](x0,f4[1](x0)),+p1[1](x0)],[-p5[1](x0),+p2[1](x0)],[-p5[1](x0),-p3[2](x0,x1)],[+p5[1](f1[0]()),+p5[1](f2[0]())],[+p5[1](f1[0]()),+p3[2](f2[0](),f3[0]())],[+p5[1](f2[0]()),-p1[1](f1[0]())],[-p1[1](f1[0]()),+p3[2](f2[0](),f3[0]())]]"
 
 
 pepper_nmv_cl_cheatlist :: [Clause]
@@ -1494,14 +1490,17 @@ pepper_nmv_dflt_sols = enumerate_cnf_unsat_instantiations default_metaresolution
 just_complex_nvars = 2
 
 just_complex_mvs :: [Metavariable]
-just_complex_mvs = []
+just_complex_mvs = [read "X0",read "X1"]
 
 just_complex_sig :: ExtendedSignature
-just_complex_sig = (([read "p1[1]",read "p2[1]",read "p3[1]",read "p4[1]",read "p5[2]", read "p6[0]", read "p7[0]"],[read "f2[1]"],just_complex_nvars),([],0,[]),[read "f1[0]()"],[])
+just_complex_sig = (([read "p1[1]",read "p2[1]",read "p3[1]",read "p4[1]",read "p5[2]", read "p6[0]", read "p7[0]"],[read "f2[1]"],just_complex_nvars),([[read "X0",read "X1"]],just_complex_nvars,[0]),[read "f1[0]()"],[])
 
 just_complex_cnf :: CNF
-just_complex_cnf = read "[[-p1[1](x0),+p1[1](x1)],[+p1[1](x0)],[-p1[1](x0)]]"
+--just_complex_cnf = read "[[-p1[1](x0),+p1[1](x1)],[+p1[1](x0)],[-p1[1](x0)]]"
 --just_complex_cnf = read "[[-p1[1](x0),+p4[1](x0),-p5[2](f2[1](x0),x0)],[+p1[1](x0),-p5[2](x1,x0),+p2[1](x1)],[-p4[1](x0)],[+p5[2](x0,x1)],[-p2[1](f2[1](x0))]]"
+--just_complex_cnf = read "[[-X0,+p4[1](x0),-p5[2](f2[1](x0),x0)],[+p1[1](x0),-p5[2](x1,x0),+p2[1](x1)],[-p4[1](x0)],[+p5[2](x0,x1)],[-p2[1](f2[1](x0))]]"
+--just_complex_cnf = read "[[-X0,+p4[1](x0),-p5[2](f2[1](x0),x0)],[+p1[1](x0),+X1,+p2[1](x1)],[-p4[1](x0)],[+p5[2](x0,x1)],[-p2[1](f2[1](x0))]]"
+just_complex_cnf = read "[[-p1[1](x0),+p4[1](x0),-p5[2](f2[1](x0),x0)],[+p1[1](x0),-p5[2](x1,x0),+p2[1](x1)],[-p4[1](x0)],[+X0],[-p2[1](f2[1](x0))]]"
 
 
 just_complex_cl_cheatlist :: [Clause]
@@ -1525,7 +1524,121 @@ just_complex_res_enum = specific_resolvent_enum just_complex_res_cheatlist
 just_complex_heur :: MetaresolutionHeuristic _ _
 just_complex_heur = (just_complex_lit_choice,just_complex_res_enum,just_complex_clenum,500)
 
-just_complex_sols = enumerate_cnf_unsat_instantiations (simple_numeric_metaresolution_heuristic pepper_maxproofdepth) default_metaunification_heuristic just_complex_sig just_complex_mvs just_complex_cnf
+just_complex_sols = enumerate_cnf_unsat_instantiations (numeric_metaresolution_heuristic_2 pepper_maxproofdepth) default_metaunification_heuristic just_complex_sig just_complex_mvs just_complex_cnf
 just_complex_cheat_sols = enumerate_cnf_unsat_instantiations just_complex_heur default_metaunification_heuristic just_complex_sig just_complex_mvs just_complex_cnf
 
 
+
+unsat_maxproofdepth = 15
+unsat_nvars = 2
+
+unsat_mvs :: [Metavariable]
+unsat_mvs = [read "X0"]
+
+unsat_sig :: ExtendedSignature
+-- p1 == pizza(x)
+-- p2 == hasTopping(x,y)
+-- p3 == margherita(x)
+-- f1 == x0
+-- f2 == y1(x)
+unsat_sig = (([read "p1[1]",read "p2[2]",read "p3[1]"],[],unsat_nvars),([[read "X0"],[]],0,[0,2]),[read "f1[0]()", read "f2[1](x0)"],[])
+
+unsat_cnf :: CNF
+unsat_cnf = [read "[-p3[1](x0),-p2[2](x0,x1)]", read "[-p3[1](x0),+p1[1](x0)]", read "[-p1[1](x0),+p2[2](x0,f2[1](x0))]", read "[+X0]"]
+unsat_sols = enumerate_cnf_unsat_instantiations (numeric_metaresolution_heuristic_2 unsat_maxproofdepth) default_metaunification_heuristic unsat_sig unsat_mvs unsat_cnf
+
+
+unsat_f_nvars = 2
+
+unsat_f_mvs :: [Metavariable]
+unsat_f_mvs = [read "X0"]
+
+unsat_f_mvpart :: MetavariablePartition
+unsat_f_mvpart = ([[read "X0"],[]],0,[0,2])
+
+unsat_f_sks :: [Term]
+unsat_f_sks = [read "f1[0]()", read "f2[1](x0)"]
+
+unsat_f_ps :: Int -> [Predicate]
+unsat_f_ps 0 = [read "p1[1]", read "p2[2]", read "p3[1]"]
+unsat_f_ps n = (Pred (n+3) 1):(unsat_f_ps (n-1))
+
+unsat_f_sig :: Int -> ExtendedSignature
+unsat_f_sig n = ((unsat_f_ps n,[],unsat_f_nvars),unsat_f_mvpart,unsat_f_sks,[])
+
+unsat_f_levelpred :: Int -> Predicate
+unsat_f_levelpred 0 = Pred 1 1
+unsat_f_levelpred n = Pred (n+3) 1
+
+unsat_f_cnf_base :: Int -> CNF
+unsat_f_cnf_base 0 = [read "[-p3[1](x0),-p2[2](x0,x1)]", read "[-p1[1](x0),+p2[2](x0,f2[1](x0))]", read "[+X0]"]
+unsat_f_cnf_base n = ([NegLit (MLitL (Lit (unsat_f_levelpred n)  [read "x0"])),PosLit (MLitL (Lit (unsat_f_levelpred (n-1)) [read "x0"]))]):(unsat_f_cnf_base (n-1))
+
+unsat_f_cnf :: Int -> CNF
+unsat_f_cnf n = ([read "-p3[1](x0)",PosLit (MLitL (Lit (unsat_f_levelpred n) [read "x0"]))]):(unsat_f_cnf_base n)
+
+-- First parameter is the index of the CNF
+-- Second parameter is the maximum proof depth
+unsat_f_sols :: Int -> Int -> Enumeration (_,Maybe (LogicalInstantiation,[Unifier],ResolutionProof,FullSolution,[UnifierDescription],Instantiation))
+unsat_f_sols n maxproofdepth = enumerate_cnf_unsat_instantiations (numeric_metaresolution_heuristic_2 maxproofdepth) default_metaunification_heuristic (unsat_f_sig n) unsat_f_mvs (unsat_f_cnf n)
+
+-- (Depth of the chain of implications,Maximum depth of the proof search,Number of solutions,Machine ID)
+type UnsatFTest = (Int,Int,Int,String)
+-- Nothing indicates that there was not so many solutions.
+type UnsatFTestResult = Maybe Float
+
+run_unsat_f_test :: Int -> Int -> Int -> String -> IO UnsatFTestResult
+run_unsat_f_test n maxdepth sols id = if ((length rs) >= (sols+1)) then (measure_time (map (\i -> show_unsat_instantiation (unsat_f_sig n) unsat_f_mvs ((enum_up_to_h i (unsat_f_sols n maxdepth)) !! i)) [1..sols]) >>= (return . Just)) else (return Nothing) where rs = (enum_up_to_h sols (unsat_f_sols n maxdepth))
+
+print_unsat_f_test :: UnsatFTest -> IO ()
+print_unsat_f_test (n,maxdepth,sols,id) =
+	(putStr (show n)) >> (putStr "\t") >>
+	(putStr (show maxdepth)) >> (putStr "\t") >>
+	(putStr (show sols)) >> (putStr "\t") >>
+	(putStr (show id)) >> (putStr "\t") >>
+	getCurrentTime >>= (putStr . show) >> (putStr "\t") >>
+	(print_unsat_f_test_result (run_unsat_f_test n maxdepth sols id)) >> (putStr "\n")
+
+print_unsat_f_test_result :: IO UnsatFTestResult -> IO ()
+print_unsat_f_test_result x = x >>= (putStr . print_unsat_f_test_helper)
+
+print_unsat_f_test_helper :: UnsatFTestResult -> String
+print_unsat_f_test_helper Nothing = "Not enough solutions"
+print_unsat_f_test_helper (Just r) = (show r)
+
+-- Parameters, in order:
+-- Depths of chain of implications to try
+-- Depths of proof searches to try
+-- Numbers of solutions to try
+-- Machine ID
+-- Number of times to run each test.
+do_batch_unsat_f_tests :: [Int] -> [Int] -> [Int] -> String -> Int -> IO ()
+do_batch_unsat_f_tests _ _ _ _ 0 = putStr ""
+do_batch_unsat_f_tests ns maxdepths solss id i = foldr (>>) (do_batch_unsat_f_tests ns maxdepths solss id (i-1)) (map (\vs -> print_unsat_f_test (vs !! 0,vs !! 1,vs !! 2,id)) values) where values = combinations [ns,maxdepths,solss]
+
+
+
+
+
+
+
+-----------------------------------
+-- Meta-resolution global tests
+-----------------------------------
+
+-- Evaluating functions
+metares_all_insts_diff :: [Metavariable] -> Int -> Enumeration (_,Maybe (LogicalInstantiation,[Unifier],ResolutionProof,FullSolution,[UnifierDescription],Instantiation)) -> AutomatedTestResult
+metares_all_insts_diff mvs n en = metares_all_insts_diff_helper_3 mvs aslist where aslist = enum_up_to_h n en
+
+metares_all_insts_diff_helper_3 :: [Metavariable] -> [Maybe (LogicalInstantiation,[Unifier],ResolutionProof,FullSolution,[UnifierDescription],Instantiation)] -> AutomatedTestResult
+metares_all_insts_diff_helper_3 _ [] = ATR True "All instantiations distinct."
+metares_all_insts_diff_helper_3 mvs (s1:ss) = if (any (\s2 -> metares_all_insts_diff_helper s1 s2) ss) then (ATR False ("At least instantiation \n" ++ (metares_all_insts_diff_helper_2 mvs s1) ++ " is repeated.")) else (metares_all_insts_diff_helper_3 mvs ss)
+
+metares_all_insts_diff_helper :: Maybe (LogicalInstantiation,[Unifier],ResolutionProof,FullSolution,[UnifierDescription],Instantiation) -> Maybe (LogicalInstantiation,[Unifier],ResolutionProof,FullSolution,[UnifierDescription],Instantiation) -> Bool
+metares_all_insts_diff_helper Nothing _ = False
+metares_all_insts_diff_helper _ Nothing = False
+metares_all_insts_diff_helper (Just (_,_,_,_,uds1,inst1)) (Just (_,_,_,_,uds2,inst2)) = (eq_inst inst1 inst2) && (all (\(ud1,ud2) -> eq_unifier ud1 ud2) (zip uds1 uds2))
+
+metares_all_insts_diff_helper_2 :: [Metavariable] -> Maybe (LogicalInstantiation,[Unifier],ResolutionProof,FullSolution,[UnifierDescription],Instantiation) -> String
+metares_all_insts_diff_helper_2 _ Nothing = "Unsatisfiable solution\n"
+metares_all_insts_diff_helper_2 mvs (Just (_,_,_,_,uds1,inst1)) = (show_inst inst1 mvs) ++ "\nwith\n" ++ (show uds1) ++ "\n"

@@ -214,33 +214,79 @@ all_simpl_mlit ml = delid_mlit (simpl_mlit (norm_mlit ml))
 -- Introduce instantiations and meta-variable mappings
 -- Keep in mind that Literal and Term may contain meta-variables, so this includes partial instantiations.
 
-type LitInstantiation = (Metavariable -> Literal)
-type TermInstantiation = (Metavariable -> Term)
+--type LitInstantiation = (Metavariable -> Literal)
+--type TermInstantiation = (Metavariable -> Term)
+type LitInstantiation = [(Metavariable,Literal)]
+type TermInstantiation = [(Metavariable,Term)]
+
+fun_from_litinst :: LitInstantiation -> Metavariable -> Literal
+fun_from_litinst [] mv = LitM mv
+fun_from_litinst ((mv1,l):mvs) mv2 | mv1 == mv2 = l
+fun_from_litinst ((mv1,l):mvs) mv2 = fun_from_litinst mvs mv2
+
+fun_from_terminst :: TermInstantiation -> Metavariable -> Term
+fun_from_terminst [] mv = TMeta mv
+fun_from_terminst ((mv1,t):mvs) mv2 | mv1 == mv2 = t
+fun_from_terminst ((mv1,t):mvs) mv2 = fun_from_terminst mvs mv2
+
 -- Identity instantiations
 idinst_lit :: LitInstantiation
-idinst_lit mv = LitM mv
+idinst_lit = []
+--idinst_lit mv = LitM mv
 idinst_term :: TermInstantiation
-idinst_term mv = TMeta mv
+--idinst_term mv = TMeta mv
+idinst_term = []
 idinst :: Instantiation
 idinst = (idinst_lit, idinst_term)
 
+list_contained_no_order :: Eq t => [t] -> [t] -> Bool
+list_contained_no_order [] _ = True
+list_contained_no_order (x:xs) l = (elem x l) && (list_contained_no_order xs l)
+
+list_eq_no_order :: Eq t => [t] -> [t] -> Bool
+list_eq_no_order l1 l2 = (list_contained_no_order l1 l2) && (list_contained_no_order l2 l1)
+
+eq_litinst :: LitInstantiation -> LitInstantiation -> Bool
+eq_litinst = list_eq_no_order
+
+eq_terminst :: TermInstantiation -> TermInstantiation -> Bool
+eq_terminst = list_eq_no_order
+
 type Instantiation = (LitInstantiation,TermInstantiation)
 
+eq_inst :: Instantiation -> Instantiation -> Bool
+eq_inst (li1,ti1) (li2,ti2) = (eq_litinst li1 li2) && (eq_terminst ti1 ti2)
+
 has_inst_value :: Instantiation -> Metavariable -> Bool
-has_inst_value i mv = (((fst i) mv /= (LitM mv)) || ((snd i) mv /= (TMeta mv)))
+--has_inst_value i mv = (((fst i) mv /= (LitM mv)) || ((snd i) mv /= (TMeta mv)))
+has_inst_value (li,ti) mv = (has_inst_value_lit li mv) || (has_inst_value_term ti mv)
+
+has_inst_value_lit :: LitInstantiation -> Metavariable -> Bool
+has_inst_value_lit [] mv = False
+has_inst_value_lit ((mv1,(LitM mv2)):mvs) mv3 | mv1 == mv2 = has_inst_value_lit mvs mv3
+has_inst_value_lit ((mv1,l):mvs) mv2 | mv1 == mv2 = True
+has_inst_value_lit ((mv1,l):mvs) mv2 = has_inst_value_lit mvs mv2
+
+has_inst_value_term :: TermInstantiation -> Metavariable -> Bool
+has_inst_value_term [] mv = False
+has_inst_value_term ((mv1,(TMeta mv2)):mvs) mv3 | mv1 == mv2 = has_inst_value_term mvs mv3
+has_inst_value_term ((mv1,t):mvs) mv2 | mv1 == mv2 = True
+has_inst_value_term ((mv1,t):mvs) mv2 = has_inst_value_term mvs mv2
 
 show_inst_mv :: Instantiation -> Metavariable -> String
-show_inst_mv i mv | ((fst i) mv /= (LitM mv)) = (show mv) ++ " -> " ++ (show ((fst i) mv))
-show_inst_mv i mv | ((snd i) mv /= (TMeta mv)) = (show mv) ++ " -> " ++ (show ((snd i) mv))
+show_inst_mv i mv | (fun_from_litinst (fst i) mv /= (LitM mv)) = (show mv) ++ " -> " ++ (show (fun_from_litinst (fst i) mv))
+show_inst_mv i mv | (fun_from_terminst (snd i) mv /= (TMeta mv)) = (show mv) ++ " -> " ++ (show (fun_from_terminst (snd i) mv))
 show_inst_mv i mv = (show mv) ++ " -> " ++ (show mv)
 
 show_inst :: Instantiation -> [Metavariable] -> String
 show_inst i [] = "{}"
 show_inst i (x:xs) = "{" ++ (foldl (\s -> \mv -> s ++ "," ++ (show_inst_mv i mv)) (show_inst_mv i x) xs) ++ "}"
+--show_inst (li,ti) _ = case mvs of {[] -> "{}"; (x:xs) -> "{" ++ (foldl (\s -> \mv -> s ++ "," ++ (show_inst_mv (li,ti) mv)) (show_inst_mv (li,ti) x) xs) ++ "}"} where mvs = (map fst li) ++ (map fst ti)
+
 
 apply_inst :: Instantiation -> Metavariable -> Maybe (Either Term Literal)
-apply_inst (li,ti) mv | li mv /= (LitM mv) = Just (Right (li mv))
-apply_inst (li,ti) mv | ti mv /= (TMeta mv) = Just (Left (ti mv))
+apply_inst (li,ti) mv | lv /= (LitM mv) = Just (Right lv) where lv = fun_from_litinst li mv
+apply_inst (li,ti) mv | tv /= (TMeta mv) = Just (Left tv) where tv = fun_from_terminst ti mv
 apply_inst (li,ti) mv = Nothing
 
 contains_variable :: Variable -> Maybe (Either Term Literal) -> Bool
@@ -261,11 +307,11 @@ contains_variable_l y (Lit p ts) = any (contains_variable_t y) ts
 
 apply_inst_term :: Instantiation -> Term -> Term
 apply_inst_term i (TVar v) = TVar v
-apply_inst_term i (TMeta mv) = (snd i) mv
+apply_inst_term i (TMeta mv) = fun_from_terminst (snd i) mv
 apply_inst_term i (TFun f l) = TFun f (map (apply_inst_term i) l)
 
 apply_inst_lit :: Instantiation -> Literal -> Literal
-apply_inst_lit i (LitM mv) = (fst i) mv
+apply_inst_lit i (LitM mv) = fun_from_litinst (fst i) mv
 apply_inst_lit i (Lit p l) = Lit p (map (apply_inst_term i) l)
 
 apply_inst_mterm :: Instantiation -> Metaterm -> Metaterm
@@ -278,22 +324,84 @@ apply_inst_mlit i (MLitL l) = MLitL (apply_inst_lit i l)
 apply_inst_mlit i (MLitR u ml) = MLitR u (apply_inst_mlit i ml)
 apply_inst_mlit i (MLitP p l) = MLitP p (map (apply_inst_mterm i) l)
 
+clean_dups_inst :: Instantiation -> Instantiation
+clean_dups_inst (li,ti) = (clean_dups_inst_lit [] li,clean_dups_inst_term [] ti)
+
+clean_dups_inst_lit :: [(Metavariable,Literal)] -> LitInstantiation -> LitInstantiation
+clean_dups_inst_lit mvs [] = []
+clean_dups_inst_lit mvs ((mv,l):ls) | elem (mv,l) mvs = clean_dups_inst_lit mvs ls
+clean_dups_inst_lit mvs ((mv1,(LitM mv2)):ls) | mv1 == mv2 = clean_dups_inst_lit mvs ls
+clean_dups_inst_lit mvs ((mv,l):ls) = (mv,l):(clean_dups_inst_lit ((mv,l):mvs) ls)
+
+clean_dups_inst_term :: [(Metavariable,Term)] -> TermInstantiation -> TermInstantiation
+clean_dups_inst_term mvs [] = []
+clean_dups_inst_term mvs ((mv,t):ts) | elem (mv,t) mvs = clean_dups_inst_term mvs ts
+clean_dups_inst_term mvs ((mv1,(TMeta mv2)):ts) | mv1 == mv2 = clean_dups_inst_term mvs ts
+clean_dups_inst_term mvs ((mv,t):ts) = (mv,t):(clean_dups_inst_term ((mv,t):mvs) ts)
+
 -- As usual, read from right to left. The first instantiation applied is the second parameter.
 compose_inst :: Instantiation -> Instantiation -> Instantiation
-compose_inst i j = (\mv -> apply_inst_lit i ((fst j) mv), \mv -> apply_inst_term i ((snd j) mv))
+--compose_inst i j = (\mv -> apply_inst_lit i ((fst j) mv), \mv -> apply_inst_term i ((snd j) mv))
+compose_inst i (lj,tj) = clean_dups_inst (compose_inst_lit i lj,compose_inst_term i tj)
+
+compose_inst_lit :: Instantiation -> LitInstantiation -> LitInstantiation
+compose_inst_lit (li,ti) [] = li
+compose_inst_lit i ((mv,l):mvs) = ((mv,apply_inst_lit i l):(compose_inst_lit i mvs))
+
+compose_inst_term :: Instantiation -> TermInstantiation -> TermInstantiation
+compose_inst_term (li,ti) [] = ti
+compose_inst_term i ((mv,t):mvs) = ((mv,apply_inst_term i t):(compose_inst_term i mvs)) 
 
 compose_insts :: [Instantiation] -> Instantiation
 compose_insts l = foldr compose_inst (idinst_lit,idinst_term) l
 
 build_inst :: Metavariable -> Either Term Literal -> Instantiation
-build_inst mv (Left t) = (idinst_lit,(\mx -> if (mx == mv) then t else (TMeta mx)))
-build_inst mv (Right l) = (\mx -> if (mx == mv) then l else (LitM mx),idinst_term)
+--build_inst mv (Left t) = (idinst_lit,(\mx -> if (mx == mv) then t else (TMeta mx)))
+build_inst mv (Left t) = (idinst_lit,[(mv,t)])
+--build_inst mv (Right l) = (\mx -> if (mx == mv) then l else (LitM mx),idinst_term)
+build_inst mv (Right l) = ([(mv,l)],idinst_term)
+
+build_inst_from_list :: [(Metavariable,Either Term Literal)] -> Instantiation
+build_inst_from_list [] = (idinst_lit,idinst_term)
+build_inst_from_list ((mv,Left t):mvs) = (prevli,((mv,t):prevti)) where (prevli,prevti) = build_inst_from_list mvs
+build_inst_from_list ((mv,Right l):mvs) = (((mv,l):prevli),prevti) where (prevli,prevti) = build_inst_from_list mvs
 
 set_instantiation_fs :: FullSolution -> Metavariable -> Either Term Literal -> FullSolution
 set_instantiation_fs (mvs,eqs,(inst,cs),(g,sol,ueqs)) mv v = (mvs,eqs,(compose_inst (build_inst mv v) inst,cs),(g,sol,ueqs))
+--set_instantiation_fs (mvs,eqs,((li,ti),cs),(g,sol,ueqs)) mv (Left t) = (mvs,eqs,((li,(mv,t):ti),cs),(g,sol,ueqs))
+--set_instantiation_fs (mvs,eqs,((li,ti),cs),(g,sol,ueqs)) mv (Right l) = (mvs,eqs,(((mv,l):li,ti),cs),(g,sol,ueqs))
 
 set_instantiation :: Instantiation -> Metavariable -> Either Term Literal -> Instantiation
 set_instantiation inst mv v = compose_inst (build_inst mv v) inst
+--set_instantiation (li,ti) mv (Left t) = (li,(mv,t):ti)
+--set_instantiation (li,ti) mv (Right l) = ((mv,l):li,ti)
+
+-- Make the instantiation single, if possible, by performing unification at the meta-level.
+most_instantiated_all :: Instantiation -> Maybe Instantiation
+most_instantiated_all inst = if (any (isNothing . snd) results) then Nothing else (Just (build_inst_from_list (map (\(mv,v) -> (mv,fromJust v)) results))) where sorted = all_insts_permv inst; results = map (\(mv,vs) -> (mv,most_instantiated_all_permv vs)) sorted
+
+all_insts_permv :: Instantiation -> [(Metavariable, [Either Term Literal])]
+all_insts_permv (li,ti) = all_insts_permv_rec li ti
+
+all_insts_permv_rec :: LitInstantiation -> TermInstantiation -> [(Metavariable, [Either Term Literal])]
+all_insts_permv_rec [] [] = []
+all_insts_permv_rec [] ((mv,t):ts) = ((mv,(Left t):prev_mv):prev) where (prev,prev_mv) = all_insts_permv_rec_findprev (all_insts_permv_rec [] ts) mv
+all_insts_permv_rec ((mv,l):ls) ti = ((mv,(Right l):prev_mv):prev) where (prev,prev_mv) = all_insts_permv_rec_findprev (all_insts_permv_rec ls ti) mv
+
+all_insts_permv_rec_findprev :: [(Metavariable, [Either Term Literal])] -> Metavariable -> ([(Metavariable, [Either Term Literal])],[Either Term Literal])
+all_insts_permv_rec_findprev [] _ = ([],[])
+all_insts_permv_rec_findprev ((mv1,l):mvs) mv2 | mv1 == mv2 = (mvs,l)
+all_insts_permv_rec_findprev ((mv1,l):mvs) mv2 = ((mv1,l):prev,prev_mv) where (prev,prev_mv) = all_insts_permv_rec_findprev mvs mv2
+
+most_instantiated_all_permv :: [Either Term Literal] -> Maybe (Either Term Literal)
+-- This case should never happen. Leave it unexpressed to signal the bad bug.
+-- Another option would be to use the plain meta-variable as the initial value, but while more elegant, it is a lot less efficient and more bug-prone.
+--most_instantiated_all_permv [] = Nothing
+most_instantiated_all_permv (x:xs) = foldr most_instantiated_mbs (Just x) (map Just xs)
+
+most_instantiated_mbs :: Maybe (Either Term Literal) -> Maybe (Either Term Literal) -> Maybe (Either Term Literal)
+most_instantiated_mbs x y = demaybize (maybe_apply_2 most_instantiated x y)
+-- most_instantiated :: Either Term Literal -> Either Term Literal -> Maybe (Either Term Literal)
 
 data Constraint = Tcstr Metaterm Metaterm | Lcstr Metaliteral Metaliteral | Unsatisfiable deriving Eq
 instance Show Constraint where
@@ -332,7 +440,7 @@ show_full_soln :: FullSolution -> IO ()
 show_full_soln fs = putStr (full_soln_str fs)
 
 apply_inst_fs :: FullSolution -> Metavariable -> Either Term Literal
-apply_inst_fs (_,_,(i,_),_) mv = case (apply_inst i mv) of {Just x -> x}
+apply_inst_fs (_,_,(i,_),_) mv = case (apply_inst i mv) of {Just x -> x; Nothing -> Left (TMeta mv)}
 
 -- Simplify constraints
 simpl_sides_cstr :: Constraint -> Constraint
@@ -451,7 +559,7 @@ simpl_cstr mvs (Lcstr (MLitP p mt1) (MLitP q mt2)) | p == q = (True, mvs, (idins
 simpl_cstr mvs (Lcstr (MLitP p mt1) (MLitP q mt2)) = (True, mvs, (idinst, [Unsatisfiable]))
 simpl_cstr mvs (Lcstr (MLitP p mt) ml) | isJust (mmv) = 	(True, total_mvs, (
 								(
-									((\mv -> case mv of {Metavar n | n == m -> Lit p (map (\mv -> TMeta mv) new_mvs); otherwise -> idinst_lit mv}),
+									([(Metavar m,Lit p (map TMeta new_mvs))],
 									idinst_term),
 								(map (\pair -> Tcstr (fst pair) (snd pair)) (zip (map (\mv -> build_metaterm us (MTermT (TMeta mv))) new_mvs) mt))) 
 							)) where mmv = is_metavar_lit ml ; m = case mmv of {Just (Metavar x,_) -> x} ; us = case mmv of {Just (_,x) -> reverse x} ; new_mvs = new_metavars mvs mt; total_mvs = mvs ++ new_mvs
@@ -517,6 +625,9 @@ instance Show UnifierValue where
 	show (UV v t) = (show v) ++ " -> " ++ (show t)
 
 type UnifierDescription = [UnifierValue]
+
+eq_unifier :: UnifierDescription -> UnifierDescription -> Bool
+eq_unifier = list_eq_no_order
 
 -- We avoid duplicates here, as this should not be called too often.
 -- It is the dumb way to check duplicates, with no hashes, but "hey man, I'm too tired for this".
@@ -1495,8 +1606,8 @@ update_graph_with_constraints_fsol (mvs,mveqs,(inst,cs),gsol) ncs | (elem Unsati
 update_graph_with_constraints_fsol (mvs,mveqs,(inst,cs),gsol) ncs = (mvs,mveqs,(inst,[]),update_graph_with_constraints gsol (cs++ncs))
 
 -- For usage from outside this module.
-update_graph_with_constraints_and_propagate :: FullSolution -> [Constraint] -> FullSolution
-update_graph_with_constraints_and_propagate (mvs,mveqs,(inst,ocs),(g,sol,ueqs)) cs = clean_dep_graph_fs (update_graph_all (mvs,mveqs,(inst,ucs),(ug,usol,uueqs)) new []) where (umvs,umveqs,(uinst,ucs),(ug,usol,uueqs)) = update_graph_with_constraints_fsol (mvs,mveqs,(inst,ocs),(g,sol,ueqs)) cs; new = maybe_sol_from_list (ug,usol,uueqs) (all_eq ug (map (get_dependent) (nodes ug)))
+update_graph_with_constraints_and_propagate :: ExtendedSignature -> FullSolution -> [Constraint] -> FullSolution
+update_graph_with_constraints_and_propagate sig (mvs,mveqs,(inst,ocs),(g,sol,ueqs)) cs = clean_dep_graph_fs (update_graph_all sig (mvs,mveqs,(inst,ucs),(ug,usol,uueqs)) new []) where (umvs,umveqs,(uinst,ucs),(ug,usol,uueqs)) = update_graph_with_constraints_fsol (mvs,mveqs,(inst,ocs),(g,sol,ueqs)) cs; new = maybe_sol_from_list (ug,usol,uueqs) (all_eq ug (map (get_dependent) (nodes ug)))
 
 build_graph_from_constraints :: [Constraint] -> PartiallySolvedDGraph
 build_graph_from_constraints cs = update_graph_with_constraints (empty_graph,[],[]) cs
@@ -1697,6 +1808,35 @@ apply_graph_solution_lit sol (MLitR u ml) = case mb_dep of {Nothing -> rml; Just
 apply_graph_solution_cstr :: DependencyGraphSolution -> Constraint -> Constraint
 apply_graph_solution_cstr sol (Tcstr mt1 mt2) = Tcstr (apply_graph_solution_term sol mt1) (apply_graph_solution_term sol mt2)
 apply_graph_solution_cstr sol (Lcstr ml1 ml2) = Lcstr (apply_graph_solution_lit sol ml1) (apply_graph_solution_lit sol ml2)
+
+-- This version actually keeps track of the last unifier and passes it down so that if a whole term or literal can be solved within with the inner-most unifier, it does so.
+apply_graph_solution_term_full :: DependencyGraphSolution -> Metaterm -> Metaterm
+apply_graph_solution_term_full sol (MTermT t) = MTermT t
+apply_graph_solution_term_full sol (MTermF f mts) = MTermF f (map (apply_graph_solution_term_full sol) mts)
+--apply_graph_solution_term sol (MTermR u mt) = case mb_dep of {Nothing -> MTermR u rmt; Just dep -> case (apply_graph_solution sol dep) of {Nothing -> MTermR u rmt; Just (Left t) -> MTermT t}} where rmt = apply_graph_solution_term sol mt; mb_dep = depnode_from_metaterm rmt
+apply_graph_solution_term_full sol (MTermR u mt) = case total of {Just t -> MTermT t; Nothing -> case mb_dep of {Nothing -> rmt; Just dep -> case (apply_graph_solution sol dep) of {Nothing -> rmt; Just (Left t) -> MTermT t}}} where total = apply_graph_solution_term_full_helper sol u mt; rimt = apply_graph_solution_term_full sol mt; rmt = (MTermR u rimt); mb_dep = depnode_from_metaterm rmt
+
+-- This one solves it retorting to the last unifier, and only if it does not have any additional unifiers.
+apply_graph_solution_term_full_helper :: DependencyGraphSolution -> Unifier -> Metaterm -> Maybe Term
+apply_graph_solution_term_full_helper sol u (MTermT (TVar x)) = case (apply_graph_solution sol dep) of {Nothing -> Nothing; Just (Left t) -> Just t} where dep = (DRec u (DVar x))
+apply_graph_solution_term_full_helper sol u (MTermT (TFun f ts)) = if (all isJust ress) then Just (TFun f (map fromJust ress)) else Nothing where mts = map MTermT ts; ress = map (apply_graph_solution_term_full_helper sol u) mts
+apply_graph_solution_term_full_helper sol u (MTermT (TMeta m)) = Nothing
+apply_graph_solution_term_full_helper sol u (MTermF f mts) = if (all isJust ress) then Just (TFun f (map fromJust ress)) else Nothing where ress = map (apply_graph_solution_term_full_helper sol u) mts
+apply_graph_solution_term_full_helper sol u (MTermR _ _) = Nothing
+
+apply_graph_solution_lit_full :: DependencyGraphSolution -> Metaliteral -> Metaliteral
+apply_graph_solution_lit_full sol (MLitL l) = MLitL l
+apply_graph_solution_lit_full sol (MLitP p mts) = MLitP p (map (apply_graph_solution_term_full sol) mts)
+--apply_graph_solution_lit sol (MLitR u ml) = case mb_dep of {Nothing -> MLitR u rml; Just dep -> case (apply_graph_solution sol dep) of {Nothing -> MLitR u rml; Just (Right l) -> MLitL l}} where rml = apply_graph_solution_lit sol ml; mb_dep = depnode_from_metalit rml
+apply_graph_solution_lit_full sol (MLitR u ml) = case total of {Just l -> MLitL l; Nothing -> case mb_dep of {Nothing -> rml; Just dep -> case (apply_graph_solution sol dep) of {Nothing -> rml; Just (Right l) -> MLitL l}}} where total = apply_graph_solution_lit_full_helper sol u ml; riml = apply_graph_solution_lit_full sol ml; rml = (MLitR u riml); mb_dep = depnode_from_metalit rml
+
+apply_graph_solution_lit_full_helper :: DependencyGraphSolution -> Unifier -> Metaliteral -> Maybe Literal
+apply_graph_solution_lit_full_helper sol u (MLitL (Lit p ts)) = if (all isJust ress) then Just (Lit p (map fromJust ress)) else Nothing where mts = map MTermT ts; ress = map (apply_graph_solution_term_full_helper sol u) mts
+apply_graph_solution_lit_full_helper sol u (MLitL (LitM m)) = Nothing
+apply_graph_solution_lit_full_helper sol u (MLitP p mts) = if (all isJust ress) then Just (Lit p (map fromJust ress)) else Nothing where ress = map (apply_graph_solution_term_full_helper sol u) mts
+apply_graph_solution_lit_full_helper sol u (MLitR _ _) = Nothing
+
+
 
 --empty_graph_solution :: DependencyGraph -> DependencyGraphSolution
 --empty_graph_solution _ = []
@@ -2333,30 +2473,37 @@ set_solution fs _ = fs
 set_all_solutions :: FullSolution -> [(Dependent,Either Term Literal)] -> FullSolution
 set_all_solutions fs dvs = foldl set_solution fs dvs
 
-update_graph_single_maybe :: FullSolution -> (Dependent,Either Term Literal) -> FullSolution
-update_graph_single_maybe fs (dep,v) = case (find_node_maybe (get_graph fs) dep) of {Nothing -> fs; (Just _) -> update_graph_all fs [(dep,v)] []}
+update_graph_single_maybe :: ExtendedSignature -> FullSolution -> (Dependent,Either Term Literal) -> FullSolution
+update_graph_single_maybe sig fs (dep,v) = case (find_node_maybe (get_graph fs) dep) of {Nothing -> fs; (Just _) -> update_graph_all sig fs [(dep,v)] []}
 
 -- Updates the graph as long as there is something to update that is certain (i.e. no search).
 -- We have two lists, the ones that we did not consider even for horizontal updates and those that are pending updating through vertical updates.
-update_graph_all :: FullSolution -> [(Dependent, Either Term Literal)] -> [(Dependent, Either Term Literal)] -> FullSolution
+update_graph_all :: ExtendedSignature -> FullSolution -> [(Dependent, Either Term Literal)] -> [(Dependent, Either Term Literal)] -> FullSolution
 -- If there are horizontal updates to perform, perform them and call recursively. Otherwise, if there are vertical updates to perform, perform them and call recursively.
-update_graph_all fs _ _ | is_fullsol_unsatisfiable fs = fs
-update_graph_all fs [] [] = fs
+update_graph_all sig fs _ _ | is_fullsol_unsatisfiable fs = fs
+update_graph_all sig fs [] [] = fs
 --update_graph_all fs [] (dv:dvs) | is_node (get_graph fs) (fst dv) = update_graph_all rs rl dvs where (rs,rl) = do_one_update_to_graph update_graph_from_value_vdep (fs,[]) dv
 --update_graph_all fs [] (dv:dvs) = update_graph_all rs rl dvs where (rs,rl) = do_one_update_to_graph update_graph_from_value_vdep (fs,[]) dv
 --update_graph_all fs [] (dv:dvs) = do_one_update_to_graph update_graph_from_value_vdep (rs,rl) dv where (rs,rl) = update_graph_all fs [] dvs
-update_graph_all fs [] (dv:dvs) = update_graph_all rrs rl dvs where (rs,rl) = do_one_update_to_graph update_graph_from_value_vdep fs dv; rrs = simplify_ueqs_fs rs
+update_graph_all sig fs [] (dv:dvs) = update_graph_all sig rrs rl dvs where (rs,rl) = do_one_update_to_graph sig update_graph_from_value_vdep fs dv; rrs = simplify_ueqs_fs rs
 --update_graph_all fs [] (dv:dvs) = update_graph_all fs [] dvs
 --update_graph_all fs (dh:dhs) dvs | is_node (get_graph fs) (fst dh) = update_graph_all rs (dhs ++ rl) (dh:dvs) where (rs,rl) = do_one_update_to_graph update_graph_from_value_hdep_full (fs,dhs) dh
 --update_graph_all fs (dh:dhs) dvs s = update_graph_all rrs rrl [] where (rs,rl) = update_graph_all fs dhs dvs; (rrs,rrl) = do_one_update_to_graph update_graph_from_value_hdep_full (rs,rl) dh
-update_graph_all fs (dh:dhs) dvs = update_graph_all rs (dhs ++ rl) (dh:dvs) where (rs,rl) = do_one_update_to_graph update_graph_from_value_hdep_full fs dh
+update_graph_all sig fs (dh:dhs) dvs = update_graph_all sig rs (dhs ++ rl) (dh:dvs) where (rs,rl) = do_one_update_to_graph sig update_graph_from_value_hdep_full fs dh
 --update_graph_all fs (dh:dhs) dvs = update_graph_all fs dhs dvs
 
 --do_one_update_to_graph :: (FullSolution -> t -> (FullSolution,[Dependent])) -> (FullSolution,[(Dependent,Either Term Literal)]) -> t -> (FullSolution,[(Dependent,Either Term Literal)])
 --do_one_update_to_graph f ((mvs,(inst,cs),(g,sol)),l) x = ((nmvs,usol,(fg,l ++ new)),new) where ((nmvs,usol,(fg,newsol)),pos) = f (mvs,(inst,cs),(g,sol)) x; new = maybe_sol_from_list (fg,newsol) (all_eq fg pos)
 
-do_one_update_to_graph :: (FullSolution -> t -> (FullSolution,[Dependent])) -> FullSolution -> t -> (FullSolution,[(Dependent,Either Term Literal)])
-do_one_update_to_graph f (mvs,eqs,(inst,cs),(g,sol,ueqs)) x = ((set_all_solutions (nmvs,neqs,usol,(fg,sol,nueqs)) new),(filter (sol_from_list_filter sol) new)) where ((nmvs,neqs,usol,(fg,newsol,nueqs)),pos) = f (mvs,eqs,(inst,cs),(g,sol,ueqs)) x; new = maybe_sol_from_list (fg,newsol,nueqs) (all_eq fg pos)
+do_one_update_to_graph :: ExtendedSignature -> (FullSolution -> t -> (FullSolution,[Dependent])) -> FullSolution -> t -> (FullSolution,[(Dependent,Either Term Literal)])
+do_one_update_to_graph (sig,part,sks,ls) f (mvs,eqs,(inst,cs),(g,sol,ueqs)) x = ((set_all_solutions rfs new),(filter (sol_from_list_filter sol) new)) where ((nmvs,neqs,usol,(fg,newsol,nueqs)),pos) = f (mvs,eqs,(inst,cs),(g,sol,ueqs)) x; new = maybe_sol_from_list (fg,newsol,nueqs) (all_eq fg pos); rfs_new = set_all_solutions (nmvs,neqs,usol,(fg,newsol,nueqs)) new; mb_consistent = restore_consistency_metavar_links (sig,part,sks,ls) (filter_relevant_links_dependents new ls) rfs_new; rfs = if (isJust mb_consistent) then (fromJust mb_consistent) else (mvs,eqs,(idinst,[Unsatisfiable]),(g,sol,ueqs))
+
+filter_relevant_links_dependents :: [(Dependent,Either Term Literal)] -> [MetavariableLink] -> [MetavariableLink]
+filter_relevant_links_dependents [] ls = []
+filter_relevant_links_dependents ((d,_):ds) ls | is_dependent_metavar d = (filter (\(mv2,lls) -> mv2 == mv) ls) ++ (filter_relevant_links_dependents ds ls) where mv = extract_metavar_dependent d
+filter_relevant_links_dependents ((d,_):ds) ls = filter_relevant_links_dependents ds ls
+
+-- restore_consistency_metavar_links :: [MetavariableLink] -> FullSolution -> Maybe FullSolution
 
 -- We filter REPEATED solutions. This is important to avoid infinite loops, but if we have DIFFERENT solutions for the same dependent, we keep them, to show the unsatisfiability later on.
 sol_from_list_filter :: DependencyGraphSolution -> (Dependent,Either Term Literal) -> Bool
@@ -2679,12 +2826,12 @@ rebuild_constraint_from_hdep (HDEdge (LTHDep dep) ss t) = Lcstr (lift_lthdep (LT
 rebuild_constraint_from_hdep (HDEdge (LHDep dep) ss t) = Lcstr (lift_lhdep (LHDep dep) (head ss)) (metalit_from_depnode t)
 
 
-factorize_update_clean :: FullSolution -> FullSolution
-factorize_update_clean fs = clean_dep_graph_fs (factorize_and_update_graph fs)
+factorize_update_clean :: ExtendedSignature -> FullSolution -> FullSolution
+factorize_update_clean sig fs = clean_dep_graph_fs (factorize_and_update_graph sig fs)
 
 -- Recursively factorizes, and updates until there is nothing left to update (and so nothing to factorize).
-factorize_and_update_graph :: FullSolution -> FullSolution
-factorize_and_update_graph fs = if (is_fullsol_unsatisfiable rfs) then rfs else (case rdeps of {[] -> rfs; remaining -> factorize_and_update_graph (update_graph_all rfs remaining [])}) where (rfs,rdeps) = factorize_dgraph_all fs
+factorize_and_update_graph :: ExtendedSignature -> FullSolution -> FullSolution
+factorize_and_update_graph sig fs = if (is_fullsol_unsatisfiable rfs) then rfs else (case rdeps of {[] -> rfs; remaining -> factorize_and_update_graph sig (update_graph_all sig rfs remaining [])}) where (rfs,rdeps) = factorize_dgraph_all fs
 --factorize_and_update_graph fs = if (is_fullsol_unsatisfiable rfs) then rfs else (case rdeps of {[] -> rfs; remaining -> factorize_and_update_graph (update_graph_all rfs (maybe_sol_from_list (get_gsol fs) (map get_dependent (nodes (get_graph fs)))) [])}) where (rfs,rdeps) = factorize_dgraph_all fs
 
 is_fullsol_unsatisfiable :: FullSolution -> Bool
@@ -2694,7 +2841,13 @@ is_fullsol_unsatisfiable (_,_,_,(_,sol,_)) | multiple_solutions_dgraph sol = Tru
 is_fullsol_unsatisfiable _ = False
 
 multiple_solutions_dgraph :: DependencyGraphSolution -> Bool
-multiple_solutions_dgraph sol = any (isPlentyS . fun) (map fst sol) where fun = obtain_solution_function (\d -> NothingS) sol
+--multiple_solutions_dgraph sol = any (isPlentyS . fun) (map fst sol) where fun = obtain_solution_function (\d -> NothingS) sol
+multiple_solutions_dgraph sol = multiple_solutions_dgraph_helper [] sol
+
+multiple_solutions_dgraph_helper :: [Dependent] -> DependencyGraphSolution -> Bool
+multiple_solutions_dgraph_helper _ [] = False
+multiple_solutions_dgraph_helper ds ((d1,v1):dvs) | elem d1 ds = True
+multiple_solutions_dgraph_helper ds ((d1,v1):dvs) = multiple_solutions_dgraph_helper (d1:ds) dvs
 
 obtain_solution_function :: (Dependent -> MaybePlenty (Either Term Literal)) -> DependencyGraphSolution -> (Dependent -> MaybePlenty (Either Term Literal))
 obtain_solution_function f [] = f
@@ -2988,6 +3141,19 @@ get_metavar_links (_,_,_,links) = links
 
 type MetavariableLink = (Metavariable,[(Metavariable,Either Term Literal -> Either Term Literal)])
 
+show_metavar_links :: Either Term Literal -> [MetavariableLink] -> String
+show_metavar_links v ls = concat (map (show_metavar_link v) ls)
+
+show_metavar_link :: Either Term Literal -> MetavariableLink -> String
+show_metavar_link v (s,ls) = "From " ++ (show s)  ++ ":\n\n" ++ (concat (map (show_metavar_link_helper v s) ls))
+
+show_metavar_link_helper :: Either Term Literal -> Metavariable -> (Metavariable,Either Term Literal -> Either Term Literal) -> String
+show_metavar_link_helper v s (t,f) = "If " ++ (show s)  ++ " = " ++ (show_either_term_lit v) ++ ", then " ++ (show t) ++ " = " ++ (show_either_term_lit (f v)) ++ ".\n"
+
+show_either_term_lit :: Either Term Literal -> String
+show_either_term_lit (Left t) = (show t)
+show_either_term_lit (Right l) = (show l)
+
 -- Obtain a new Skolem term for the indicated meta-variable. It can also be used for other meta-variables but only if the variables implied make sense.
 obtain_skolem_term :: ExtendedSignature -> Metavariable -> Term
 obtain_skolem_term sig mv = TFun (Fun fidx (length args)) args where fidx = (find_max_function_idx sig) + 1; args = obtain_skolem_term_helper sig mv
@@ -3025,15 +3191,16 @@ enumerate_lits_dependent :: (MetaunificationHeuristic hl ht) -> ExtendedSignatur
 enumerate_lits_dependent heur ((ps,fs,n),mpart,sks,ifilt) vs bans filt = diagonalize_h (\pred -> apply_enum_1_h (\terms -> Lit pred terms) (enumerate_lists (enumerate_terms_dependent_heur heur ((ps,fs,n),mpart,sks,ifilt) vs bans filt) (pred_arity pred))) (enum_from_list ps)
 
 enumerate_terms_dependent :: ExtendedSignature -> VariableSet -> [Variable] -> (Variable -> Bool) -> Enumeration (_,Term)
-enumerate_terms_dependent sig vs bans filt = Enum (((0,zeroes),tzeroes),f) (\idx -> \prev -> Just (case prev of {(((d,l),ts),t) -> enumerate_terms_dependent_helper sig d l ts t})) where zeroes = zero_terms_dependent sig vs bans filt; f = head zeroes; tzeroes = tail zeroes; (_,_,sks,_) = sig
+enumerate_terms_dependent sig vs bans filt = Enum (((0,zeroes),tzeroes),f) (\idx -> \prev -> case prev of {(((d,l),ts),t) -> enumerate_terms_dependent_helper sig d l ts t}) where zeroes = zero_terms_dependent sig vs bans filt; f = head zeroes; tzeroes = tail zeroes; (_,_,sks,_) = sig
 
-enumerate_terms_dependent_helper :: ExtendedSignature -> Int -> [Term] -> [Term] -> Term -> (((Int,[Term]),[Term]),Term)
+enumerate_terms_dependent_helper :: ExtendedSignature -> Int -> [Term] -> [Term] -> Term -> Maybe (((Int,[Term]),[Term]),Term)
 enumerate_terms_dependent_helper sig d l ts t = case ts of 
 	{
-		[] -> enumerate_terms_dependent_helper sig (d+1) nd nd t;
-		(rt:rts) -> (((d,l),rts),rt)
+		[] -> case nd of {[] -> Nothing; otherwise -> enumerate_terms_dependent_helper sig (d+1) nd nd t};
+		(rt:rts) -> Just (((d,l),rts),rt)
 	}
 	where nd = (terms_next_depth_dependent sig l)
+--	where nd = if (d < 3) then (terms_next_depth_dependent sig l) else []
 
 terms_next_depth_dependent :: ExtendedSignature -> [Term] -> [Term]
 terms_next_depth_dependent ((_,fs,_),_,_,_) ts = concat (map (apply_fun_terms ts) (filter (\f -> arity f > 0) fs))
@@ -3148,6 +3315,10 @@ maybe_apply_2 f (Just x) (Just y) = Just (f x y)
 maybe_apply_co2 :: (a -> (b,c)) -> Maybe a -> (Maybe b,Maybe c)
 maybe_apply_co2 _ Nothing = (Nothing,Nothing)
 maybe_apply_co2 f (Just x) = (Just y,Just z) where (y,z) = f x
+
+demaybize :: Maybe (Maybe a) -> Maybe a
+demaybize Nothing = Nothing
+demaybize (Just x) = x
 
 pair_x_mb :: a -> Maybe b -> Maybe (a,b)
 pair_x_mb _ Nothing = Nothing
@@ -3509,7 +3680,7 @@ at_most_propagate sig fs = case action of
 	((_,_,n),_,_,_) = sig; action = find_best_root_class n fs
 
 propagate_canonical_variable :: ExtendedSignature -> FullSolution -> Unifier -> Variable -> FullSolution
-propagate_canonical_variable ((_,_,n),_,_,_) fs u v = factorize_update_clean (update_graph_all (set_solution fs dv) [dv] []) where dv = ((DRec u (DVar v)),Left (TVar (get_image_var n u v)))
+propagate_canonical_variable ((ps,ffs,n),part,sks,ls) fs u v = factorize_update_clean ((ps,ffs,n),part,sks,ls) (update_graph_all ((ps,ffs,n),part,sks,ls) (set_solution fs dv) [dv] []) where dv = ((DRec u (DVar v)),Left (TVar (get_image_var n u v)))
 
 -- Find a random meta-variable
 -- Here be where heuristics could come in. In any case, this situation is pretty bad, there's not many intelligent things to do, that's why we try to avoid it at all costs.
@@ -3530,16 +3701,16 @@ find_previous_dep_metavar (DRec _ d) = d
 --		- Enumerate possible instantiations of the meta-variable given that knowledge.
 --		- For each of those, generate the corresponding solution (do this through apply_enum_1_h, of course, so that this generates a solution enumeration).
 enumerate_and_propagate_metavar :: (MetaunificationHeuristic hl ht) -> ExtendedSignature -> FullSolution -> Dependent -> Enumeration (_,FullSolution)
-enumerate_and_propagate_metavar heur sig fs dep | (is_dependent_term dep) = apply_enum_1_h (\fs2 -> apply_metavar_link_sig sig mv (apply_inst_fs fs2 mv) fs2) parc_fs where vs = find_variable_set dep; bans = find_banned_vars_in_instantiation (get_graph fs) dep; terms = enumerate_terms_dependent_heur heur sig vs bans (find_dep_var_constraints sig dep); parc_fs = propagate_over_metavariable_enum fs dep (enum_hleft_left_h terms); mv = extract_metavar_dependent dep
-enumerate_and_propagate_metavar heur sig fs dep = apply_enum_1_h (\fs2 -> apply_metavar_link_sig sig mv (apply_inst_fs fs2 mv) fs2) parc_fs where vs = find_variable_set dep; bans = find_banned_vars_in_instantiation (get_graph fs) dep; lits = enumerate_lits_dependent_heur heur sig vs bans (find_dep_var_constraints sig dep); parc_fs = propagate_over_metavariable_enum fs dep (enum_hright_right_h lits); mv = extract_metavar_dependent dep
+enumerate_and_propagate_metavar heur sig fs dep | (is_dependent_term dep) = apply_enum_1_h (\fs2 -> apply_metavar_link_sig sig mv (apply_inst_fs fs2 mv) fs2) parc_fs where vs = find_variable_set dep; bans = find_banned_vars_in_instantiation (get_graph fs) dep; terms = enumerate_terms_dependent_heur heur sig vs bans (find_dep_var_constraints sig dep); parc_fs = propagate_over_metavariable_enum sig fs dep (enum_hleft_left_h terms); mv = extract_metavar_dependent dep
+enumerate_and_propagate_metavar heur sig fs dep = apply_enum_1_h (\fs2 -> apply_metavar_link_sig sig mv (apply_inst_fs fs2 mv) fs2) parc_fs where vs = find_variable_set dep; bans = find_banned_vars_in_instantiation (get_graph fs) dep; lits = enumerate_lits_dependent_heur heur sig vs bans (find_dep_var_constraints sig dep); parc_fs = propagate_over_metavariable_enum sig fs dep (enum_hright_right_h lits); mv = extract_metavar_dependent dep
 
 apply_metavar_link_sig :: ExtendedSignature -> Metavariable -> Either Term Literal -> FullSolution -> FullSolution
-apply_metavar_link_sig (_,_,_,ifilt) mv v fs = apply_metavar_link ifilt mv v fs
+apply_metavar_link_sig (sig,part,sks,ifilt) mv v fs = apply_metavar_link (sig,part,sks,ifilt) ifilt mv v fs
 
-apply_metavar_link :: [MetavariableLink] -> Metavariable -> Either Term Literal -> FullSolution -> FullSolution
-apply_metavar_link [] mv v fs = fs
-apply_metavar_link ((mv1,rs):mvls) mv2 v fs | mv1 == mv2 = do_apply_metavar_link (map (apply_metavar_link_apply v) rs) fs
-apply_metavar_link ((mv1,rs):mvls) mv2 v fs = apply_metavar_link mvls mv2 v fs
+apply_metavar_link :: ExtendedSignature -> [MetavariableLink] -> Metavariable -> Either Term Literal -> FullSolution -> FullSolution
+apply_metavar_link _ [] mv v fs = fs
+apply_metavar_link sig ((mv1,rs):mvls) mv2 v fs | mv1 == mv2 = do_apply_metavar_link sig (map (apply_metavar_link_apply v) rs) fs
+apply_metavar_link sig ((mv1,rs):mvls) mv2 v fs = apply_metavar_link sig mvls mv2 v fs
 
 apply_metavar_link_inst :: [MetavariableLink] -> Metavariable -> Either Term Literal -> Instantiation -> Instantiation
 apply_metavar_link_inst [] mv v inst = inst
@@ -3550,34 +3721,37 @@ do_apply_metavar_link_inst :: [(Metavariable,Either Term Literal)] -> Instantiat
 do_apply_metavar_link_inst rs inst = foldr do_apply_metavar_link_inst_single inst rs
 
 do_apply_metavar_link_inst_single :: (Metavariable,Either Term Literal) -> Instantiation -> Instantiation
-do_apply_metavar_link_inst_single (mv,v) inst = compose_inst (build_inst mv v) inst
+--do_apply_metavar_link_inst_single (mv,v) inst = compose_inst (build_inst mv v) inst
+do_apply_metavar_link_inst_single (mv,(Left t)) (li,ti) = (li,(mv,t):ti)
+do_apply_metavar_link_inst_single (mv,(Right l)) (li,ti) = ((mv,l):li,ti)
 
 apply_metavar_link_apply :: Either Term Literal -> (Metavariable,Either Term Literal -> Either Term Literal) -> (Metavariable,Either Term Literal)
 apply_metavar_link_apply v (mv,f) = (mv,f v)
 
-do_apply_metavar_link :: [(Metavariable,Either Term Literal)] -> FullSolution -> FullSolution
-do_apply_metavar_link rs fs = foldr do_apply_metavar_link_single fs rs
+do_apply_metavar_link :: ExtendedSignature -> [(Metavariable,Either Term Literal)] -> FullSolution -> FullSolution
+do_apply_metavar_link sig rs fs = foldr (do_apply_metavar_link_single sig) fs rs
 
-do_apply_metavar_link_single :: (Metavariable,Either Term Literal) -> FullSolution -> FullSolution
-do_apply_metavar_link_single (mv,Left t) fs = propagate_over_metavariable_single fs (DMetaT mv) (Left t)
-do_apply_metavar_link_single (mv,Right l) fs = propagate_over_metavariable_single fs (DMetaL mv) (Right l)
+do_apply_metavar_link_single :: ExtendedSignature -> (Metavariable,Either Term Literal) -> FullSolution -> FullSolution
+do_apply_metavar_link_single sig (mv,Left t) fs = propagate_over_metavariable_single sig fs (DMetaT mv) (Left t)
+do_apply_metavar_link_single sig (mv,Right l) fs = propagate_over_metavariable_single sig fs (DMetaL mv) (Right l)
 
 -- This function restores consistency between meta-variable links. Meaning, all meta-variables have their instantiations be according to their links, and more specific than they originally had. If it is not possible to restore consistency, it returns Nothing.
+-- It is essentially a unification at the meta-level.
 -- The process is fairly simple, but worth explaining:
 --	- It goes meta-variable by meta-variable, taking its current instantiation and considering any outgoing links, calculating the corresponding values for linked meta-variables.
 --	- It stores a "most specific" value for each meta-variable. When the new calculated value for a meta-variable is not equal to its most specific value, it finds a least instantiated common instantiation. If there is one, it keeps it as its value. If there is not, then consistency is not possible, and so we just return Nothing.
-restore_consistency_metavar_links :: [MetavariableLink] -> FullSolution -> Maybe FullSolution
-restore_consistency_metavar_links links fsol = restore_consistency_metavar_links_helper links (Just fsol)
+restore_consistency_metavar_links :: ExtendedSignature -> [MetavariableLink] -> FullSolution -> Maybe FullSolution
+restore_consistency_metavar_links sig links fsol = restore_consistency_metavar_links_helper sig links (Just fsol)
 
-restore_consistency_metavar_links_helper :: [MetavariableLink] -> Maybe FullSolution -> Maybe FullSolution
-restore_consistency_metavar_links_helper _ Nothing = Nothing
-restore_consistency_metavar_links_helper [] (Just fsol) = Just fsol
-restore_consistency_metavar_links_helper ((smv,ls):rs) (Just fsol) = restore_consistency_metavar_links_helper rs (restore_consistency_metavar_links_rec smv ls (Just fsol))
+restore_consistency_metavar_links_helper :: ExtendedSignature -> [MetavariableLink] -> Maybe FullSolution -> Maybe FullSolution
+restore_consistency_metavar_links_helper sig _ Nothing = Nothing
+restore_consistency_metavar_links_helper sig [] (Just fsol) = Just fsol
+restore_consistency_metavar_links_helper sig ((smv,ls):rs) (Just fsol) = restore_consistency_metavar_links_helper sig rs (restore_consistency_metavar_links_rec sig smv ls (Just fsol))
 
-restore_consistency_metavar_links_rec :: Metavariable -> [(Metavariable,Either Term Literal -> Either Term Literal)] -> Maybe FullSolution -> Maybe FullSolution
-restore_consistency_metavar_links_rec _ _ Nothing = Nothing
-restore_consistency_metavar_links_rec _ [] (Just fsol) = Just fsol
-restore_consistency_metavar_links_rec smv ((tmv,f):rs) (Just fsol) = restore_consistency_metavar_links_rec smv rs (most_instantiated_fsol tmv smv f (Just fsol))
+restore_consistency_metavar_links_rec :: ExtendedSignature -> Metavariable -> [(Metavariable,Either Term Literal -> Either Term Literal)] -> Maybe FullSolution -> Maybe FullSolution
+restore_consistency_metavar_links_rec _ _ _ Nothing = Nothing
+restore_consistency_metavar_links_rec _ _ [] (Just fsol) = Just fsol
+restore_consistency_metavar_links_rec sig smv ((tmv,f):rs) (Just fsol) = restore_consistency_metavar_links_rec sig smv rs (most_instantiated_fsol sig tmv smv f (Just fsol))
 
 restore_consistency_metavar_links_insts :: [MetavariableLink] -> Maybe Instantiation -> Maybe Instantiation
 restore_consistency_metavar_links_insts _ Nothing = Nothing
@@ -3589,10 +3763,10 @@ restore_consistency_metavar_links_insts_rec _ _ Nothing = Nothing
 restore_consistency_metavar_links_insts_rec _ [] (Just inst) = Just inst
 restore_consistency_metavar_links_insts_rec smv ((tmv,f):rs) (Just inst) = restore_consistency_metavar_links_insts_rec smv rs (most_instantiated_inst tmv smv f (Just inst))
 
-most_instantiated_fsol :: Metavariable -> Metavariable -> (Either Term Literal -> Either Term Literal) -> Maybe FullSolution -> Maybe FullSolution
-most_instantiated_fsol _ _ _ Nothing = Nothing
+most_instantiated_fsol :: ExtendedSignature -> Metavariable -> Metavariable -> (Either Term Literal -> Either Term Literal) -> Maybe FullSolution -> Maybe FullSolution
+most_instantiated_fsol _ _ _ _ Nothing = Nothing
 --most_instantiated_fsol tmv smv f (Just fsol) = case nv of {Nothing -> Just fsol; Just (Left t1) -> case ov of {Nothing -> Just (propagate_over_metavariable_single fsol (DMetaT tmv) resv); Just (Left t2) -> case mostv of {Nothing -> Nothing; Just lt -> Just (propagate_over_metavariable_single fsol (DMetaT tmv) lt)}; Just (Right l2) -> Nothing}; Just (Right l1) -> case ov of {Nothing -> Just (propagate_over_metavariable_single fsol (DMetaL tmv) resv); Just (Left t2) -> Nothing; Just (Right l2) -> case mostv of {Nothing -> Nothing; Just lt -> Just (propagate_over_metavariable_single fsol (DMetaL tmv) lt)}}}
-most_instantiated_fsol tmv smv f (Just fsol) = case nv of {Nothing -> Just fsol; Just (Left t1) -> case ov of {Nothing -> Just (propagate_over_metavariable_single fsol (DMetaT tmv) (f (Left t1))); Just (Left t2) -> case (most_instantiated (Left t2) (f (Left t1))) of {Nothing -> Nothing; Just lt -> Just (propagate_over_metavariable_single fsol (DMetaT tmv) lt)}; Just (Right l2) -> Nothing}; Just (Right l1) -> case ov of {Nothing -> Just (propagate_over_metavariable_single fsol (DMetaL tmv) (f (Right l1))); Just (Left t2) -> Nothing; Just (Right l2) -> case (most_instantiated (Right l2) (f (Right l1))) of {Nothing -> Nothing; Just lt -> Just (propagate_over_metavariable_single fsol (DMetaL tmv) lt)}}}  
+most_instantiated_fsol sig tmv smv f (Just fsol) = case nv of {Nothing -> Just fsol; Just (Left t1) -> case ov of {Nothing -> Just (propagate_over_metavariable_single sig fsol (DMetaT tmv) (f (Left t1))); Just (Left t2) -> case (most_instantiated (Left t2) (f (Left t1))) of {Nothing -> Nothing; Just lt -> Just (propagate_over_metavariable_single sig fsol (DMetaT tmv) lt)}; Just (Right l2) -> Nothing}; Just (Right l1) -> case ov of {Nothing -> Just (propagate_over_metavariable_single sig fsol (DMetaL tmv) (f (Right l1))); Just (Left t2) -> Nothing; Just (Right l2) -> case (most_instantiated (Right l2) (f (Right l1))) of {Nothing -> Nothing; Just lt -> Just (propagate_over_metavariable_single sig fsol (DMetaL tmv) lt)}}}  
 	where 
 	inst = get_instantiation fsol;
 	nv = apply_inst inst smv;
@@ -3616,6 +3790,7 @@ most_instantiated_inst tmv smv f (Just inst) = case nv of {Nothing -> Just inst;
 	--resv = f (fromJust nv);
 	--mostv = most_instantiated (fromJust ov) resv
 
+-- This is really just unification, where the variables are meta-variables, by the way.
 -- Returns a least instantiated common instantiation of the two terms or literals, if there is one.
 most_instantiated :: Either Term Literal -> Either Term Literal -> Maybe (Either Term Literal)
 most_instantiated (Left t1) (Left t2) = maybe_apply Left (most_instantiated_term t1 t2)
@@ -3669,11 +3844,11 @@ find_variable_set (DMetaT _) = Dom (U 0)
 find_variable_set (DMetaL _) = Dom (U 0)
 find_variable_set (DRec u _) = Rg u
 
-propagate_over_metavariable_enum :: FullSolution -> Dependent -> Enumeration (_,Either Term Literal) -> Enumeration (_,FullSolution)
-propagate_over_metavariable_enum fs dep ev = apply_enum_1_h (propagate_over_metavariable_single fs dep) ev
+propagate_over_metavariable_enum :: ExtendedSignature -> FullSolution -> Dependent -> Enumeration (_,Either Term Literal) -> Enumeration (_,FullSolution)
+propagate_over_metavariable_enum sig fs dep ev = apply_enum_1_h (propagate_over_metavariable_single sig fs dep) ev
 
-propagate_over_metavariable_single :: FullSolution -> Dependent -> Either Term Literal -> FullSolution
-propagate_over_metavariable_single fs dep v = factorize_update_clean (update_graph_single_maybe fs2 dv) where (fs1,mv) = expose_metavariable fs dep; dv = (dep,v); fs2 = set_solution (set_instantiation_fs fs1 mv v) dv
+propagate_over_metavariable_single :: ExtendedSignature -> FullSolution -> Dependent -> Either Term Literal -> FullSolution
+propagate_over_metavariable_single sig fs dep v = factorize_update_clean sig (update_graph_single_maybe sig fs2 dv) where (fs1,mv) = expose_metavariable fs dep; dv = (dep,v); fs2 = set_solution (set_instantiation_fs fs1 mv v) dv
 --propagate_over_metavariable_single fs dep v = update_graph_all (set_solution (set_instantiation_fs fs v) dv) [dv] [] where dv = (dep,v)
 
 -- We assume that the dependent is u1 u2 ... un X for X a meta-variable. We do several things:
@@ -3689,7 +3864,7 @@ expose_metavariable fs (DRec u d) = (((nmv:rmvs),(MetaEq nmv u rmv):reqs,(rinst,
 -- We provide both the dependent in the graph (which has unifiers on it) and the exposed meta-variable. We assume that the provided solution already includes this exposed meta-variable and the necessary equations, but has not replaced it in the graph (because it is not necessary to do this).
 -- We replace this value in the solution, by re-building the constraints it is involved in and re-calculating the graph, and also adding it to the instantiation.
 propagate_metavar_value :: FullSolution -> Dependent -> Metavariable -> Either Term Literal -> FullSolution
-propagate_metavar_value (mvs,eqs,(inst,cs),(g,sol,ueqs)) dep mv v = (mvs1,eqs,(rinst,[]),(rg,rsol,rueqs)) where (mvs1,(inst1,cs1)) = recalculate_constraints_from_dependent mvs (inst,cs) g dep v; (mvs2,mveqs2,(inst2,cs2),(rg,rsol,rueqs)) = update_graph_with_constraints_fsol (mvs1,eqs,(inst1,[]),((remove_node g dep),sol,ueqs)) cs1; rinst = compose_inst (build_inst mv v) inst1
+propagate_metavar_value (mvs,eqs,(inst,cs),(g,sol,ueqs)) dep mv v = (mvs1,eqs,(rinst,[]),(rg,rsol,rueqs)) where (mvs1,(inst1,cs1)) = recalculate_constraints_from_dependent mvs (inst,cs) g dep v; (mvs2,mveqs2,(inst2,cs2),(rg,rsol,rueqs)) = update_graph_with_constraints_fsol (mvs1,eqs,(inst1,[]),((remove_node g dep),sol,ueqs)) cs1; rinst = set_instantiation inst1 mv v
 
 recalculate_constraints_from_dependent :: [Metavariable] -> UnifSolution -> DependencyGraph -> Dependent -> Either Term Literal -> ([Metavariable],UnifSolution)
 recalculate_constraints_from_dependent mvs (inst,cs) g dep (Left t) = recalculate_constraints_eqdep mvs1 (inst1,cs1) (Left (all_simpl_mterm (metaterm_from_depnode dep))) (Left (MTermT t)) g [dep] where n = find_node g dep; (mvs1,(inst1,cs1)) = recalculate_constraints_hdep mvs (inst,cs) (Left (all_simpl_mterm (metaterm_from_depnode dep))) (Left (MTermT t)) ((get_outgoing_hdeps n) ++ (get_incoming_hdeps n))
@@ -3880,7 +4055,7 @@ get_value_metavar (linst,tinst) mv =
 		(True,False) -> Left t;
 		(False,True) -> Right l
 	}
-	where l = linst mv; t = tinst mv; bl = has_lit_metavar l; bt = has_term_metavar t
+	where l = fun_from_litinst linst mv; t = fun_from_terminst tinst mv; bl = has_lit_metavar l; bt = has_term_metavar t
 
 has_lit_metavar :: Literal -> Bool
 has_lit_metavar (Lit _ ts) = any has_term_metavar ts

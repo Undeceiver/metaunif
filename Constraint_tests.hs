@@ -207,6 +207,9 @@ ircs2 = all_simpl_cstr [] (idinst,oclist2)
 clist2 :: [Constraint]
 clist2 = (snd (snd ircs2))
 
+fake_sig :: ExtendedSignature
+fake_sig = (([],[],2),([],2,[]),[],[])
+
 ggs2 :: PartiallySolvedDGraph
 --gg2old = calculate_vertical_dependencies (foldl update_equivalence_classes (foldl apply_dependency_constraint empty_graph clist2) clist2)
 --gg2 = foldl update_graph_with_constraints empty_graph clist2
@@ -221,7 +224,7 @@ d22 = DRec u (DVar (read "x1"))
 fsolg :: FullSolution
 fsolg = (fst ircs2,[],(fst (snd ircs2),[]),ggs2)
 
-((mvs2,[],(hinst2,hcs2),(hh2,sol2,hueqs2)),rdeps2) = do_one_update_to_graph update_graph_from_value_hdep_full fsolg (d21,Left (read "x666"))
+((mvs2,[],(hinst2,hcs2),(hh2,sol2,hueqs2)),rdeps2) = do_one_update_to_graph fake_sig update_graph_from_value_hdep_full fsolg (d21,Left (read "x666"))
 r2 :: FullSolution
 r2 = (mvs2,[],(hinst2,hcs2),(hh2,sol2,hueqs2))
 --r2 = do_one_update_to_graph update_graph_from_value_hdep_full (fsolg,[]) (d21,Left (read "x666"))
@@ -234,7 +237,7 @@ r2 = (mvs2,[],(hinst2,hcs2),(hh2,sol2,hueqs2))
 --(hh2,sol2,rdeps2) = case r2 of {((mvs,(inst,cs),(g,sol)),l) -> (g,sol,l)}
 
 --(mvs3,(hinst3,hcs3)) = recalculate_constraints_eqdep mvs2 (hinst2,hcs2) (Left (MTermT (read "x1"))) (Left (MTermT (read "x777"))) hh2 [d22]
-((mvs3,[],(hinst3,hcs3),(hh3,sol3,hueqs3)),rdeps3) = do_one_update_to_graph update_graph_from_value_vdep r2 ((DRec u (DVar (read "x1"))),Left (read "x777"))
+((mvs3,[],(hinst3,hcs3),(hh3,sol3,hueqs3)),rdeps3) = do_one_update_to_graph fake_sig update_graph_from_value_vdep r2 ((DRec u (DVar (read "x1"))),Left (read "x777"))
 r3 :: FullSolution
 r3 = (mvs3,[],(hinst3,hcs3),(hh3,sol3,hueqs3))
 --recalculate_constraints_eqdep :: [Metavariable] -> UnifSolution -> Either Metaterm Metaliteral -> Either Metaterm Metaliteral -> DependencyGraph -> [Dependent] -> ([Metavariable],UnifSolution)
@@ -246,7 +249,7 @@ dep_value :: Term
 dep_value = (read "f1[1](x666)")
 
 r4 :: FullSolution
-r4 = update_graph_all r2 [(dep_to_upd,Left (dep_value))] []
+r4 = update_graph_all fake_sig r2 [(dep_to_upd,Left (dep_value))] []
 (mvs4,[],(hinst4,hcs4),(hh4,sol4,hueqs4)) = r4
 (hh5,sol5,hueqs5) = clean_dep_graph (hh4,sol4,hueqs4)
 
@@ -254,12 +257,12 @@ r5 :: FullSolution
 r5 = (mvs4,[],(hinst4,hcs4),(hh5,sol5,hueqs5))
 
 r6 :: FullSolution
-r6 = update_graph_all r5 [(dep_to_upd,Left (dep_value))] []
+r6 = update_graph_all fake_sig r5 [(dep_to_upd,Left (dep_value))] []
 
 step_solns :: Int -> ([(Dependent,Either Term Literal)],(FullSolution,[(Dependent,Either Term Literal)]))
 step_solns 1 = ([],(r2,[(dep_to_upd,Left dep_value)]))
-step_solns i = case prev of {(vs,(s,(h:hs))) -> ((h:vs),(fst (do_one_update_to_graph update_graph_from_value_hdep_full s h),hs ++ (snd (do_one_update_to_graph update_graph_from_value_hdep_full s h))));
-				((v:vs),(s,[])) -> (vs,do_one_update_to_graph update_graph_from_value_vdep s v);
+step_solns i = case prev of {(vs,(s,(h:hs))) -> ((h:vs),(fst (do_one_update_to_graph fake_sig update_graph_from_value_hdep_full s h),hs ++ (snd (do_one_update_to_graph fake_sig update_graph_from_value_hdep_full s h))));
+				((v:vs),(s,[])) -> (vs,do_one_update_to_graph fake_sig update_graph_from_value_vdep s v);
 				([],(s,[])) -> ([],(s,[]))}
 				where prev = step_solns (i-1)
 
@@ -797,6 +800,8 @@ bwx3u0 = get_image_var bw_n_base_vars u0 x3
 bwx0u1 :: Variable
 bwx0u1 = get_image_var bw_n_base_vars u1 x0
 
+bwsig :: ExtendedSignature
+bwsig = (([],[],4),([],4,[]),[],[])
 
 -- Example 1
 bwxmt11 :: Metaterm
@@ -832,7 +837,7 @@ bwxt1 = TVar bwx0u0
 bwpair1 :: (Dependent,Either Term Literal)
 bwpair1 = (bwxdep1,Left bwxt1)
 
-bwxres1 = update_graph_all (set_solution bwxfs1 bwpair1) [bwpair1] []
+bwxres1 = update_graph_all bwsig (set_solution bwxfs1 bwpair1) [bwpair1] []
 
 -- Example 2
 bwxmt21 :: Metaterm
@@ -868,7 +873,7 @@ bwxt2 = TVar bwx0u0
 bwpair2 :: (Dependent,Either Term Literal)
 bwpair2 = (bwxdep2,Left bwxt2)
 
-bwxres2 = update_graph_all (set_solution bwxfs2 bwpair2) [bwpair2] []
+bwxres2 = update_graph_all bwsig (set_solution bwxfs2 bwpair2) [bwpair2] []
 
 -- Example 3
 bwxmt31 :: Metaterm
@@ -904,7 +909,7 @@ bwxt3 = TVar bwx0u0
 bwpair3 :: (Dependent,Either Term Literal)
 bwpair3 = (bwxdep3,Left bwxt3)
 
-bwxres3 = update_graph_all (set_solution bwxfs3 bwpair3) [bwpair3] []
+bwxres3 = update_graph_all bwsig (set_solution bwxfs3 bwpair3) [bwpair3] []
 
 -- Example 4
 bwxmt41 :: Metaterm
@@ -940,7 +945,7 @@ bwxt4 = (TFun (read "f2[1]") [TVar bwx0u0])
 bwpair4 :: (Dependent,Either Term Literal)
 bwpair4 = (bwxdep4,Left bwxt4)
 
-bwxres4 = update_graph_all (set_solution bwxfs4 bwpair4) [bwpair4] []
+bwxres4 = update_graph_all bwsig (set_solution bwxfs4 bwpair4) [bwpair4] []
 
 -- Example 5
 bwxmt51 :: Metaterm
@@ -976,7 +981,7 @@ bwxt5 = TVar bwx0u0
 bwpair5 :: (Dependent,Either Term Literal)
 bwpair5 = (bwxdep5,Left bwxt5)
 
-bwxres5 = update_graph_all (set_solution bwxfs5 bwpair5) [bwpair5] []
+bwxres5 = update_graph_all bwsig (set_solution bwxfs5 bwpair5) [bwpair5] []
 
 -- Example 6
 bwxmt61 :: Metaterm
@@ -1012,7 +1017,7 @@ bwxt6 = TVar bwx0u0
 bwpair6 :: (Dependent,Either Term Literal)
 bwpair6 = (bwxdep6,Left bwxt6)
 
-bwxres6 = update_graph_all (set_solution bwxfs6 bwpair6) [bwpair6] []
+bwxres6 = update_graph_all bwsig (set_solution bwxfs6 bwpair6) [bwpair6] []
 
 -- Example 7
 bwxmt71 :: Metaterm
@@ -1048,7 +1053,7 @@ bwxt7 = TVar bwx0u0
 bwpair7 :: (Dependent,Either Term Literal)
 bwpair7 = (bwxdep7,Left bwxt7)
 
-bwxres7 = update_graph_all (set_solution bwxfs7 bwpair7) [bwpair7] []
+bwxres7 = update_graph_all bwsig (set_solution bwxfs7 bwpair7) [bwpair7] []
 
 -- Example 8
 bwxmt81 :: Metaterm
@@ -1084,7 +1089,7 @@ bwxt8 = (TFun (read "f2[1]") [TVar bwx0u0])
 bwpair8 :: (Dependent,Either Term Literal)
 bwpair8 = (bwxdep8,Left bwxt8)
 
-bwxres8 = update_graph_all (set_solution bwxfs8 bwpair8) [bwpair8] []
+bwxres8 = update_graph_all bwsig (set_solution bwxfs8 bwpair8) [bwpair8] []
 
 -- Example 9
 bwxmt91 :: Metaterm
@@ -1120,7 +1125,7 @@ bwxt9 = TVar bwx0u0
 bwpair9 :: (Dependent,Either Term Literal)
 bwpair9 = (bwxdep9,Left bwxt9)
 
-bwxres9 = update_graph_all (set_solution bwxfs9 bwpair9) [bwpair9] []
+bwxres9 = update_graph_all bwsig (set_solution bwxfs9 bwpair9) [bwpair9] []
 
 -- Example 10
 bwxmt101 :: Metaterm
@@ -1156,7 +1161,7 @@ bwxt10 = TVar bwx0u1
 bwpair10 :: (Dependent,Either Term Literal)
 bwpair10 = (bwxdep10,Left bwxt10)
 
-bwxres10 = update_graph_all (set_solution bwxfs10 bwpair10) [bwpair10] []
+bwxres10 = update_graph_all bwsig (set_solution bwxfs10 bwpair10) [bwpair10] []
 
 -- Example 11
 bwxmt111 :: Metaterm
@@ -1192,7 +1197,7 @@ bwxt11 = TVar bwx0u1
 bwpair11 :: (Dependent,Either Term Literal)
 bwpair11 = (bwxdep11,Left bwxt11)
 
-bwxres11 = update_graph_all (set_solution bwxfs11 bwpair11) [bwpair11] []
+bwxres11 = update_graph_all bwsig (set_solution bwxfs11 bwpair11) [bwpair11] []
 
 -- Example 12
 bwxmt121 :: Metaterm
@@ -1237,7 +1242,7 @@ bwpair121 = (bwxdep121,Left bwxt121)
 bwpair122 :: (Dependent,Either Term Literal)
 bwpair122 = (bwxdep122,Left bwxt122)
 
-bwxres12 = update_graph_all (set_all_solutions bwxfs12 [bwpair121,bwpair122]) [bwpair121,bwpair122] []
+bwxres12 = update_graph_all bwsig (set_all_solutions bwxfs12 [bwpair121,bwpair122]) [bwpair121,bwpair122] []
 
 -- Example 13
 bwxmt131 :: Metaterm
@@ -1282,7 +1287,7 @@ bwpair131 = (bwxdep131,Left bwxt131)
 bwpair132 :: (Dependent,Either Term Literal)
 bwpair132 = (bwxdep132,Left bwxt132)
 
-bwxres13 = update_graph_all (set_all_solutions bwxfs13 [bwpair131,bwpair132]) [bwpair131,bwpair132] []
+bwxres13 = update_graph_all bwsig (set_all_solutions bwxfs13 [bwpair131,bwpair132]) [bwpair131,bwpair132] []
 
 -- Example 14
 bwxmt141 :: Metaterm
@@ -1336,7 +1341,7 @@ bwpair142 = (bwxdep142,Left bwxt142)
 bwpair143 :: (Dependent,Either Term Literal)
 bwpair143 = (bwxdep143,Left bwxt143)
 
-bwxres14 = update_graph_all (set_all_solutions bwxfs14 [bwpair143,bwpair142,bwpair141]) [bwpair143,bwpair142,bwpair141] []
+bwxres14 = update_graph_all bwsig (set_all_solutions bwxfs14 [bwpair143,bwpair142,bwpair141]) [bwpair143,bwpair142,bwpair141] []
 
 -- Example 15
 bwxmt151 :: Metaterm
@@ -1390,7 +1395,7 @@ bwpair152 = (bwxdep152,Left bwxt152)
 bwpair153 :: (Dependent,Either Term Literal)
 bwpair153 = (bwxdep153,Left bwxt153)
 
-bwxres15 = update_graph_all (set_all_solutions bwxfs15 [bwpair153,bwpair152,bwpair151]) [bwpair153,bwpair152,bwpair151] []
+bwxres15 = update_graph_all bwsig (set_all_solutions bwxfs15 [bwpair153,bwpair152,bwpair151]) [bwpair153,bwpair152,bwpair151] []
 
 
 
@@ -1416,6 +1421,9 @@ fac_n_base_vars = 5
 
 -- Metavariables
 facmetavars = []
+
+facsig :: ExtendedSignature
+facsig = (([],[],5),([],5,[]),[],[])
 
 -- Unifiers
 --u0 :: Unifier
@@ -1882,14 +1890,14 @@ facvval15_1 = TVar facx0u0
 facpair15_1 :: (Dependent,Either Term Literal)
 facpair15_1 = (facvdep15_1,Left facvval15_1)
 
-facfs15 = update_graph_all (set_all_solutions facfs15_pre [facpair15_1]) [facpair15_1] []
+facfs15 = update_graph_all facsig (set_all_solutions facfs15_pre [facpair15_1]) [facpair15_1] []
 
 facleaf15 :: Dependent
 facleaf15 = DRec u0 (DVar x0)
 
 (facres15,facvals15) = factorize_dgraph facfs15 facleaf15
 
-facres15_pos = update_graph_all facres15 facvals15 []
+facres15_pos = update_graph_all facsig facres15 facvals15 []
 
 -- Example 16
 facmt16_1 :: Metaterm
@@ -1940,14 +1948,14 @@ facvval16_2 = TVar facx0u0
 facpair16_2 :: (Dependent,Either Term Literal)
 facpair16_2 = (facvdep16_2,Left facvval16_2)
 
-facfs16 = update_graph_all (set_all_solutions facfs16_pre [facpair16_1,facpair16_2]) [facpair16_1,facpair16_2] []
+facfs16 = update_graph_all facsig (set_all_solutions facfs16_pre [facpair16_1,facpair16_2]) [facpair16_1,facpair16_2] []
 
 facleaf16 :: Dependent
 facleaf16 = DRec u0 (DVar x0)
 
 (facres16,facvals16) = factorize_dgraph facfs16 facleaf16
 
-facres16_pos = update_graph_all facres16 facvals16 []
+facres16_pos = update_graph_all facsig facres16 facvals16 []
 
 -- Example 17
 facmt17_1 :: Metaterm
@@ -1992,7 +2000,7 @@ facvval17_2 = TVar facx1u0
 facpair17_2 :: (Dependent,Either Term Literal)
 facpair17_2 = (facvdep17_2,Left facvval17_2)
 
-facfs17 = update_graph_all (set_all_solutions facfs17_pre [facpair17_1,facpair17_2]) [facpair17_1,facpair17_2] []
+facfs17 = update_graph_all facsig (set_all_solutions facfs17_pre [facpair17_1,facpair17_2]) [facpair17_1,facpair17_2] []
 
 facleaf17 :: Dependent
 facleaf17 = DRec u0 (DVar x0)
@@ -2033,14 +2041,14 @@ facvval18_1 = TVar facx0u0
 facpair18_1 :: (Dependent,Either Term Literal)
 facpair18_1 = (facvdep18_1,Left facvval18_1)
 
-facfs18 = update_graph_all (set_all_solutions facfs18_pre [facpair18_1]) [facpair18_1] []
+facfs18 = update_graph_all facsig (set_all_solutions facfs18_pre [facpair18_1]) [facpair18_1] []
 
 facleaf18 :: Dependent
 facleaf18 = DRec u0 (DVar x0)
 
 (facres18,facvals18) = factorize_dgraph facfs18 facleaf18
 
-facres18_pos = update_graph_all facres18 facvals18 []
+facres18_pos = update_graph_all facsig facres18 facvals18 []
 
 -- Example 19
 facmt19_1 :: Metaterm
@@ -2076,14 +2084,14 @@ facvval19_1 = TVar facx0u0
 facpair19_1 :: (Dependent,Either Term Literal)
 facpair19_1 = (facvdep19_1,Left facvval19_1)
 
-facfs19 = update_graph_all (set_all_solutions facfs19_pre [facpair19_1]) [facpair19_1] []
+facfs19 = update_graph_all facsig (set_all_solutions facfs19_pre [facpair19_1]) [facpair19_1] []
 
 facleaf19 :: Dependent
 facleaf19 = DRec u0 (DVar x0)
 
 (facres19,facvals19) = factorize_dgraph facfs19 facleaf19
 
-facres19_pos = update_graph_all facres19 facvals19 []
+facres19_pos = update_graph_all facsig facres19 facvals19 []
 
 -- Example 19.1
 facmt19_1_1 :: Metaterm
@@ -2119,14 +2127,14 @@ facvval19_1_1 = TFun (read "f2[1]") [TVar facx0u0]
 facpair19_1_1 :: (Dependent,Either Term Literal)
 facpair19_1_1 = (facvdep19_1_1,Left facvval19_1_1)
 
-facfs19_1 = update_graph_all (set_all_solutions facfs19_1_pre [facpair19_1_1]) [facpair19_1_1] []
+facfs19_1 = update_graph_all facsig (set_all_solutions facfs19_1_pre [facpair19_1_1]) [facpair19_1_1] []
 
 facleaf19_1 :: Dependent
 facleaf19_1 = DRec u0 (DVar x0)
 
 (facres19_1,facvals19_1) = factorize_dgraph facfs19_1 facleaf19_1
 
-facres19_1_pos = update_graph_all facres19_1 facvals19_1 []
+facres19_1_pos = update_graph_all facsig facres19_1 facvals19_1 []
 
 -- Example 20
 facmt20_1 :: Metaterm
@@ -2171,14 +2179,14 @@ facvval20_2 = TFun (read "f2[1]") [TVar facx1u0]
 facpair20_2 :: (Dependent,Either Term Literal)
 facpair20_2 = (facvdep20_2,Left facvval20_2)
 
-facfs20 = update_graph_all (set_all_solutions facfs20_pre [facpair20_1,facpair20_2]) [facpair20_1,facpair20_2] []
+facfs20 = update_graph_all facsig (set_all_solutions facfs20_pre [facpair20_1,facpair20_2]) [facpair20_1,facpair20_2] []
 
 facleaf20 :: Dependent
 facleaf20 = DRec u0 (DVar x0)
 
 (facres20,facvals20) = factorize_dgraph facfs20 facleaf20
 
-facres20_pos = update_graph_all facres20 facvals20 []
+facres20_pos = update_graph_all facsig facres20 facvals20 []
 
 -- Example 20.1
 facmt20_1_1 :: Metaterm
@@ -2223,14 +2231,14 @@ facvval20_1_2 = TFun (read "f2[1]") [TVar facx0u0]
 facpair20_1_2 :: (Dependent,Either Term Literal)
 facpair20_1_2 = (facvdep20_1_2,Left facvval20_1_2)
 
-facfs20_1 = update_graph_all (set_all_solutions facfs20_1_pre [facpair20_1_1,facpair20_1_2]) [facpair20_1_1,facpair20_1_2] []
+facfs20_1 = update_graph_all facsig (set_all_solutions facfs20_1_pre [facpair20_1_1,facpair20_1_2]) [facpair20_1_1,facpair20_1_2] []
 
 facleaf20_1 :: Dependent
 facleaf20_1 = DRec u0 (DVar x0)
 
 (facres20_1,facvals20_1) = factorize_dgraph facfs20_1 facleaf20_1
 
-facres20_1_pos = update_graph_all facres20_1 facvals20_1 []
+facres20_1_pos = update_graph_all facsig facres20_1 facvals20_1 []
 
 -- Example 21
 facmt21_1 :: Metaterm
@@ -2275,7 +2283,7 @@ facvval21_2 = TVar facx0u0
 facpair21_2 :: (Dependent,Either Term Literal)
 facpair21_2 = (facvdep21_2,Left facvval21_2)
 
-facfs21 = update_graph_all (set_all_solutions facfs21_pre [facpair21_1,facpair21_2]) [facpair21_1,facpair21_2] []
+facfs21 = update_graph_all facsig (set_all_solutions facfs21_pre [facpair21_1,facpair21_2]) [facpair21_1,facpair21_2] []
 
 facleaf21 :: Dependent
 facleaf21 = DRec u0 (DVar x0)

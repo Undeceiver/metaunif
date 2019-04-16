@@ -438,7 +438,7 @@ standardize_term nvars mvs iclause (TFun f ts) = TFun f (map (standardize_term n
 
 -- First argument is number of clauses, second is number of initial variables, third is the list of original meta-variables.
 standardize_skolem_terms :: Int -> Int -> [Metavariable] -> [Term] -> [Term]
-standardize_skolem_terms nclauses nvars mvs sks = terms where
+standardize_skolem_terms nclauses nvars mvs sks = nub terms where
 	per_clause = (\iclause -> map (standardize_term nvars mvs iclause) sks);
 	terms = concat (map per_clause [0..(nclauses - 1)])
 
@@ -458,10 +458,10 @@ compose_metavar_links ls = if cont then (compose_metavar_links once) else once w
 -- The bool indicates whether any new links were generated.
 -- What we do is:
 --	- For each source meta-variable X, take its target meta-variables Y, and for each of those:
---	- Check its target meta-variables Z. If there is any that is no target Z of Y that is not also a target of X, add it with the composed link.
+--	- Check its target meta-variables Z. If there is any target Z of Y that is not also a target of X, add it with the composed link.
 --	- If no new targets were found at all, return false.
 compose_metavar_links_once :: [MetavariableLink] -> [MetavariableLink] -> ([MetavariableLink],Bool)
-compose_metavar_links_once tot [] = ([],False)
+compose_metavar_links_once tot [] = (tot,False)
 compose_metavar_links_once tot ((mv,ls):mvs) = (combine_metavar_links r rs,rfl || rsfl) where (r,rfl) = compose_metavar_links_once_helper tot mv ls; (rs,rsfl) = compose_metavar_links_once tot mvs
 
 compose_metavar_links_once_helper :: [MetavariableLink] -> Metavariable -> [(Metavariable,(Either Term Literal -> Either Term Literal))] -> ([MetavariableLink],Bool)
@@ -469,11 +469,17 @@ compose_metavar_links_once_helper tot smv [] = ([],False)
 compose_metavar_links_once_helper tot smv ((tmv,f):ls) = (combine_metavar_links [r] rs,rfl || rsfl) where (r,rfl) = compose_metavar_links_once_helper_2 tot smv tmv f; (rs,rsfl) = compose_metavar_links_once_helper tot smv ls
 
 compose_metavar_links_once_helper_2 :: [MetavariableLink] -> Metavariable -> Metavariable -> (Either Term Literal -> Either Term Literal) -> (MetavariableLink,Bool)
-compose_metavar_links_once_helper_2 tot smv tmv f = ((smv,result),not (null result)) where (_,links) = fromMaybe (Metavar 0,[]) (find (\(mv,ls) -> mv == tmv) tot); rs = map (\(mv,g) -> (mv,g . f)) links; (_,exist) = fromMaybe (Metavar 0,[]) (find (\(mv,ls) -> mv == smv) tot); result = filter (\(mv,l) -> not (any (\(mv2,l2) -> mv2 == mv) exist)) rs
+compose_metavar_links_once_helper_2 tot smv tmv f = ((smv,result),not (null result)) where (_,links) = fromMaybe (Metavar 0,[]) (find (\(mv,ls) -> mv == tmv) tot); rs = map (\(mv,g) -> (mv,g . f)) links; (_,exist) = fromMaybe (Metavar 0,[]) (find (\(mv,ls) -> mv == smv) tot); result = filter (\(mv,l) -> (mv /= smv) && (not (any (\(mv2,l2) -> mv2 == mv) exist))) rs
 
 combine_metavar_links :: [MetavariableLink] -> [MetavariableLink] -> [MetavariableLink]
 combine_metavar_links [] ls2 = ls2
-combine_metavar_links ((smv,ls):ls1) ls2 = (combine_metavar_links_helper smv ls ls2):(combine_metavar_links ls1 ls2)
+combine_metavar_links ((smv,ls):ls1) ls2 = deduplicate_metavar_links [] ((combine_metavar_links_helper smv ls ls2):(combine_metavar_links ls1 ls2))
+
+-- Keep the first always, by construction it is more general.
+deduplicate_metavar_links :: [Metavariable] -> [MetavariableLink] -> [MetavariableLink]
+deduplicate_metavar_links _ [] = []
+deduplicate_metavar_links mvs ((smv,ls):lss) | elem smv mvs = deduplicate_metavar_links mvs lss
+deduplicate_metavar_links mvs ((smv,ls):lss) = (smv,ls):(deduplicate_metavar_links (smv:mvs) lss)
 
 combine_metavar_links_helper :: Metavariable -> [(Metavariable,Either Term Literal -> Either Term Literal)] -> [MetavariableLink] -> MetavariableLink
 combine_metavar_links_helper mv ls [] = (mv,ls)
@@ -535,6 +541,10 @@ can_be_positive_lit :: ActualLiteral -> Bool
 can_be_positive_lit (PosLit _) = True
 can_be_positive_lit (NegLit l) = isJust (is_metavar_lit l)
 
+can_be_negative_lit :: ActualLiteral -> Bool
+can_be_negative_lit (NegLit _) = True
+can_be_negative_lit (PosLit l) = isJust (is_metavar_lit l)
+
 -- Choose which clause to start with resolving.
 type ClauseEnumeration h = ExtendedSignature -> CNF -> Enumeration (h,Int)
 
@@ -552,8 +562,11 @@ get_clauseenum (_,_,x,_) = x
 get_maxproofdepth :: MetaresolutionHeuristic _ _ -> Int
 get_maxproofdepth (_,_,_,x) = x
 
+trivial_clause_enum :: ClauseEnumeration _
+trivial_clause_enum sig cnf = enum_from_list [0..((length cnf) - 1)]
+
 default_metaresolution_heuristic :: MetaresolutionHeuristic _ _
-default_metaresolution_heuristic = (default_literal_choice,(\sig -> \fsloginst -> choose_complementary_literal),(\sig -> \cnf -> enum_from_list [0..((length cnf) - 1)]),9999999)
+default_metaresolution_heuristic = (default_literal_choice,(\sig -> \fsloginst -> choose_complementary_literal),trivial_clause_enum,9999999)
 
 
 -- Here we keep the clause (1st parameter) and literal (2nd parameter) as indexes to avoid using the same and keeping good order of what we are doing.
@@ -574,12 +587,12 @@ choose_complementary_literal_helper cnf clause lit ccl clit lcnf lclause bcl = c
 
 -- Maybe flips the literals if they can be flipped, and returns the two possible situations after stepping in each combination, both wrapped in Maybes.
 mb_flip_step_with_complementary_literal :: ExtendedSignature -> (FullSolution,LogicalInstantiation,ResolutionProof) -> CNF -> Unifier -> Int -> Int -> Int -> Int -> (Maybe (Maybe (CNF,FullSolution,LogicalInstantiation,ResolutionProof),Maybe (FullSolution,LogicalInstantiation,ResolutionProof)),Maybe (Maybe (CNF,FullSolution,LogicalInstantiation,ResolutionProof),Maybe (FullSolution,LogicalInstantiation,ResolutionProof)))
-mb_flip_step_with_complementary_literal sig (fs,loginst,proof) cnf u ipclause iplit inclause inlit = (one,two) where one = if (can_be_positive_lit (cnf !! ipclause !! iplit)) then (Just (step_with_complementary_literal sig (fs,loginst,proof) cnf u ipclause iplit inclause inlit)) else Nothing; two = if (can_be_positive_lit (cnf !! inclause !! inlit)) then (Just (step_with_complementary_literal sig (fs,loginst,proof) cnf u inclause inlit ipclause iplit)) else Nothing
+mb_flip_step_with_complementary_literal sig (fs,loginst,proof) cnf u ipclause iplit inclause inlit = (one,two) where one = if ((can_be_positive_lit (cnf !! ipclause !! iplit)) && (can_be_negative_lit (cnf !! inclause !! inlit))) then (Just (step_with_complementary_literal sig (fs,loginst,proof) cnf u ipclause iplit inclause inlit)) else Nothing; two = if ((can_be_positive_lit (cnf !! inclause !! inlit)) && (can_be_negative_lit (cnf !! ipclause !! iplit))) then (Just (step_with_complementary_literal sig (fs,loginst,proof) cnf u inclause inlit ipclause iplit)) else Nothing
 
 -- The four integers are clause, literal, clause, literal indexes. Positive first, then negative.
 -- First pair is the minimal commitment solution. Second pair is the force empty clause solution, which need not be developed deeper.
 -- The first pair is Nothing if it turns out the empty clause is found through least commitment (so no more search is needed).
--- The second pair is Nothing if the empty clause cannot be possibly founnd.
+-- The second pair is Nothing if the empty clause cannot be possibly found.
 step_with_complementary_literal :: ExtendedSignature -> (FullSolution,LogicalInstantiation,ResolutionProof) -> CNF -> Unifier -> Int -> Int -> Int -> Int -> (Maybe (CNF,FullSolution,LogicalInstantiation,ResolutionProof),Maybe (FullSolution,LogicalInstantiation,ResolutionProof))
 step_with_complementary_literal sig ((mvs,mveqs,(inst,cs),(g,gsol,ueqs)),loginst,proof) cnf u ipclause iplit inclause inlit = (rescont,maybe_empty_prop)
 	where
@@ -588,22 +601,60 @@ step_with_complementary_literal sig ((mvs,mveqs,(inst,cs),(g,gsol,ueqs)),loginst
 	(newcstr,newcl) = apply_resolution_rule u patom natom rempclause remnclause;
 	(rmvs,(rinst,rcs)) = all_simpl_cstr mvs (inst,newcstr:cs);
 	parcfs = (rmvs,mveqs,(rinst,rcs),(g,gsol,ueqs));
-	resfs = update_graph_with_constraints_and_propagate (rmvs,mveqs,(rinst,[]),(g,gsol,ueqs)) rcs;
+	resfs = update_graph_with_constraints_and_propagate sig (rmvs,mveqs,(rinst,[]),(g,gsol,ueqs)) rcs;
 --	resfs = (rmvs,mveqs,(rinst,[]),update_graph_with_constraints (g,gsol,ueqs) rcs);
 	resfsprop = at_most_propagate sig resfs;
-	rescnf = clean_deffo_cnf (append_clause cnf newcl);
+	rescnf = clean_deffo_cnf (apply_graph_solution_cnf_fs resfsprop (append_clause cnf newcl));
 	resproof = (RStep pclause nclause plit nlit newcl cnf rescnf):proof;
 	rescont = case newcl of {[] -> Nothing; _ -> Just (rescnf,resfsprop,loginst,resproof)};
 	maybe_empty = force_empty_clause sig (parcfs,loginst) u patom natom rempclause remnclause;
 	maybe_empty_proof = (RStep pclause nclause plit nlit [] cnf cnf):proof;
 	maybe_empty_full = maybe_apply (\(a,b) -> (a,b,maybe_empty_proof)) maybe_empty;
-	maybe_empty_graph = update_constraints_in_graph_maybe_loginst maybe_empty_full;
+	maybe_empty_graph = update_constraints_in_graph_maybe_loginst sig maybe_empty_full;
 	maybe_empty_prop = maybe_apply (apply_on_first_3 (at_most_propagate sig)) maybe_empty_graph
 
-update_constraints_in_graph_maybe_loginst :: Maybe (FullSolution,LogicalInstantiation,ResolutionProof) -> Maybe (FullSolution,LogicalInstantiation,ResolutionProof)
-update_constraints_in_graph_maybe_loginst Nothing = Nothing
+-- Saving this one because it worked, even if slowly. Adding the ability to pour unifier values back into the CNF
+--step_with_complementary_literal :: ExtendedSignature -> (FullSolution,LogicalInstantiation,ResolutionProof) -> CNF -> Unifier -> Int -> Int -> Int -> Int -> (Maybe (CNF,FullSolution,LogicalInstantiation,ResolutionProof),Maybe (FullSolution,LogicalInstantiation,ResolutionProof))
+--step_with_complementary_literal sig ((mvs,mveqs,(inst,cs),(g,gsol,ueqs)),loginst,proof) cnf u ipclause iplit inclause inlit = (rescont,maybe_empty_prop)
+--	where
+--	pclause = cnf !! ipclause; plit = pclause !! iplit; patom = get_atom plit; rempclause = pclause \\ [plit];
+--	nclause = cnf !! inclause; nlit = nclause !! inlit; natom = get_atom nlit; remnclause = nclause \\ [nlit];
+--	(newcstr,newcl) = apply_resolution_rule u patom natom rempclause remnclause;
+--	(rmvs,(rinst,rcs)) = all_simpl_cstr mvs (inst,newcstr:cs);
+--	parcfs = (rmvs,mveqs,(rinst,rcs),(g,gsol,ueqs));
+--	resfs = update_graph_with_constraints_and_propagate sig (rmvs,mveqs,(rinst,[]),(g,gsol,ueqs)) rcs;
+--	resfs = (rmvs,mveqs,(rinst,[]),update_graph_with_constraints (g,gsol,ueqs) rcs);
+--	resfsprop = at_most_propagate sig resfs;
+--	rescnf = clean_deffo_cnf (append_clause cnf newcl);
+--	resproof = (RStep pclause nclause plit nlit newcl cnf rescnf):proof;
+--	rescont = case newcl of {[] -> Nothing; _ -> Just (rescnf,resfsprop,loginst,resproof)};
+--	maybe_empty = force_empty_clause sig (parcfs,loginst) u patom natom rempclause remnclause;
+--	maybe_empty_proof = (RStep pclause nclause plit nlit [] cnf cnf):proof;
+--	maybe_empty_full = maybe_apply (\(a,b) -> (a,b,maybe_empty_proof)) maybe_empty;
+--	maybe_empty_graph = update_constraints_in_graph_maybe_loginst sig maybe_empty_full;
+--	maybe_empty_prop = maybe_apply (apply_on_first_3 (at_most_propagate sig)) maybe_empty_graph
+
+apply_graph_solution_actual_lit :: DependencyGraphSolution -> ActualLiteral -> ActualLiteral
+apply_graph_solution_actual_lit sol (PosLit x) = PosLit (apply_graph_solution_lit_full sol x)
+apply_graph_solution_actual_lit sol (NegLit x) = NegLit (apply_graph_solution_lit_full sol x)
+
+apply_graph_solution_clause :: DependencyGraphSolution -> Clause -> Clause
+apply_graph_solution_clause sol = map (apply_graph_solution_actual_lit sol)
+
+apply_graph_solution_cnf :: DependencyGraphSolution -> CNF -> CNF
+apply_graph_solution_cnf sol = map (apply_graph_solution_clause sol)
+
+apply_graph_solution_cnf_fs :: FullSolution -> CNF -> CNF
+apply_graph_solution_cnf_fs (_,_,_,(_,sol,_)) = apply_graph_solution_cnf sol
+
+--apply_inst_actual_lit :: Instantiation -> ActualLiteral -> ActualLiteral
+--apply_inst_actual_lit inst (PosLit x) = PosLit (apply_inst_mlit x)
+--apply_inst_actual_lit inst (NegLit x) = NegLit (apply_inst_mlit x)
+
+update_constraints_in_graph_maybe_loginst :: ExtendedSignature -> Maybe (FullSolution,LogicalInstantiation,ResolutionProof) -> Maybe (FullSolution,LogicalInstantiation,ResolutionProof)
+update_constraints_in_graph_maybe_loginst _ Nothing = Nothing
 --update_constraints_in_graph_maybe_loginst (Just ((mvs,mveqs,(inst,cs),gsol),loginst)) = Just ((rmvs,mveqs,(rinst,[]),update_graph_with_constraints gsol rcs),loginst) where (rmvs,(rinst,rcs)) = all_simpl_cstr mvs (inst,cs)
-update_constraints_in_graph_maybe_loginst (Just ((mvs,mveqs,(inst,cs),gsol),loginst,proof)) = Just (update_graph_with_constraints_and_propagate (rmvs,mveqs,(rinst,[]),gsol) rcs,loginst,proof) where (rmvs,(rinst,rcs)) = all_simpl_cstr mvs (inst,cs)
+update_constraints_in_graph_maybe_loginst sig (Just ((mvs,mveqs,(inst,cs),gsol),loginst,proof)) = Just (update_graph_with_constraints_and_propagate sig (rmvs,mveqs,(rinst,[]),gsol) rcs,loginst,proof) where (rmvs,(rinst,rcs)) = all_simpl_cstr mvs (inst,cs)
 
 -- Dealing with recursive enumeration help types again...
 -- Don't look here, ugly and semantically void stuff happening.
@@ -717,8 +768,23 @@ enumerate_constraint_systems heur sig mvs cnf = finalenum
 	(std_sig,std_mvs,std_cnf) = standardize_apart (sig,mvs,cnf);
 	clauseenum = get_clauseenum heur std_sig std_cnf;
 -- Maybe here I would rather go all in with a particular initial clause choice, rather than diagonalizing, but for now we do diagonalize. Many things to be thought about this later on.
-	fsolenum = diagonalize_h (start_with_clause_choice heur std_sig std_mvs std_cnf) clauseenum;
+	fsolenum = diagonalize_h (start_with_adapted_clause_choice heur std_sig std_mvs) (adapt_cnf_from_clause_choice std_cnf clauseenum);
 	finalenum = apply_enum_1_h ((enumerate_constraint_systems_transform std_sig) . enumerate_constraint_systems_compose_loginst_inst) fsolenum
+
+start_with_adapted_clause_choice :: MetaresolutionHeuristic hresenum hclauseenum -> ExtendedSignature -> [Metavariable] -> (Int -> Int,CNF,Int) -> Enumeration (_,Maybe (Int,FullSolution,LogicalInstantiation,ResolutionProof))
+start_with_adapted_clause_choice heur sig mvs (ad,cnf,iclause) = start_with_clause_choice heur sig mvs cnf (ad iclause)
+
+-- We remove the clause that we chose from the CNF, and also from next choices of clauses. This is to avoid duplication of proofs.
+adapt_cnf_from_clause_choice :: CNF -> Enumeration (h,Int) -> Enumeration (h,(Int -> Int,CNF,Int))
+adapt_cnf_from_clause_choice cnf (Enum (h0,i0) nexti) = Enum (h0,(id,cnf,i0)) (adapt_cnf_from_clause_choice_enum nexti)
+
+adapt_cnf_from_clause_choice_enum :: Enumerator (h,Int) -> Enumerator (h,(Int -> Int,CNF,Int))
+adapt_cnf_from_clause_choice_enum nexti idx (ph,(ad,pcnf,pi)) = case nhi of {Nothing -> Nothing; Just (nh,ni) -> Just (nh,((adapt_index_removed (ad pi)) . ad,pcnf \\ [(pcnf !! (ad pi))],ni))} where nhi = nexti idx (ph,pi)
+
+adapt_index_removed :: Int -> Int -> Int
+adapt_index_removed r i | i > r = i-1
+adapt_index_removed r i | i < r = i
+-- Purposely leave out the i == r case. This should be an error.
 
 -- diagonalize_h :: (a -> Enumeration (h2,b)) -> Enumeration (h1,a) -> Enumeration (((((h1,a),[((h1,a),Enumerator (h2,b),Int,(h2,b))],[((h1,a),Enumerator (h2,b),Int,(h2,b))]),(h1,a)),h2),b)
 -- apply_enum_1_h :: (a -> b) -> Enumeration (h1,a) -> Enumeration ((h1,a),b)
@@ -731,11 +797,11 @@ enumerate_constraint_systems_transform :: ExtendedSignature -> Maybe (Int,FullSo
 enumerate_constraint_systems_transform _ Nothing = Nothing
 enumerate_constraint_systems_transform sig (Just (nus,fs,loginst,proof)) = Just (sig,nus,fs,loginst,proof)
 
-solve_resolution_gen_constraints :: MetaunificationHeuristic hl ht -> (ExtendedSignature,Int,FullSolution,LogicalInstantiation,ResolutionProof) -> (LogicalInstantiation,[Unifier],ResolutionProof,Enumeration (_,Maybe ([UnifierDescription],Instantiation)))
-solve_resolution_gen_constraints heur (sig,nus,fs,loginst,proof) = (loginst,us,proof,enum_maybe_filter_h is_solution_satisfiable (apply_enum_1_h (solve_resolution_gen_constraints_restore_consistency_unifs (get_metavar_links sig)) (diagonalize_h (\rfs -> case rfs of {Nothing -> enum_hleft_h empty_enum_mb_h; Just irfs -> enum_hright_h (instantiation_from_dgraph_sol sig irfs us)}) fsols_consistent)))
+solve_resolution_gen_constraints :: MetaunificationHeuristic hl ht -> (ExtendedSignature,Int,FullSolution,LogicalInstantiation,ResolutionProof) -> (LogicalInstantiation,[Unifier],ResolutionProof,FullSolution,Enumeration (_,Maybe ([UnifierDescription],Instantiation)))
+solve_resolution_gen_constraints heur (sig,nus,fs,loginst,proof) = (loginst,us,proof,fs,enum_maybe_filter_h is_solution_satisfiable (apply_enum_1_h solve_resolution_gen_constraints_validate_insts (apply_enum_1_h (solve_resolution_gen_constraints_restore_consistency_unifs (get_metavar_links sig)) (diagonalize_h (\rfs -> case rfs of {Nothing -> enum_hleft_h empty_enum_mb_h; Just irfs -> enum_hright_h (instantiation_from_dgraph_sol sig irfs us)}) fsols_consistent))))
 	where
 	fsols = enumerate_and_propagate_all heur sig fs;
-	fsols_consistent = apply_enum_1_h (restore_consistency_metavar_links (get_metavar_links sig)) fsols;
+	fsols_consistent = apply_enum_1_h (restore_consistency_metavar_links sig (get_metavar_links sig)) fsols;
 --	fsols_only_consistent = apply_enum_1_h fromJust_special (enum_filter_h isJust fsols_consistent);
 	us = map U [0..nus]
 
@@ -754,26 +820,31 @@ solve_resolution_gen_constraints_restore_consistency_unifs :: [MetavariableLink]
 solve_resolution_gen_constraints_restore_consistency_unifs _ Nothing = Nothing
 solve_resolution_gen_constraints_restore_consistency_unifs links (Just (uds,inst)) = case parc of {Nothing -> Nothing; Just rinst -> Just (uds,rinst)} where parc = restore_consistency_metavar_links_insts links (Just inst)
 
+solve_resolution_gen_constraints_validate_insts :: Maybe ([UnifierDescription],Instantiation) -> Maybe ([UnifierDescription],Instantiation)
+solve_resolution_gen_constraints_validate_insts Nothing = Nothing
+--solve_resolution_gen_constraints_validate_insts (Just (uds,inst)) = (Just (uds,inst))
+solve_resolution_gen_constraints_validate_insts (Just (uds,inst)) = case validated of {Nothing -> Nothing; Just rinst -> Just (uds,rinst)} where validated = most_instantiated_all (clean_dups_inst inst)
+
 -- restore_consistency_metavar_links :: [MetavariableLink] -> FullSolution -> Maybe FullSolution
 -- restore_consistency_metavar_links_insts :: [MetavariableLink] -> Maybe Instantiation -> Maybe Instantiation
 
-enumerate_cnf_unsat_instantiations :: MetaresolutionHeuristic hrersenum hclauseenum -> MetaunificationHeuristic hl ht -> ExtendedSignature -> [Metavariable] -> CNF -> Enumeration (_,Maybe (LogicalInstantiation,[Unifier],ResolutionProof,[UnifierDescription],Instantiation))
+enumerate_cnf_unsat_instantiations :: MetaresolutionHeuristic hrersenum hclauseenum -> MetaunificationHeuristic hl ht -> ExtendedSignature -> [Metavariable] -> CNF -> Enumeration (_,Maybe (LogicalInstantiation,[Unifier],ResolutionProof,FullSolution,[UnifierDescription],Instantiation))
 enumerate_cnf_unsat_instantiations resheur unifheur sig mvs cnf = enum_filter_h (enumerate_cnf_unsat_instantiations_filter mvs) sols
 	where
 	ecstrsys = enumerate_constraint_systems resheur sig mvs cnf;
 	sols = diagonalize_h (enumerate_cnf_unsat_instantiations_transform_2 . (maybe_apply (solve_resolution_gen_constraints unifheur))) ecstrsys
 
-enumerate_cnf_unsat_instantiations_filter :: [Metavariable] -> Maybe (LogicalInstantiation,[Unifier],ResolutionProof,[UnifierDescription],Instantiation) -> Bool
+enumerate_cnf_unsat_instantiations_filter :: [Metavariable] -> Maybe (LogicalInstantiation,[Unifier],ResolutionProof,FullSolution,[UnifierDescription],Instantiation) -> Bool
 enumerate_cnf_unsat_instantiations_filter _ Nothing = False
-enumerate_cnf_unsat_instantiations_filter mvs (Just (loginst,_,_,_,inst)) = compatible_inst_loginst loginst inst mvs
+enumerate_cnf_unsat_instantiations_filter mvs (Just (loginst,_,_,_,_,inst)) = compatible_inst_loginst loginst inst mvs
 
-enumerate_cnf_unsat_instantiations_transform :: LogicalInstantiation -> [Unifier] -> ResolutionProof -> Maybe ([UnifierDescription],Instantiation) -> Maybe (LogicalInstantiation,[Unifier],ResolutionProof,[UnifierDescription],Instantiation)
-enumerate_cnf_unsat_instantiations_transform _ _ _ Nothing = Nothing
-enumerate_cnf_unsat_instantiations_transform loginst us proof (Just (uds,inst)) = Just (loginst,us,proof,uds,inst)
+enumerate_cnf_unsat_instantiations_transform :: LogicalInstantiation -> [Unifier] -> ResolutionProof -> FullSolution -> Maybe ([UnifierDescription],Instantiation) -> Maybe (LogicalInstantiation,[Unifier],ResolutionProof,FullSolution,[UnifierDescription],Instantiation)
+enumerate_cnf_unsat_instantiations_transform _ _ _ _ Nothing = Nothing
+enumerate_cnf_unsat_instantiations_transform loginst us proof fs (Just (uds,inst)) = Just (loginst,us,proof,fs,uds,inst)
 
-enumerate_cnf_unsat_instantiations_transform_2 :: Maybe (LogicalInstantiation,[Unifier],ResolutionProof,Enumeration (t,Maybe ([UnifierDescription],Instantiation))) -> Enumeration (_,Maybe (LogicalInstantiation,[Unifier],ResolutionProof,[UnifierDescription],Instantiation))
+enumerate_cnf_unsat_instantiations_transform_2 :: Maybe (LogicalInstantiation,[Unifier],ResolutionProof,FullSolution,Enumeration (t,Maybe ([UnifierDescription],Instantiation))) -> Enumeration (_,Maybe (LogicalInstantiation,[Unifier],ResolutionProof,FullSolution,[UnifierDescription],Instantiation))
 enumerate_cnf_unsat_instantiations_transform_2 Nothing = enum_hleft_h enum_nothing_h
-enumerate_cnf_unsat_instantiations_transform_2 (Just (loginst,us,proof,e)) = enum_hright_h (apply_enum_1_h (enumerate_cnf_unsat_instantiations_transform loginst us proof) e)
+enumerate_cnf_unsat_instantiations_transform_2 (Just (loginst,us,proof,fs,e)) = enum_hright_h (apply_enum_1_h (enumerate_cnf_unsat_instantiations_transform loginst us proof fs) e)
 
 
 -- A proof data type to log the actual proof.
@@ -790,9 +861,9 @@ show_resolution_proof [] [] = "Done."
 show_resolution_proof (ud:uds) (st:sts) = (show_resolution_step ud st) ++ (show_resolution_proof uds sts)
 
 
-show_unsat_instantiation :: ExtendedSignature -> [Metavariable] -> Maybe (LogicalInstantiation,[Unifier],ResolutionProof,[UnifierDescription],Instantiation) -> String
+show_unsat_instantiation :: ExtendedSignature -> [Metavariable] -> Maybe (LogicalInstantiation,[Unifier],ResolutionProof,FullSolution,[UnifierDescription],Instantiation) -> String
 show_unsat_instantiation _ _ Nothing = "Unsatisfiable"
-show_unsat_instantiation sig mvs (Just (loginst,us,proof,uds,inst)) = (show_loginst loginst mvs) ++ "\nand\n" ++ (show_inst inst mvs) ++ "\nwith\n" ++ (show_unifs us uds) ++ "\nwith proof:\n" ++ (show_resolution_proof uds proof)
+show_unsat_instantiation sig mvs (Just (loginst,us,proof,fs,uds,inst)) = (show_loginst loginst mvs) ++ "\nand\n" ++ (show_inst inst mvs) ++ "\nwith\n" ++ (show_unifs us uds) ++ "\nwith proof:\n" ++ (show_resolution_proof uds proof) ++ "\nwhere the dependency graph before finishing meta-unification looked like this:\n" ++ (full_soln_str fs) ++ "\n"
 
 show_unifs :: [Unifier] -> [UnifierDescription] -> String
 show_unifs [] [] = ""
@@ -802,14 +873,14 @@ show_unifs [] (ud:uds) = "(Unknown unifier): " ++ (show ud) ++ "\n" ++ (show_uni
 --show_unifs (u:us) [] = (show u) ++ ": []\n" ++ (show_unifs us [])
 show_unifs (u:us) [] = "Unsatisfiable.\n"
 
-show_nth_unsat_instantiation :: ExtendedSignature -> [Metavariable] -> Enumeration (t,Maybe (LogicalInstantiation,[Unifier],ResolutionProof,[UnifierDescription],Instantiation)) -> Int -> IO ()
+show_nth_unsat_instantiation :: ExtendedSignature -> [Metavariable] -> Enumeration (t,Maybe (LogicalInstantiation,[Unifier],ResolutionProof,FullSolution,[UnifierDescription],Instantiation)) -> Int -> IO ()
 show_nth_unsat_instantiation sig mvs en i = putStr (show_unsat_instantiation sig mvs ((enum_up_to_h i en) !! i))
 
 infinity :: Int
 infinity = 99999999999999999
 
-show_all_unsat_instantiations :: ExtendedSignature -> [Metavariable] -> Enumeration (t,Maybe (LogicalInstantiation,[Unifier],ResolutionProof,[UnifierDescription],Instantiation)) -> IO ()
+show_all_unsat_instantiations :: ExtendedSignature -> [Metavariable] -> Enumeration (t,Maybe (LogicalInstantiation,[Unifier],ResolutionProof,FullSolution,[UnifierDescription],Instantiation)) -> IO ()
 show_all_unsat_instantiations sig mvs en = foldr (>>) (putStr "") (map (\pair -> (putStr ("Solution #" ++ (show (fst pair)) ++ ":\n")) >> (putStr (show_unsat_instantiation sig mvs (snd pair))) >> (putStr "\n")) (zip [0..infinity] (enum_up_to_h infinity en)))
 
-show_n_unsat_instantiations :: ExtendedSignature -> [Metavariable] -> Enumeration (t,Maybe (LogicalInstantiation,[Unifier],ResolutionProof,[UnifierDescription],Instantiation)) -> Int -> IO ()
+show_n_unsat_instantiations :: ExtendedSignature -> [Metavariable] -> Enumeration (t,Maybe (LogicalInstantiation,[Unifier],ResolutionProof,FullSolution,[UnifierDescription],Instantiation)) -> Int -> IO ()
 show_n_unsat_instantiations sig mvs en n = foldr (>>) (putStr "") (map (\pair -> (putStr ("Solution #" ++ (show (fst pair)) ++ ":\n")) >> (putStr (show_unsat_instantiation sig mvs (snd pair))) >> (putStr "\n")) (zip [0..n] (enum_up_to_h n en)))

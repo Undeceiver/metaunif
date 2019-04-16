@@ -1,0 +1,86 @@
+\newcommand{\tset}[1]      {\{{#1}\}}                     % set data type
+\newcommand{\tbag}[1]      {\{\!\!|{#1}\}\!\!\!|}         % bag data type
+\newcommand{\tlist}[1]     {[{#1}]}                       %list data type
+\newcommand{\ttree}[1]     {{\frak t}({#1})}              %tree data type
+\newcommand{\cmd}[1]      {\underline{{#1}}}
+\newcommand{\cb}          {\begin{tabbing}MMMMM\=MM\=MM\=MM\=MM\=MM\=MM\=MM\=MM\=MM\= \kill}
+\newcommand{\ce}          {\end{tabbing}}
+\newcommand{\ontology}[1]	{\ensuremath{\mathcal{#1}}}
+\newcommand{\ont}[1]	{\ontology{#1}}
+\newcommand{\conceptualization}[1]	{\ensuremath{\mathcal{#1}}}
+\newcommand{\conc}[1]	{\conceptualization{#1}}
+
+\newcommand{\HInsert}[2]   {\centerline {\immediate\pdfximage width #2  {#1}\pdfrefximage\pdflastximage}}
+\newcommand{\VInsert}[2]   {\centerline {\immediate\pdfximage height #2 {#1}\pdfrefximage\pdflastximage}}
+
+
+\newtheorem{definition}{Definition}[section]
+\newtheorem{proposition}{Proposition}[section]
+\newtheorem{corollary}{Corollary}[section]
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{lemma}{Lemma}[section]
+\newtheorem{statement}{Statement}[section]
+\newtheorem{assumption}{Assumption}[section]
+\newtheorem{problem}{Problem}[section]
+
+\newcounter{remark}
+\newcounter{example}
+\setcounter{remark}{0}
+\setcounter{example}{0}
+
+\def\example{
+\bigskip
+
+\addtocounter{example}{1}%
+\noindent \textbf{Example \Roman{example}:}\\
+}
+
+
+\def\remark{
+%\addtocounter{remark}{1}%
+\refstepcounter{remark}
+\noindent \emph{Remark \arabic{remark}:}
+}
+
+\renewcommand{\topfraction}{.99}
+\renewcommand{\textfraction}{.01}
+
+\newcommand{\dblquote}[1] {\textquotedblleft #1\textquotedblright}
+
+\usepackage{listings}
+\usepackage{color}
+
+\definecolor{dkgreen}{rgb}{0,0.6,0}
+\definecolor{gray}{rgb}{0.5,0.5,0.5}
+\definecolor{mauve}{rgb}{0.58,0,0.82}
+
+\lstset{frame=tb,
+  language=Prolog,
+  aboveskip=3mm,
+  belowskip=3mm,
+  showstringspaces=false,
+  columns=flexible,
+  basicstyle={\small\ttfamily},
+  numbers=none,
+  numberstyle=\tiny\color{gray},
+  keywordstyle=\color{blue},
+  commentstyle=\color{dkgreen},
+  stringstyle=\color{mauve},
+  breaklines=true,
+  breakatwhitespace=true,
+  tabsize=3
+}
+
+\newcommand{\mfunc}[1]      {{\it{#1}}}
+\newcommand{\mmfunc}[1]      {\text{\it{#1}}}
+\newcommand{\defining}[1] {\emph{#1}}
+\newcommand{\keyconcept}[1] {\emph{#1}}
+\newcommand{\takeaway}[1] {{\bf{#1}}}
+\newcommand{\itemtitle}[1] {{\bf{#1}} - }
+
+\newcommand{\metavars}[1] {\mathcal{#1}}
+\newcommand{\unsatmap} {\rightarrow^{\mmfunc{unsat}}}
+
+\newcommand{\objectvar}[1] {\lowercase{#1}}
+\newcommand{\metavar}[1] {\uppercase{#1}}
+\newcommand{\metametavar}[1] {\mathcal{\uppercase{#1}}}
