@@ -51,6 +51,16 @@ append_clause :: CNF -> Clause -> CNF
 append_clause [] cl = [cl]
 append_clause (cl1:cls) cl2 = (cl1:(append_clause cls cl2))
 
+get_metavars_actual_lit :: ActualLiteral -> [Metavariable]
+get_metavars_actual_lit (PosLit l) = get_metavars_mlit l
+get_metavars_actual_lit (NegLit l) = get_metavars_mlit l
+
+get_metavars_clause :: Clause -> [Metavariable]
+get_metavars_clause cl = foldr union [] (map get_metavars_actual_lit cl)
+
+get_metavars_cnf :: CNF -> [Metavariable]
+get_metavars_cnf cnf = foldr union [] (map get_metavars_clause cnf)
+
 -- Note that transforming a formula into CNF form is performed outside this program: its assumed input are always CNFs in the adequate format.
 
 -- In the process of solving a CNF through meta-resolution, we generate constraints, which may be dumped down into a DependencyGraph and we inductively instantiate the meta-variables.
@@ -65,6 +75,9 @@ instance Show Formula where
 	show (FOr f1 f2) = "(" ++ (show f1) ++ ") | (" ++ (show f2) ++ ")"
 
 type LogicalInstantiation = (Metavariable -> Formula)
+
+eq_loginst :: [Metavariable] -> LogicalInstantiation -> LogicalInstantiation -> Bool
+eq_loginst mvs loginst1 loginst2 = all (\mv -> (loginst1 mv) == (loginst2 mv)) mvs
 
 show_loginst_mv :: LogicalInstantiation -> Metavariable -> String
 show_loginst_mv i mv = (show mv) ++ " -> " ++ (show (i mv))
@@ -109,8 +122,9 @@ apply_lambdaformula f (LFRightAndVar v) = case (apply_lambdaformula f v) of {FAn
 apply_lambdaformula f (LFLeftOrVar v) = case (apply_lambdaformula f v) of {FOr f1 f2 -> f1}
 apply_lambdaformula f (LFRightOrVar v) = case (apply_lambdaformula f v) of {FOr f1 f2 -> f2}
 
-apply_lambdaformula_lit :: Formula -> (LambdaFormulaVar -> Literal)
-apply_lambdaformula_lit f v = case (apply_lambdaformula f v) of {FLit l -> l}
+apply_lambdaformula_lit :: Formula -> (LambdaFormulaVar -> ActualLiteral)
+-- Negations may appear here because of flippings that appear when applying the resolution rule, but no ands or ors should appear here.
+apply_lambdaformula_lit f v = case (apply_lambdaformula f v) of {FLit l -> PosLit (MLitL l); FNeg (FLit l) -> NegLit (MLitL l)}
 
 data LambdaAtom = LAtomVar LambdaFormulaVar | LAtomLit Metaliteral | LAtomR Unifier LambdaAtom deriving Eq
 
@@ -129,13 +143,14 @@ apply_lambdaclause_lit :: Formula -> LambdaClause -> Clause
 apply_lambdaclause_lit f lcl = map (apply_lambdalit_lit f) lcl
 
 apply_lambdalit_lit :: Formula -> LambdaLiteral -> ActualLiteral
-apply_lambdalit_lit f (LPosLit a) = PosLit (apply_lambdaatom_lit f a)
-apply_lambdalit_lit f (LNegLit a) = NegLit (apply_lambdaatom_lit f a)
+apply_lambdalit_lit f (LPosLit a) = apply_lambdaatom_lit f a
+apply_lambdalit_lit f (LNegLit a) = case (apply_lambdaatom_lit f a) of {PosLit ml -> NegLit ml; NegLit ml -> PosLit ml}
 
-apply_lambdaatom_lit :: Formula -> LambdaAtom -> Metaliteral
-apply_lambdaatom_lit f (LAtomVar v) = MLitL (apply_lambdaformula_lit f v)
-apply_lambdaatom_lit _ (LAtomLit ml) = ml
-apply_lambdaatom_lit f (LAtomR u at) = MLitR u (apply_lambdaatom_lit f at)
+-- The potential negation here is really only used to note that "it should be negated" at the level above, it's not really a literal. In other words, this may imply double negations, that are solved at the level above.
+apply_lambdaatom_lit :: Formula -> LambdaAtom -> ActualLiteral
+apply_lambdaatom_lit f (LAtomVar v) = apply_lambdaformula_lit f v
+apply_lambdaatom_lit _ (LAtomLit ml) = PosLit ml
+apply_lambdaatom_lit f (LAtomR u at) = case (apply_lambdaatom_lit f at) of {PosLit ml -> PosLit (MLitR u ml); NegLit ml -> NegLit (MLitR u ml)}
 
 apply_loginst_cnf :: [Metavariable] -> LogicalInstantiation -> CNF -> CNF
 apply_loginst_cnf mvs i cnf = foldl (\cnf2 -> \mv -> apply_loginst_cnf_helper mv cnf2 (i mv)) cnf mvs
@@ -209,6 +224,9 @@ apply_loginst_lit_atom mv1 (MLitR u ml) = LAtomR u (apply_loginst_lit_atom mv1 m
 apply_loginst_lit_atom mv1 ml | isJust aslit && mv1 == mv2 = LAtomVar LFBaseVar where aslit = is_metavar_lit ml; (mv2,us) = fromJust aslit
 apply_loginst_lit_atom mv1 ml = LAtomLit ml
 
+set_loginst :: LogicalInstantiation -> Metavariable -> Formula -> LogicalInstantiation
+set_loginst loginst mv f = compose_loginst (build_loginst mv f) loginst
+
 compose_loginst :: LogicalInstantiation -> LogicalInstantiation -> LogicalInstantiation
 compose_loginst i1 i2 mv = apply_loginst_formula i1 (i2 mv)
 
@@ -240,9 +258,16 @@ can_resolve_literals _ _ = False
 -- Receives the next unifier to use, the two literals to resolve over (assumed to have already been checked to be resolvable, and therefore we only require the Atom (Literal)), and the two clauses WITHOUT THE LITERALS. These will be used only to generate the resulting clause.
 -- Returns the resulting clause and the constraints generate.
 -- This function does not remove repeated clauses or literals.
--- By convention, we always consider the left metaliteral / clause to be the positive one and the right metaliteral / clause to be the negative one. This enables us to avoid problems.
 apply_resolution_rule :: Unifier -> Metaliteral -> Metaliteral -> Clause -> Clause -> (Constraint,Clause)
 apply_resolution_rule u ml1 ml2 c1 c2 = (Lcstr (MLitR u ml1) (MLitR u ml2), (map (apply_to_literal (MLitR u)) (c1 ++ c2)))
+
+-- Does the flipping around if necessary, wrapping the previous function.
+-- Performance "trick": We receive the logical instantiation and only compose with it when it is actually necessary.
+apply_resolution_rule_lits :: [Metavariable] -> LogicalInstantiation -> Unifier -> ActualLiteral -> ActualLiteral -> Clause -> Clause -> (Constraint,Clause,LogicalInstantiation,[Metavariable])
+apply_resolution_rule_lits mvs loginst u (PosLit ml1) (NegLit ml2) c1 c2 = (cstr,rsv,loginst,mvs) where (cstr,rsv) = apply_resolution_rule u ml1 ml2 c1 c2
+-- If they are flipped then it HAS to be a meta-variable.
+apply_resolution_rule_lits mvs loginst u (NegLit ml1) al2 c1 c2 = (cstr,rsv,compose_loginst (build_loginst mv (FNeg (idloginst nmv))) rloginst,nmv:rmvs) where (mv,us) = fromJust (is_metavar_lit ml1); nmv = new_metavar mvs; nml = build_metaliteral (reverse us) (MLitL (LitM nmv)); (cstr,rsv,rloginst,rmvs) = apply_resolution_rule_lits mvs loginst u (PosLit nml) al2 c1 c2
+apply_resolution_rule_lits mvs loginst u (PosLit ml1) (PosLit ml2) c1 c2 = (cstr,rsv,compose_loginst (build_loginst mv (FNeg (idloginst nmv))) rloginst,nmv:rmvs) where (mv,us) = fromJust (is_metavar_lit ml2); nmv = new_metavar mvs; nml = build_metaliteral (reverse us) (MLitL (LitM nmv)); (cstr,rsv,rloginst,rmvs) = apply_resolution_rule_lits mvs loginst u (PosLit ml1) (NegLit nml) c1 c2
 
 -- Cleaning that definitely needs to be done.
 
@@ -333,10 +358,10 @@ force_empty_clause_helper :: Bool -> [Metavariable] -> Unifier -> Metaliteral ->
 force_empty_clause_helper True _ _ ml1 lit2 | (not (can_resolve_literals lit2 (NegLit ml1))) = Nothing 
 force_empty_clause_helper False _ _ ml1 lit2 | (not (can_resolve_literals (PosLit ml1) lit2)) = Nothing
 force_empty_clause_helper True mvs u ml1 (PosLit ml2) = Just (Lcstr (MLitR u ml1) (MLitR u ml2),idloginst,mvs)
-force_empty_clause_helper True mvs u ml1 (NegLit ml2) | isJust aslit = Just (Lcstr (MLitR u ml1) (MLitR u (MLitL (LitM nmv))),build_loginst mv (FNeg (idloginst nmv)),(nmv:mvs)) where aslit = is_metavar_lit ml2; mv = fst (fromJust aslit); nmv = new_metavar mvs
+force_empty_clause_helper True mvs u ml1 (NegLit ml2) | isJust aslit = Just (Lcstr (MLitR u ml1) (MLitR u nml),build_loginst mv (FNeg (idloginst nmv)),(nmv:mvs)) where aslit = is_metavar_lit ml2; (mv,us) = fromJust aslit; nmv = new_metavar mvs; nml = build_metaliteral (reverse us) (MLitL (LitM nmv))
 force_empty_clause_helper True mvs u ml1 _ = Nothing
 force_empty_clause_helper False mvs u ml1 (NegLit ml2) = Just (Lcstr (MLitR u ml1) (MLitR u ml2),idloginst,mvs)
-force_empty_clause_helper False mvs u ml1 (PosLit ml2) | isJust aslit = Just (Lcstr (MLitR u ml1) (MLitR u (MLitL (LitM nmv))),build_loginst mv (FNeg (idloginst nmv)),(nmv:mvs)) where aslit = is_metavar_lit ml2; mv = fst (fromJust aslit); nmv = new_metavar mvs
+force_empty_clause_helper False mvs u ml1 (PosLit ml2) | isJust aslit = Just (Lcstr (MLitR u ml1) (MLitR u nml),build_loginst mv (FNeg (idloginst nmv)),(nmv:mvs)) where aslit = is_metavar_lit ml2; (mv,us) = fromJust aslit; nmv = new_metavar mvs; nml = build_metaliteral (reverse us) (MLitL (LitM nmv))
 force_empty_clause_helper False mvs u ml1 _ = Nothing
 
 combine_force_empty_clause :: Bool -> Unifier -> Metaliteral -> Maybe (FullSolution,LogicalInstantiation) -> ActualLiteral -> Maybe (FullSolution,LogicalInstantiation)
@@ -602,16 +627,17 @@ step_with_complementary_literal sig ((mvs,mveqs,(inst,cs),(g,gsol,ueqs)),loginst
 	where
 	pclause = cnf !! ipclause; plit = pclause !! iplit; patom = get_atom plit; rempclause = pclause \\ [plit];
 	nclause = cnf !! inclause; nlit = nclause !! inlit; natom = get_atom nlit; remnclause = nclause \\ [nlit];
-	(newcstr,newcl) = apply_resolution_rule u patom natom rempclause remnclause;
-	(rmvs,(rinst,rcs)) = all_simpl_cstr mvs (inst,newcstr:cs);
+	(newcstr,newcl,rsvloginst,rsvmvs) = apply_resolution_rule_lits mvs loginst u plit nlit rempclause remnclause;
+	(rmvs,(rinst,rcs)) = all_simpl_cstr rsvmvs (inst,newcstr:cs);
 	parcfs = (rmvs,mveqs,(rinst,rcs),(g,gsol,ueqs));
 	resfs = update_graph_with_constraints_and_propagate sig (rmvs,mveqs,(rinst,[]),(g,gsol,ueqs)) rcs;
 --	resfs = (rmvs,mveqs,(rinst,[]),update_graph_with_constraints (g,gsol,ueqs) rcs);
 	resfsprop = at_most_propagate sig resfs;
 	rescnf = clean_deffo_cnf (apply_graph_solution_cnf_fs resfsprop (append_clause cnf newcl));
 	resproof = (RStep pclause nclause plit nlit newcl cnf rescnf):proof;
-	rescont = case newcl of {[] -> Nothing; _ -> Just (rescnf,resfsprop,loginst,resproof)};
-	maybe_empty = force_empty_clause sig (parcfs,loginst) u patom natom rempclause remnclause;
+	rescont = case newcl of {[] -> Nothing; _ -> Just (rescnf,resfsprop,rsvloginst,resproof)};
+-- DANGER MARKER: I'm not sure that using the atoms here is correct. I think it should, but maybe the function apply_resolution_rule_lits should return the new atoms (with the newly created meta-variables) and use those here. This is a lot of work and I'd rather avoid it if it's not necessary, but I'm not 100% sure.
+	maybe_empty = force_empty_clause sig (parcfs,rsvloginst) u patom natom rempclause remnclause;
 	maybe_empty_proof = (RStep pclause nclause plit nlit [] cnf cnf):proof;
 	maybe_empty_full = maybe_apply (\(a,b) -> (a,b,maybe_empty_proof)) maybe_empty;
 	maybe_empty_graph = update_constraints_in_graph_maybe_loginst sig maybe_empty_full;
@@ -662,14 +688,14 @@ apply_inst_cnf :: Instantiation -> CNF -> CNF
 apply_inst_cnf inst cnf = map (apply_inst_clause inst) cnf
 
 apply_substitution_actual_lit :: Int -> Unifier -> UnifierDescription -> ActualLiteral -> ActualLiteral
-apply_substitution_actual_lit nvars u ud (PosLit x) = PosLit (apply_substitution_mlit x)
-apply_substitution_actual_lit nvars u ud (NegLit x) = NegLit (apply_substitution_mlit x)
+apply_substitution_actual_lit nvars u ud (PosLit x) = PosLit (apply_substitution_mlit nvars u ud x)
+apply_substitution_actual_lit nvars u ud (NegLit x) = NegLit (apply_substitution_mlit nvars u ud x)
 
 apply_substitution_clause :: Int -> Unifier -> UnifierDescription -> Clause -> Clause
 apply_substitution_clause nvars u ud cl = map (apply_substitution_actual_lit nvars u ud) cl
 
 apply_substitution_cnf :: Int -> Unifier -> UnifierDescription -> CNF -> CNF
-apply_substitution_cnf nvars u ud cnf = map (apply_substitution_cnf nvars u ud) cnf
+apply_substitution_cnf nvars u ud cnf = map (apply_substitution_clause nvars u ud) cnf
 
 update_constraints_in_graph_maybe_loginst :: ExtendedSignature -> Maybe (FullSolution,LogicalInstantiation,ResolutionProof) -> Maybe (FullSolution,LogicalInstantiation,ResolutionProof)
 update_constraints_in_graph_maybe_loginst _ Nothing = Nothing
@@ -817,8 +843,8 @@ enumerate_constraint_systems_transform :: ExtendedSignature -> Maybe (Int,FullSo
 enumerate_constraint_systems_transform _ Nothing = Nothing
 enumerate_constraint_systems_transform sig (Just (nus,fs,loginst,proof)) = Just (sig,nus,fs,loginst,proof)
 
-solve_resolution_gen_constraints :: MetaunificationHeuristic hl ht -> (ExtendedSignature,Int,FullSolution,LogicalInstantiation,ResolutionProof) -> (LogicalInstantiation,[Unifier],ResolutionProof,FullSolution,Enumeration (_,Maybe ([UnifierDescription],Instantiation)))
-solve_resolution_gen_constraints heur (sig,nus,fs,loginst,proof) = (loginst,us,proof,fs,enum_maybe_filter_h is_solution_satisfiable (apply_enum_1_h solve_resolution_gen_constraints_validate_insts (apply_enum_1_h (solve_resolution_gen_constraints_restore_consistency_unifs (get_metavar_links sig)) (diagonalize_h (\rfs -> case rfs of {Nothing -> enum_hleft_h empty_enum_mb_h; Just irfs -> enum_hright_h (instantiation_from_dgraph_sol sig irfs us)}) fsols_consistent))))
+solve_resolution_gen_constraints :: MetaunificationHeuristic hl ht -> (ExtendedSignature,Int,FullSolution,LogicalInstantiation,ResolutionProof) -> (Maybe LogicalInstantiation,[Unifier],ResolutionProof,FullSolution,Enumeration (_,Maybe ([UnifierDescription],Instantiation)))
+solve_resolution_gen_constraints heur (sig,nus,fs,loginst,proof) = (restore_consistency_metavar_links_loginsts (get_metavar_links sig) (Just loginst),us,proof,fs,enum_maybe_filter_h is_solution_satisfiable (apply_enum_1_h solve_resolution_gen_constraints_validate_insts (apply_enum_1_h (solve_resolution_gen_constraints_restore_consistency_unifs (get_metavar_links sig)) (diagonalize_h (\rfs -> case rfs of {Nothing -> enum_hleft_h empty_enum_mb_h; Just irfs -> enum_hright_h (instantiation_from_dgraph_sol sig irfs us)}) fsols_consistent))))
 	where
 	fsols = enumerate_and_propagate_all heur sig fs;
 	fsols_consistent = apply_enum_1_h (restore_consistency_metavar_links sig (get_metavar_links sig)) fsols;
@@ -826,6 +852,7 @@ solve_resolution_gen_constraints heur (sig,nus,fs,loginst,proof) = (loginst,us,p
 	us = map U [0..nus]
 
 -- I hate myself
+-- Update: I hate you too.
 empty_enum_mb :: Enumeration (Maybe t)
 empty_enum_mb = Enum Nothing (\idx -> \x -> Nothing)
 
@@ -834,7 +861,7 @@ empty_enum_mb_h = no_help empty_enum_mb
 
 fromJust_special :: Maybe (Maybe t) -> Maybe t
 fromJust_special (Just x) = x
-fromJust_sepcial Nothing = Nothing
+fromJust_special Nothing = Nothing
 
 solve_resolution_gen_constraints_restore_consistency_unifs :: [MetavariableLink] -> Maybe ([UnifierDescription],Instantiation) -> Maybe ([UnifierDescription],Instantiation)
 solve_resolution_gen_constraints_restore_consistency_unifs _ Nothing = Nothing
@@ -847,6 +874,55 @@ solve_resolution_gen_constraints_validate_insts (Just (uds,inst)) = case validat
 
 -- restore_consistency_metavar_links :: [MetavariableLink] -> FullSolution -> Maybe FullSolution
 -- restore_consistency_metavar_links_insts :: [MetavariableLink] -> Maybe Instantiation -> Maybe Instantiation
+
+restore_consistency_metavar_links_loginsts :: [MetavariableLink] -> Maybe LogicalInstantiation -> Maybe LogicalInstantiation
+restore_consistency_metavar_links_loginsts _ Nothing = Nothing
+restore_consistency_metavar_links_loginsts [] (Just loginst) = Just loginst
+restore_consistency_metavar_links_loginsts ((smv,ls):rs) (Just loginst) = restore_consistency_metavar_links_loginsts rs (restore_consistency_metavar_links_loginsts_rec smv ls (Just loginst))
+
+restore_consistency_metavar_links_loginsts_rec :: Metavariable -> [(Metavariable,Either Term Literal -> Either Term Literal)] -> Maybe LogicalInstantiation -> Maybe LogicalInstantiation
+restore_consistency_metavar_links_loginsts_rec _ _ Nothing = Nothing
+restore_consistency_metavar_links_loginsts_rec _ [] (Just loginst) = Just loginst
+restore_consistency_metavar_links_loginsts_rec smv ((tmv,f):rs) (Just loginst) = restore_consistency_metavar_links_loginsts_rec smv rs (most_instantiated_logical_inst tmv smv f (Just loginst))
+
+most_instantiated_logical :: Formula -> Formula -> Maybe Formula
+most_instantiated_logical (FLit l1) (FLit l2) = case rl of {Just (Right rrl) -> Just (FLit rrl); _ -> Nothing} where rl = most_instantiated (Right l1) (Right l2)
+most_instantiated_logical (FNeg f1) (FNeg f2) = maybe_apply FNeg (most_instantiated_logical f1 f2)
+most_instantiated_logical (FNeg f1) (FLit (LitM _)) = Just (FNeg f1)
+most_instantiated_logical (FNeg f1) (FLit _) = Nothing
+most_instantiated_logical (FLit l1) (FNeg f2) = most_instantiated_logical (FNeg f2) (FLit l1)
+most_instantiated_logical (FNeg f1) _ = Nothing
+most_instantiated_logical _ (FNeg f2) = Nothing
+most_instantiated_logical (FAnd f11 f12) (FAnd f21 f22) = if ((isJust r1) && (isJust r2)) then (Just (FAnd (fromJust r1) (fromJust r2))) else Nothing where r1 = most_instantiated_logical f11 f21; r2 = most_instantiated_logical f12 f22
+most_instantiated_logical (FAnd f11 f12) (FLit (LitM _)) = Just (FAnd f11 f12)
+most_instantiated_logical (FAnd f11 f12) (FLit _) = Nothing
+most_instantiated_logical (FLit l1) (FAnd f21 f22) = most_instantiated_logical (FAnd f21 f22) (FLit l1)
+most_instantiated_logical (FAnd f11 f12) _ = Nothing
+most_instantiated_logical _ (FAnd f21 f22) = Nothing
+most_instantiated_logical (FOr f11 f12) (FOr f21 f22) = if ((isJust r1) && (isJust r2)) then (Just (FOr (fromJust r1) (fromJust r2))) else Nothing where r1 = most_instantiated_logical f11 f21; r2 = most_instantiated_logical f12 f22
+most_instantiated_logical (FOr f11 f12) (FLit (LitM _)) = Just (FOr f11 f12)
+most_instantiated_logical (FOr f11 f12) (FLit _) = Nothing
+most_instantiated_logical (FLit l1) (FOr f21 f22) = most_instantiated_logical (FOr f21 f22) (FLit l1)
+most_instantiated_logical (FOr f11 f12) _ = Nothing
+most_instantiated_logical _ (FOr f11 f12) = Nothing
+
+-- Lifts to logical instantiations.
+lift_metavar_link :: (Either Term Literal -> Either Term Literal) -> (Formula -> Formula)
+-- Here we assume that both are literals. If not, just use the literal as is (slightly dangerous)
+lift_metavar_link f (FLit l) = FLit (fromRight l (f (Right l)))
+lift_metavar_link f (FNeg sf) = FNeg (lift_metavar_link f sf)
+lift_metavar_link f (FAnd sf1 sf2) = FAnd (lift_metavar_link f sf1) (lift_metavar_link f sf2)
+lift_metavar_link f (FOr sf1 sf2) = FOr (lift_metavar_link f sf1) (lift_metavar_link f sf2)
+
+apply_loginst :: LogicalInstantiation -> Metavariable -> Maybe Formula
+apply_loginst loginst mv = if (r /= (FLit (LitM mv))) then (Just r) else Nothing where r = loginst mv
+
+most_instantiated_logical_inst :: Metavariable -> Metavariable -> (Either Term Literal -> Either Term Literal) -> Maybe LogicalInstantiation -> Maybe LogicalInstantiation
+most_instantiated_logical_inst _ _ _ Nothing = Nothing
+most_instantiated_logical_inst tmv smv f (Just loginst) = case nv of {Nothing -> Just loginst; Just f1 -> case ov of {Nothing -> Just (set_loginst loginst tmv (lift_metavar_link f f1)); Just f2 -> case (most_instantiated_logical f2 (lift_metavar_link f f1)) of {Nothing -> Nothing; Just rf -> Just (set_loginst loginst tmv rf)}}}  
+	where 
+	nv = apply_loginst loginst smv;
+	ov = apply_loginst loginst tmv;	
 
 enumerate_cnf_unsat_instantiations :: MetaresolutionHeuristic hrersenum hclauseenum -> MetaunificationHeuristic hl ht -> ExtendedSignature -> [Metavariable] -> CNF -> Enumeration (_,Maybe (LogicalInstantiation,[Unifier],ResolutionProof,FullSolution,[UnifierDescription],Instantiation))
 enumerate_cnf_unsat_instantiations resheur unifheur sig mvs cnf = enum_filter_h (enumerate_cnf_unsat_instantiations_filter mvs) sols
@@ -862,9 +938,10 @@ enumerate_cnf_unsat_instantiations_transform :: LogicalInstantiation -> [Unifier
 enumerate_cnf_unsat_instantiations_transform _ _ _ _ Nothing = Nothing
 enumerate_cnf_unsat_instantiations_transform loginst us proof fs (Just (uds,inst)) = Just (loginst,us,proof,fs,uds,inst)
 
-enumerate_cnf_unsat_instantiations_transform_2 :: Maybe (LogicalInstantiation,[Unifier],ResolutionProof,FullSolution,Enumeration (t,Maybe ([UnifierDescription],Instantiation))) -> Enumeration (_,Maybe (LogicalInstantiation,[Unifier],ResolutionProof,FullSolution,[UnifierDescription],Instantiation))
+enumerate_cnf_unsat_instantiations_transform_2 :: Maybe (Maybe LogicalInstantiation,[Unifier],ResolutionProof,FullSolution,Enumeration (t,Maybe ([UnifierDescription],Instantiation))) -> Enumeration (_,Maybe (LogicalInstantiation,[Unifier],ResolutionProof,FullSolution,[UnifierDescription],Instantiation))
 enumerate_cnf_unsat_instantiations_transform_2 Nothing = enum_hleft_h enum_nothing_h
-enumerate_cnf_unsat_instantiations_transform_2 (Just (loginst,us,proof,fs,e)) = enum_hright_h (apply_enum_1_h (enumerate_cnf_unsat_instantiations_transform loginst us proof fs) e)
+enumerate_cnf_unsat_instantiations_transform_2 (Just (Nothing,_,_,_,_)) = enum_hleft_h enum_nothing_h
+enumerate_cnf_unsat_instantiations_transform_2 (Just (Just loginst,us,proof,fs,e)) = enum_hright_h (apply_enum_1_h (enumerate_cnf_unsat_instantiations_transform loginst us proof fs) e)
 
 
 -- A proof data type to log the actual proof.

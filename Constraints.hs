@@ -127,6 +127,7 @@ instance Read Metaterm where
 				in [(MTermT (fst r),(snd r))])
 
 data Metaliteral = MLitL Literal | MLitR Unifier Metaliteral | MLitP Predicate [Metaterm] deriving Eq
+
 instance Show Metaliteral where
 	show (MLitL l) = (show l)
 	show (MLitR u ml) = (show u) ++ " " ++ (show ml)
@@ -256,6 +257,10 @@ type Instantiation = (LitInstantiation,TermInstantiation)
 
 eq_inst :: Instantiation -> Instantiation -> Bool
 eq_inst (li1,ti1) (li2,ti2) = (eq_litinst li1 li2) && (eq_terminst ti1 ti2)
+
+eq_inst_mvs :: [Metavariable] -> Instantiation -> Instantiation -> Bool
+eq_inst_mvs [] _ _ = True
+eq_inst_mvs (mv:mvs) i1 i2 = ((apply_inst i1 mv) == (apply_inst i2 mv)) && (eq_inst_mvs mvs i1 i2)
 
 has_inst_value :: Instantiation -> Metavariable -> Bool
 --has_inst_value i mv = (((fst i) mv /= (LitM mv)) || ((snd i) mv /= (TMeta mv)))
@@ -493,7 +498,24 @@ new_metavars l (_:xs) = (mv:(new_metavars (mv:l) xs)) where mv = new_metavar l
 add_metavars :: [Metavariable] -> [a] -> ([Metavariable],[Metavariable])
 add_metavars l1 l2 = (l1++r,r) where r = new_metavars l1 l2
 
+get_metavars_term :: Term -> [Metavariable]
+get_metavars_term (TVar _) = []
+get_metavars_term (TFun _ ts) = foldr List.union [] (map get_metavars_term ts)
+get_metavars_term (TMeta mv) = [mv]
 
+get_metavars_lit :: Literal -> [Metavariable]
+get_metavars_lit (Lit _ ts) = foldr List.union [] (map get_metavars_term ts)
+get_metavars_lit (LitM mv) = [mv]
+
+get_metavars_mterm :: Metaterm -> [Metavariable]
+get_metavars_mterm (MTermT t) = get_metavars_term t
+get_metavars_mterm (MTermF f mts) = foldr List.union [] (map get_metavars_mterm mts)
+get_metavars_mterm (MTermR u mt) = get_metavars_mterm mt
+
+get_metavars_mlit :: Metaliteral -> [Metavariable]
+get_metavars_mlit (MLitL l) = get_metavars_lit l
+get_metavars_mlit (MLitP p mts) = foldr List.union [] (map get_metavars_mterm mts)
+get_metavars_mlit (MLitR u ml) = get_metavars_mlit ml
 
 
 -- We use numbers instead of using lists all along because while we need to consider having lots of variables, in practice most of them will not be used
@@ -587,14 +609,15 @@ all_simpl_cstr_step_helper j (b,c) = (b || (c /= nc),nc) where nc = simpl_sides_
 
 -- Dependency graphs
 
--- This function is purposely not applied when meta-variables are present, raising an error.
 type Substitution = (Variable -> Term)
 apply_subst :: Substitution -> Term -> Term
 apply_subst s (TVar v) = s v
 apply_subst s (TFun f l) = TFun f (map (apply_subst s) l)
+apply_subst s (TMeta m) = TMeta m
 
 apply_subst_lit :: Substitution -> Literal -> Literal
 apply_subst_lit s (Lit p ts) = Lit p (map (apply_subst s) ts)
+apply_subst_lit s (LitM m) = LitM m
 
 apply_subst_tlit :: Substitution -> Either Term Literal -> Either Term Literal
 apply_subst_tlit s (Left t) = Left (apply_subst s t)

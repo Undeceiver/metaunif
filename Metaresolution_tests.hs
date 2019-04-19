@@ -1631,23 +1631,174 @@ metares_all_insts_diff :: [Metavariable] -> Int -> Enumeration (_,Maybe (Logical
 metares_all_insts_diff mvs n en = metares_all_insts_diff_helper_3 mvs aslist where aslist = enum_up_to_h n en
 
 metares_all_insts_diff_helper_3 :: [Metavariable] -> [Maybe (LogicalInstantiation,[Unifier],ResolutionProof,FullSolution,[UnifierDescription],Instantiation)] -> AutomatedTestResult
-metares_all_insts_diff_helper_3 _ [] = ATR True "All instantiations distinct."
-metares_all_insts_diff_helper_3 mvs (s1:ss) = if (any (\s2 -> metares_all_insts_diff_helper s1 s2) ss) then (ATR False ("At least instantiation \n" ++ (metares_all_insts_diff_helper_2 mvs s1) ++ " is repeated.")) else (metares_all_insts_diff_helper_3 mvs ss)
+metares_all_insts_diff_helper_3 _ [] = ATR True "All solutions distinct."
+metares_all_insts_diff_helper_3 mvs (s1:ss) = if (any (\s2 -> metares_all_insts_diff_helper mvs s1 s2) ss) then (ATR False ("At least solution \n" ++ (metares_all_insts_diff_helper_2 mvs s1) ++ " is repeated.")) else (metares_all_insts_diff_helper_3 mvs ss)
 
-metares_all_insts_diff_helper :: Maybe (LogicalInstantiation,[Unifier],ResolutionProof,FullSolution,[UnifierDescription],Instantiation) -> Maybe (LogicalInstantiation,[Unifier],ResolutionProof,FullSolution,[UnifierDescription],Instantiation) -> Bool
-metares_all_insts_diff_helper Nothing _ = False
-metares_all_insts_diff_helper _ Nothing = False
-metares_all_insts_diff_helper (Just (_,_,_,_,uds1,inst1)) (Just (_,_,_,_,uds2,inst2)) = (eq_inst inst1 inst2) && (all (\(ud1,ud2) -> eq_unifier ud1 ud2) (zip uds1 uds2))
+metares_all_insts_diff_helper :: [Metavariable] -> Maybe (LogicalInstantiation,[Unifier],ResolutionProof,FullSolution,[UnifierDescription],Instantiation) -> Maybe (LogicalInstantiation,[Unifier],ResolutionProof,FullSolution,[UnifierDescription],Instantiation) -> Bool
+metares_all_insts_diff_helper _ Nothing _ = False
+metares_all_insts_diff_helper _ _ Nothing = False
+metares_all_insts_diff_helper mvs (Just (loginst1,_,_,_,uds1,inst1)) (Just (loginst2,_,_,_,uds2,inst2)) = (eq_loginst mvs loginst1 loginst2) && (eq_inst_mvs mvs inst1 inst2) && (all (\(ud1,ud2) -> eq_unifier ud1 ud2) (zip uds1 uds2))
 
 metares_all_insts_diff_helper_2 :: [Metavariable] -> Maybe (LogicalInstantiation,[Unifier],ResolutionProof,FullSolution,[UnifierDescription],Instantiation) -> String
 metares_all_insts_diff_helper_2 _ Nothing = "Unsatisfiable solution\n"
-metares_all_insts_diff_helper_2 mvs (Just (_,_,_,_,uds1,inst1)) = (show_inst inst1 mvs) ++ "\nwith\n" ++ (show uds1) ++ "\n"
+metares_all_insts_diff_helper_2 mvs (Just (loginst1,_,_,_,uds1,inst1)) = (show_loginst loginst1 mvs) ++ "\nand\n" ++ (show_inst inst1 mvs) ++ "\nwith\n" ++ (show uds1) ++ "\n"
 
 -- Apply the logical instantiation, then apply the instantiation, then apply the unifiers. The result should be the same literal (positive and negative, respectively).
-metares_inst_correct_step :: ExtendedSignature -> [Metavariable] -> [Unifier] -> [UnifierDescription] -> LogicalInstantiation -> Instantiation -> ResolutionStep -> Bool
-metares_inst_correct_step ((_,_,nvars),_,_,_) mvs us uds loginst inst (RStep _ _ (PosLit plit) (NegLit nlit) _ _ _) = where
+metares_inst_correct_step :: ExtendedSignature -> [Metavariable] -> [Unifier] -> [UnifierDescription] -> LogicalInstantiation -> Instantiation -> Unifier -> ResolutionStep -> ((Metaliteral,Metaliteral),(Metaliteral,Metaliteral))
+metares_inst_correct_step ((_,_,nvars),_,_,_) mvs us uds loginst inst u (RStep _ _ (PosLit plit) (NegLit nlit) _ _ _) = ((all_simpl_mlit (get_atom (head (head pcnf))),all_simpl_mlit (get_atom (head (head pcnf_r)))),(all_simpl_mlit (get_atom (head (head ncnf))),all_simpl_mlit (get_atom (head (head ncnf_r))))) where pcnf = [[PosLit (MLitR u plit)]]; ncnf = [[PosLit (MLitR u nlit)]]; pmvs = get_metavars_mlit plit; nmvs = get_metavars_mlit nlit; pcnf_r = foldl metares_inst_correct_step_apply_unifier (apply_inst_cnf inst (apply_loginst_cnf pmvs loginst pcnf)) (zip3 (replicate (length us) nvars) us uds); ncnf_r = foldl metares_inst_correct_step_apply_unifier (apply_inst_cnf inst (apply_loginst_cnf nmvs loginst ncnf)) (zip3 (replicate (length us) nvars) us uds)
+-- When the atoms are not positive/negative, it means that at least one is a meta-variable that has been flipped. What we do is: Verify that it has been flipped here, and then call recursively forgetting about the sign.
+metares_inst_correct_step sig mvs us uds loginst inst u (RStep pcl ncl (NegLit plit) nlit rsv ocnf rcnf) = 
+	if (isJust maybe_mv)
+	then
+		(case (loginst mv) of {FNeg _ -> rec; _ -> ((plit,plit),(get_atom nlit,get_atom nlit))})
+	else ((plit,plit),(get_atom nlit,get_atom nlit))
+	where maybe_mv = is_metavar_lit plit; (mv,_) = fromJust maybe_mv; rec = metares_inst_correct_step sig mvs us uds loginst inst u (RStep pcl ncl (PosLit plit) nlit rsv ocnf rcnf)
+metares_inst_correct_step sig mvs us uds loginst inst u (RStep pcl ncl (PosLit plit) (PosLit nlit) rsv ocnf rcnf) =
+	if (isJust maybe_mv)
+	then
+		(case (loginst mv) of {FNeg _ -> rec; _ -> ((plit,plit),(nlit,nlit))})
+	else ((plit,plit),(nlit,nlit))
+	where maybe_mv = is_metavar_lit nlit; (mv,_) = fromJust maybe_mv; rec = metares_inst_correct_step sig mvs us uds loginst inst u (RStep pcl ncl (PosLit plit) (NegLit nlit) rsv ocnf rcnf)
+
+metares_inst_correct_step_apply_unifier :: CNF -> (Int,Unifier,UnifierDescription) -> CNF
+metares_inst_correct_step_apply_unifier cnf (nvars,u,ud) = apply_substitution_cnf nvars u ud cnf
+
+metares_inst_correct_proof :: ExtendedSignature -> [Metavariable] -> [Unifier] -> [UnifierDescription] -> LogicalInstantiation -> Instantiation -> [Unifier] -> ResolutionProof -> Maybe ((Metaliteral,Metaliteral),(Metaliteral,Metaliteral))
+metares_inst_correct_proof sig mvs us uds loginst inst [] [] = Nothing
+metares_inst_correct_proof sig mvs us uds loginst inst (cu:cus) (step:steps) = if (pa_r /= na_r) then (Just ((pa,pa_r),(na,na_r))) else (metares_inst_correct_proof sig mvs us uds loginst inst cus steps) where ((pa,pa_r),(na,na_r)) = metares_inst_correct_step sig mvs us uds loginst inst cu step
+
+metares_inst_correct_proofs :: ExtendedSignature -> [Metavariable] -> CNF -> Int -> Enumeration (_,Maybe (LogicalInstantiation,[Unifier],ResolutionProof,FullSolution,[UnifierDescription],Instantiation)) -> AutomatedTestResult
+metares_inst_correct_proofs sig mvs cnf n en = if (null ress) then (ATR True "All proof steps in all solutions checked for correctness after instantiation and unification.") else (ATR False ("The following proofs were not correct after instantiation and unification:\n\n" ++ (concat ress))) where (std_sig,std_mvs,_) = standardize_apart (sig,mvs,cnf); ress = metares_inst_correct_proofs_helper std_sig std_mvs (enum_up_to_h n en)
+
+metares_inst_correct_proofs_helper :: ExtendedSignature -> [Metavariable] -> [Maybe (LogicalInstantiation,[Unifier],ResolutionProof,FullSolution,[UnifierDescription],Instantiation)] -> [String]
+metares_inst_correct_proofs_helper _ _ [] = []
+metares_inst_correct_proofs_helper sig mvs (Nothing:ss) = metares_inst_correct_proofs_helper sig mvs ss
+metares_inst_correct_proofs_helper sig mvs ((Just (loginst,us,pr,_,uds,inst)):ss) = if (isJust maybe_atoms) then ((metares_inst_correct_proofs_helper_2 sig mvs us uds loginst inst ((pa,pa_r),(na,na_r))):others) else others where maybe_atoms = metares_inst_correct_proof sig mvs us uds loginst inst us pr; ((pa,pa_r),(na,na_r)) = fromJust maybe_atoms; others = metares_inst_correct_proofs_helper sig mvs ss
+
+metares_inst_correct_proofs_helper_2 :: ExtendedSignature -> [Metavariable] -> [Unifier] -> [UnifierDescription] -> LogicalInstantiation -> Instantiation -> ((Metaliteral,Metaliteral),(Metaliteral,Metaliteral)) -> String
+metares_inst_correct_proofs_helper_2 sig mvs us uds loginst inst ((pa,pa_r),(na,na_r)) = "After applying logical instantiation:\n" ++ (show_loginst loginst mvs) ++ "\nand instantiation:\n" ++ (show_inst inst mvs) ++ "\nand unifiers:\n" ++ (show_unifs us uds) ++ "\non the positive atom " ++ (show pa) ++ " and the negative atom " ++ (show na) ++ ", the results are the atom " ++ (show pa_r) ++ " and the atom " ++ (show na_r) ++ " respectively, which are not equal.\n\n" 
 
 
+metares_inst_present :: [Metavariable] -> (LogicalInstantiation,Instantiation) -> Int -> Enumeration (_,Maybe (LogicalInstantiation,[Unifier],ResolutionProof,FullSolution,[UnifierDescription],Instantiation)) -> AutomatedTestResult
+metares_inst_present mvs (loginst,inst) n en = atr_any_p aslist (\(li,_,_,_,_,i) -> (eq_loginst mvs loginst li) && (eq_inst_mvs mvs inst i)) "Instantiation was found" ("Could not find instantiation:\n" ++ (show_loginst loginst mvs) ++ "\nand\n" ++ (show_inst inst mvs)) where aslist = map fromJust (filter isJust (enum_up_to_h n en))
 
--- obtain_substitution :: Int -> Unifier ->  UnifierDescription -> Substitution
--- data ResolutionStep = RStep Clause Clause ActualLiteral ActualLiteral Clause CNF CNF
+metares_at_least_sols :: Int -> Enumeration (_,Maybe (LogicalInstantiation,[Unifier],ResolutionProof,FullSolution,[UnifierDescription],Instantiation)) -> AutomatedTestResult
+metares_at_least_sols n en = if ((length aslist) >= n) then (ATR True "At least the minimum number of solutions found.") else (ATR False ("There should have been at least " ++ (show n) ++ " solutions, but only " ++ (show (length aslist)) ++ " were found.")) where aslist = filter isJust (enum_up_to_h (n+1) en)
+
+metares_at_most_sols :: Int -> Enumeration (_,Maybe (LogicalInstantiation,[Unifier],ResolutionProof,FullSolution,[UnifierDescription],Instantiation)) -> AutomatedTestResult
+metares_at_most_sols n en = if ((length aslist) <= n) then (ATR True "At most the maximum number of solutions found.") else (ATR False ("There should have been at most " ++ (show n) ++ " solutions, but at least " ++ (show (length aslist)) ++ " were found.")) where aslist = filter isJust (enum_up_to_h (n+4) en)
+
+metares_exactly_sols :: Int -> Enumeration (_,Maybe (LogicalInstantiation,[Unifier],ResolutionProof,FullSolution,[UnifierDescription],Instantiation)) -> AutomatedTestResult
+metares_exactly_sols n en = if ((length aslist) == n) then (ATR True "The exact expected number of solutions were found.") else (ATR False ("There should have been exactly " ++ (show n) ++ " solutions, but " ++ (show (length aslist)) ++ " were found.")) where aslist = filter isJust (enum_up_to_h (n+4) en)
+
+-- Test cases
+-- Test 1
+metares_nsols_1 = 100
+
+metares_mvs_1 = []
+
+metares_sig_1 :: ExtendedSignature
+metares_sig_1 = (([read "p1[0]"],[],0),([],0,[]),[],[])
+
+metares_maxproofdepth_1 :: Int
+metares_maxproofdepth_1 = 15
+
+metares_cnf_1 :: CNF
+metares_cnf_1 = read "[[+p1[0]()],[-p1[0]()]]"
+
+metares_sols_1 :: Enumeration (_,Maybe (LogicalInstantiation,[Unifier],ResolutionProof,FullSolution,[UnifierDescription],Instantiation))
+metares_sols_1 = enumerate_cnf_unsat_instantiations (numeric_metaresolution_heuristic_2 metares_maxproofdepth_1) default_metaunification_heuristic metares_sig_1 metares_mvs_1 metares_cnf_1
+
+metares_1_t1 = AT "All solutions are distinct" (metares_all_insts_diff metares_mvs_1 metares_nsols_1 metares_sols_1)
+metares_1_t2 = AT "All proof steps in all solutions are correct" (metares_inst_correct_proofs metares_sig_1 metares_mvs_1 metares_cnf_1 metares_nsols_1 metares_sols_1)
+metares_1_t3 = AT "Identity instantiation is there" (metares_inst_present metares_mvs_1 (idloginst,idinst) metares_nsols_1 metares_sols_1)
+metares_1_t4 = AT "Unique solution" (metares_exactly_sols 1 metares_sols_1)
+
+metares_1_ts = [metares_1_t1,metares_1_t2,metares_1_t3,metares_1_t4]
+
+metares_test_1 = putStr (combine_test_results metares_1_ts)
+
+-- Test 2
+metares_nsols_2 = 100
+
+metares_mvs_2 = []
+
+metares_sig_2 :: ExtendedSignature
+metares_sig_2 = (([read "p1[0]",read "p2[0]"],[],0),([],0,[]),[],[])
+
+metares_maxproofdepth_2 :: Int
+metares_maxproofdepth_2 = 15
+
+metares_cnf_2 :: CNF
+metares_cnf_2 = read "[[+p1[0]()],[-p2[0]()]]"
+
+metares_sols_2 :: Enumeration (_,Maybe (LogicalInstantiation,[Unifier],ResolutionProof,FullSolution,[UnifierDescription],Instantiation))
+metares_sols_2 = enumerate_cnf_unsat_instantiations (numeric_metaresolution_heuristic_2 metares_maxproofdepth_2) default_metaunification_heuristic metares_sig_2 metares_mvs_2 metares_cnf_2
+
+metares_2_t1 = AT "All solutions are distinct" (metares_all_insts_diff metares_mvs_2 metares_nsols_2 metares_sols_2)
+metares_2_t2 = AT "All proof steps in all solutions are correct" (metares_inst_correct_proofs metares_sig_2 metares_mvs_2 metares_cnf_2 metares_nsols_2 metares_sols_2)
+metares_2_t3 = AT "No solution" (metares_exactly_sols 0 metares_sols_2)
+
+metares_2_ts = [metares_2_t1,metares_2_t2,metares_2_t3]
+
+metares_test_2 = putStr (combine_test_results metares_2_ts)
+
+-- Test 3
+metares_nsols_3 = 100
+
+metares_mvs_3 = [read "X0"]
+
+metares_sig_3 :: ExtendedSignature
+metares_sig_3 = (([read "p1[0]",read "p2[0]"],[],0),([],0,[]),[],[])
+
+metares_maxproofdepth_3 :: Int
+metares_maxproofdepth_3 = 15
+
+metares_cnf_3 :: CNF
+metares_cnf_3 = read "[[+p1[0]()],[-X0]]"
+
+metares_sols_3 :: Enumeration (_,Maybe (LogicalInstantiation,[Unifier],ResolutionProof,FullSolution,[UnifierDescription],Instantiation))
+metares_sols_3 = enumerate_cnf_unsat_instantiations (numeric_metaresolution_heuristic_2 metares_maxproofdepth_3) default_metaunification_heuristic metares_sig_3 metares_mvs_3 metares_cnf_3
+
+metares_3_t1 = AT "All solutions are distinct" (metares_all_insts_diff metares_mvs_3 metares_nsols_3 metares_sols_3)
+metares_3_t2 = AT "All proof steps in all solutions are correct" (metares_inst_correct_proofs metares_sig_3 metares_mvs_3 metares_cnf_3 metares_nsols_3 metares_sols_3)
+metares_3_t3 = AT "A := p1" (metares_inst_present metares_mvs_3 (build_loginst (read "X0") (FLit (read "p1[0]()")),build_inst (read "X0") (Right (read "p1[0]()"))) metares_nsols_3 metares_sols_3)
+metares_3_t4 = AT "Unique solution" (metares_exactly_sols 1 metares_sols_3)
+
+metares_3_ts = [metares_3_t1,metares_3_t2,metares_3_t3,metares_3_t4]
+
+metares_test_3 = putStr (combine_test_results metares_3_ts)
+
+-- Test 4
+metares_nsols_4 = 100
+
+metares_mvs_4 = [read "X0"]
+
+metares_sig_4 :: ExtendedSignature
+metares_sig_4 = (([read "p1[0]",read "p2[0]"],[],0),([],0,[]),[],[])
+
+metares_maxproofdepth_4 :: Int
+metares_maxproofdepth_4 = 15
+
+metares_cnf_4 :: CNF
+metares_cnf_4 = read "[[+p1[0]()],[+X0]]"
+
+metares_sols_4 :: Enumeration (_,Maybe (LogicalInstantiation,[Unifier],ResolutionProof,FullSolution,[UnifierDescription],Instantiation))
+metares_sols_4 = enumerate_cnf_unsat_instantiations (numeric_metaresolution_heuristic_2 metares_maxproofdepth_4) default_metaunification_heuristic metares_sig_4 metares_mvs_4 metares_cnf_4
+
+metares_4_t1 = AT "All solutions are distinct" (metares_all_insts_diff metares_mvs_4 metares_nsols_4 metares_sols_4)
+metares_4_t2 = AT "All proof steps in all solutions are correct" (metares_inst_correct_proofs metares_sig_4 metares_mvs_4 metares_cnf_4 metares_nsols_4 metares_sols_4)
+metares_4_t3 = AT "A := -p1" (metares_inst_present metares_mvs_4 (build_loginst (read "X0") (FNeg (FLit (read "p1[0]()"))),idinst) metares_nsols_4 metares_sols_4)
+metares_4_t4 = AT "Unique solution" (metares_exactly_sols 1 metares_sols_4)
+
+metares_4_ts = [metares_4_t1,metares_4_t2,metares_4_t3,metares_4_t4]
+
+metares_test_4 = putStr (combine_test_results metares_4_ts)
+
+
+metares_tests :: IO ()
+metares_tests = (putStr "***EXAMPLE 1***\n\n") >> metares_test_1 >>
+		(putStr "***EXAMPLE 2***\n\n") >> metares_test_2 >>
+		(putStr "***EXAMPLE 3***\n\n") >> metares_test_3 >>
+		(putStr "***EXAMPLE 4***\n\n") >> metares_test_4
+
