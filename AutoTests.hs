@@ -43,6 +43,10 @@ atr_none_p ts p correct incorrect = if (any p ts) then (ATR False (incorrect (fi
 
 -- Utility functions
 
+monadize_list :: Monad m => [m t] -> m [t]
+monadize_list [] = return []
+monadize_list (x:xs) = do {rx <- x; rxs <- monadize_list xs; return (rx:rxs)}
+
 combine_test_results :: [AutomatedTest] -> String
 combine_test_results ts = if (any at_is_error ts) then (concat (map show (filter at_is_error ts))) else (concat (map show ts))
 
@@ -88,3 +92,7 @@ measure_time op = (do
 --	(getCPUTime)
 --	))
 
+
+
+doprint :: IO String -> IO ()
+doprint op = do {r <- op; putStr r}
