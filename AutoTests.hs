@@ -7,6 +7,7 @@ import Control.Exception
 import Control.DeepSeq
 import Data.Time.Clock
 import Data.Time.Calendar
+import System.Timeout
 
 
 -- Automated testing
@@ -54,6 +55,8 @@ p_or = p_2_op (||)
 p_not :: (a -> Bool) -> (a -> Bool)
 p_not p x = not (p x)
 
+onesec :: Int
+onesec = 1000000
 
 -- Measuring running time
 

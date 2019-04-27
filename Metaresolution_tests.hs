@@ -10,6 +10,7 @@ import Data.List
 import Data.Maybe
 import Data.Either
 import Data.Time
+import System.Timeout
 
 -- Unifiers
 u0 :: Unifier
@@ -1499,8 +1500,8 @@ just_complex_cnf :: CNF
 --just_complex_cnf = read "[[-p1[1](x0),+p1[1](x1)],[+p1[1](x0)],[-p1[1](x0)]]"
 --just_complex_cnf = read "[[-p1[1](x0),+p4[1](x0),-p5[2](f2[1](x0),x0)],[+p1[1](x0),-p5[2](x1,x0),+p2[1](x1)],[-p4[1](x0)],[+p5[2](x0,x1)],[-p2[1](f2[1](x0))]]"
 --just_complex_cnf = read "[[-X0,+p4[1](x0),-p5[2](f2[1](x0),x0)],[+p1[1](x0),-p5[2](x1,x0),+p2[1](x1)],[-p4[1](x0)],[+p5[2](x0,x1)],[-p2[1](f2[1](x0))]]"
---just_complex_cnf = read "[[-X0,+p4[1](x0),-p5[2](f2[1](x0),x0)],[+p1[1](x0),+X1,+p2[1](x1)],[-p4[1](x0)],[+p5[2](x0,x1)],[-p2[1](f2[1](x0))]]"
-just_complex_cnf = read "[[-p1[1](x0),+p4[1](x0),-p5[2](f2[1](x0),x0)],[+p1[1](x0),-p5[2](x1,x0),+p2[1](x1)],[-p4[1](x0)],[+X0],[-p2[1](f2[1](x0))]]"
+just_complex_cnf = read "[[-X0,+p4[1](x0),-p5[2](f2[1](x0),x0)],[+p1[1](x0),+X1,+p2[1](x1)],[-p4[1](x0)],[+p5[2](x0,x1)],[-p2[1](f2[1](x0))]]"
+--just_complex_cnf = read "[[-p1[1](x0),+p4[1](x0),-p5[2](f2[1](x0),x0)],[+p1[1](x0),-p5[2](x1,x0),+p2[1](x1)],[-p4[1](x0)],[+X0],[-p2[1](f2[1](x0))]]"
 
 
 just_complex_cl_cheatlist :: [Clause]
@@ -1544,7 +1545,9 @@ unsat_sig :: ExtendedSignature
 unsat_sig = (([read "p1[1]",read "p2[2]",read "p3[1]"],[],unsat_nvars),([[read "X0"],[]],0,[0,2]),[read "f1[0]()", read "f2[1](x0)"],[])
 
 unsat_cnf :: CNF
-unsat_cnf = [read "[-p3[1](x0),-p2[2](x0,x1)]", read "[-p3[1](x0),+p1[1](x0)]", read "[-p1[1](x0),+p2[2](x0,f2[1](x0))]", read "[+X0]"]
+--unsat_cnf = [read "[-p3[1](x0),-p2[2](x0,x1)]", read "[-p3[1](x0),+p1[1](x0)]", read "[-p1[1](x0),+p2[2](x0,f2[1](x0))]", read "[+X0]"]
+--unsat_cnf = read "[[+X0],[-p3[1](x0)]]"
+unsat_cnf = read "[[-p3[1](x0)],[+X0]]"
 unsat_sols = enumerate_cnf_unsat_instantiations (numeric_metaresolution_heuristic_2 unsat_maxproofdepth) default_metaunification_heuristic unsat_sig unsat_mvs unsat_cnf
 
 
@@ -1683,10 +1686,13 @@ metares_inst_present :: [Metavariable] -> (LogicalInstantiation,Instantiation) -
 metares_inst_present mvs (loginst,inst) n en = atr_any_p aslist (\(li,_,_,_,_,i) -> (eq_loginst mvs loginst li) && (eq_inst_mvs mvs inst i)) "Instantiation was found" ("Could not find instantiation:\n" ++ (show_loginst loginst mvs) ++ "\nand\n" ++ (show_inst inst mvs)) where aslist = map fromJust (filter isJust (enum_up_to_h n en))
 
 metares_at_least_sols :: Int -> Enumeration (_,Maybe (LogicalInstantiation,[Unifier],ResolutionProof,FullSolution,[UnifierDescription],Instantiation)) -> AutomatedTestResult
-metares_at_least_sols n en = if ((length aslist) >= n) then (ATR True "At least the minimum number of solutions found.") else (ATR False ("There should have been at least " ++ (show n) ++ " solutions, but only " ++ (show (length aslist)) ++ " were found.")) where aslist = filter isJust (enum_up_to_h (n+1) en)
+metares_at_least_sols n en = if ((length aslist) >= n) then (ATR True "At least the minimum number of solutions found.") else (ATR False ("There should have been at least " ++ (show n) ++ " solutions, but only " ++ (show (length aslist)) ++ " were found.")) where aslist = filter isJust (enum_up_to_h n en)
 
 metares_at_most_sols :: Int -> Enumeration (_,Maybe (LogicalInstantiation,[Unifier],ResolutionProof,FullSolution,[UnifierDescription],Instantiation)) -> AutomatedTestResult
 metares_at_most_sols n en = if ((length aslist) <= n) then (ATR True "At most the maximum number of solutions found.") else (ATR False ("There should have been at most " ++ (show n) ++ " solutions, but at least " ++ (show (length aslist)) ++ " were found.")) where aslist = filter isJust (enum_up_to_h (n+4) en)
+
+--metares_at_most_sols_timeout :: Int -> Int -> Enumeration (_,Maybe (LogicalInstantiation,[Unifier],ResolutionProof,FullSolution,[UnifierDescription],Instantiation)) -> AutomatedTestResult
+--metares_at_most_sols_timeout time n en = case (timeout time (return (metares_at_most_sols n en))) of {Nothing -> ATR True ("At most the maximum number of solutions found (within " ++ (time/onesec) ++ " seconds)"); Just x -> x}
 
 metares_exactly_sols :: Int -> Enumeration (_,Maybe (LogicalInstantiation,[Unifier],ResolutionProof,FullSolution,[UnifierDescription],Instantiation)) -> AutomatedTestResult
 metares_exactly_sols n en = if ((length aslist) == n) then (ATR True "The exact expected number of solutions were found.") else (ATR False ("There should have been exactly " ++ (show n) ++ " solutions, but " ++ (show (length aslist)) ++ " were found.")) where aslist = filter isJust (enum_up_to_h (n+4) en)
@@ -1708,6 +1714,7 @@ metares_cnf_1 = read "[[+p1[0]()],[-p1[0]()]]"
 
 metares_sols_1 :: Enumeration (_,Maybe (LogicalInstantiation,[Unifier],ResolutionProof,FullSolution,[UnifierDescription],Instantiation))
 metares_sols_1 = enumerate_cnf_unsat_instantiations (numeric_metaresolution_heuristic_2 metares_maxproofdepth_1) default_metaunification_heuristic metares_sig_1 metares_mvs_1 metares_cnf_1
+metares_sols_uniq_1 = filter_repeated_insts metares_mvs_1 metares_sols_1
 
 metares_1_t1 = AT "All solutions are distinct" (metares_all_insts_diff metares_mvs_1 metares_nsols_1 metares_sols_1)
 metares_1_t2 = AT "All proof steps in all solutions are correct" (metares_inst_correct_proofs metares_sig_1 metares_mvs_1 metares_cnf_1 metares_nsols_1 metares_sols_1)
@@ -1734,6 +1741,7 @@ metares_cnf_2 = read "[[+p1[0]()],[-p2[0]()]]"
 
 metares_sols_2 :: Enumeration (_,Maybe (LogicalInstantiation,[Unifier],ResolutionProof,FullSolution,[UnifierDescription],Instantiation))
 metares_sols_2 = enumerate_cnf_unsat_instantiations (numeric_metaresolution_heuristic_2 metares_maxproofdepth_2) default_metaunification_heuristic metares_sig_2 metares_mvs_2 metares_cnf_2
+metares_sols_uniq_2 = filter_repeated_insts metares_mvs_2 metares_sols_2
 
 metares_2_t1 = AT "All solutions are distinct" (metares_all_insts_diff metares_mvs_2 metares_nsols_2 metares_sols_2)
 metares_2_t2 = AT "All proof steps in all solutions are correct" (metares_inst_correct_proofs metares_sig_2 metares_mvs_2 metares_cnf_2 metares_nsols_2 metares_sols_2)
@@ -1759,6 +1767,7 @@ metares_cnf_3 = read "[[+p1[0]()],[-X0]]"
 
 metares_sols_3 :: Enumeration (_,Maybe (LogicalInstantiation,[Unifier],ResolutionProof,FullSolution,[UnifierDescription],Instantiation))
 metares_sols_3 = enumerate_cnf_unsat_instantiations (numeric_metaresolution_heuristic_2 metares_maxproofdepth_3) default_metaunification_heuristic metares_sig_3 metares_mvs_3 metares_cnf_3
+metares_sols_uniq_3 = filter_repeated_insts metares_mvs_3 metares_sols_3
 
 metares_3_t1 = AT "All solutions are distinct" (metares_all_insts_diff metares_mvs_3 metares_nsols_3 metares_sols_3)
 metares_3_t2 = AT "All proof steps in all solutions are correct" (metares_inst_correct_proofs metares_sig_3 metares_mvs_3 metares_cnf_3 metares_nsols_3 metares_sols_3)
@@ -1785,6 +1794,7 @@ metares_cnf_4 = read "[[+p1[0]()],[+X0]]"
 
 metares_sols_4 :: Enumeration (_,Maybe (LogicalInstantiation,[Unifier],ResolutionProof,FullSolution,[UnifierDescription],Instantiation))
 metares_sols_4 = enumerate_cnf_unsat_instantiations (numeric_metaresolution_heuristic_2 metares_maxproofdepth_4) default_metaunification_heuristic metares_sig_4 metares_mvs_4 metares_cnf_4
+metares_sols_uniq_4 = filter_repeated_insts metares_mvs_4 metares_sols_4
 
 metares_4_t1 = AT "All solutions are distinct" (metares_all_insts_diff metares_mvs_4 metares_nsols_4 metares_sols_4)
 metares_4_t2 = AT "All proof steps in all solutions are correct" (metares_inst_correct_proofs metares_sig_4 metares_mvs_4 metares_cnf_4 metares_nsols_4 metares_sols_4)
@@ -1795,10 +1805,151 @@ metares_4_ts = [metares_4_t1,metares_4_t2,metares_4_t3,metares_4_t4]
 
 metares_test_4 = putStr (combine_test_results metares_4_ts)
 
+-- Test 5
+metares_nsols_5 = 100
+
+metares_mvs_5 = []
+
+metares_sig_5 :: ExtendedSignature
+metares_sig_5 = (([read "p1[0]"],[],0),([],0,[]),[],[])
+
+metares_maxproofdepth_5 :: Int
+metares_maxproofdepth_5 = 15
+
+metares_cnf_5 :: CNF
+metares_cnf_5 = read "[[-p1[0]()],[+p1[0]()]]"
+
+metares_sols_5 :: Enumeration (_,Maybe (LogicalInstantiation,[Unifier],ResolutionProof,FullSolution,[UnifierDescription],Instantiation))
+metares_sols_5 = enumerate_cnf_unsat_instantiations (numeric_metaresolution_heuristic_2 metares_maxproofdepth_5) default_metaunification_heuristic metares_sig_5 metares_mvs_5 metares_cnf_5
+metares_sols_uniq_5 = filter_repeated_insts metares_mvs_5 metares_sols_5
+
+metares_5_t1 = AT "All solutions are distinct" (metares_all_insts_diff metares_mvs_5 metares_nsols_5 metares_sols_5)
+metares_5_t2 = AT "All proof steps in all solutions are correct" (metares_inst_correct_proofs metares_sig_5 metares_mvs_5 metares_cnf_5 metares_nsols_5 metares_sols_5)
+metares_5_t3 = AT "Identity instantiation is there" (metares_inst_present metares_mvs_5 (idloginst,idinst) metares_nsols_5 metares_sols_5)
+metares_5_t4 = AT "Unique solution" (metares_exactly_sols 1 metares_sols_5)
+
+metares_5_ts = [metares_5_t1,metares_5_t2,metares_5_t3,metares_5_t4]
+
+metares_test_5 = putStr (combine_test_results metares_5_ts)
+
+-- Test 6
+metares_nsols_6 = 100
+
+metares_mvs_6 = [read "X0"]
+
+metares_sig_6 :: ExtendedSignature
+metares_sig_6 = (([read "p1[0]",read "p2[0]"],[],0),([],0,[]),[],[])
+
+metares_maxproofdepth_6 :: Int
+metares_maxproofdepth_6 = 15
+
+metares_cnf_6 :: CNF
+metares_cnf_6 = read "[[-p1[0]()],[-X0]]"
+
+metares_sols_6 :: Enumeration (_,Maybe (LogicalInstantiation,[Unifier],ResolutionProof,FullSolution,[UnifierDescription],Instantiation))
+metares_sols_6 = enumerate_cnf_unsat_instantiations (numeric_metaresolution_heuristic_2 metares_maxproofdepth_6) default_metaunification_heuristic metares_sig_6 metares_mvs_6 metares_cnf_6
+metares_sols_uniq_6 = filter_repeated_insts metares_mvs_6 metares_sols_6
+
+metares_6_t1 = AT "All solutions are distinct" (metares_all_insts_diff metares_mvs_6 metares_nsols_6 metares_sols_6)
+metares_6_t2 = AT "All proof steps in all solutions are correct" (metares_inst_correct_proofs metares_sig_6 metares_mvs_6 metares_cnf_6 metares_nsols_6 metares_sols_6)
+metares_6_t3 = AT "A := -p1" (metares_inst_present metares_mvs_6 (build_loginst (read "X0") (FNeg (FLit (read "p1[0]()"))),idinst) metares_nsols_6 metares_sols_6)
+metares_6_t4 = AT "Unique solution" (metares_exactly_sols 1 metares_sols_6)
+
+metares_6_ts = [metares_6_t1,metares_6_t2,metares_6_t3,metares_6_t4]
+
+metares_test_6 = putStr (combine_test_results metares_6_ts)
+
+-- Test 7
+metares_nsols_7 = 100
+
+metares_mvs_7 = []
+
+metares_sig_7 :: ExtendedSignature
+metares_sig_7 = (([read "p1[0]",read "p2[0]"],[],0),([],0,[]),[],[])
+
+metares_maxproofdepth_7 :: Int
+metares_maxproofdepth_7 = 15
+
+metares_cnf_7 :: CNF
+metares_cnf_7 = read "[[+p1[0](),+p1[0]()],[-p1[0]()]]"
+
+metares_sols_7 :: Enumeration (_,Maybe (LogicalInstantiation,[Unifier],ResolutionProof,FullSolution,[UnifierDescription],Instantiation))
+metares_sols_7 = enumerate_cnf_unsat_instantiations (numeric_metaresolution_heuristic_2 metares_maxproofdepth_7) default_metaunification_heuristic metares_sig_7 metares_mvs_7 metares_cnf_7
+metares_sols_uniq_7 = filter_repeated_insts metares_mvs_7 metares_sols_7
+
+metares_7_t1 = AT "All solutions are distinct" (metares_all_insts_diff metares_mvs_7 metares_nsols_7 metares_sols_uniq_7)
+metares_7_t2 = AT "All proof steps in all solutions are correct" (metares_inst_correct_proofs metares_sig_7 metares_mvs_7 metares_cnf_7 metares_nsols_7 metares_sols_7)
+metares_7_t3 = AT "Identity instantiation is there" (metares_inst_present metares_mvs_7 (idloginst,idinst) metares_nsols_7 metares_sols_uniq_7)
+metares_7_t4 = AT "Unique solution" (metares_exactly_sols 1 metares_sols_uniq_7)
+
+metares_7_ts = [metares_7_t1,metares_7_t2,metares_7_t3,metares_7_t4]
+
+metares_test_7 = putStr (combine_test_results metares_7_ts)
+
+-- Test 8
+metares_nsols_8 = 100
+
+metares_mvs_8 = []
+
+metares_sig_8 :: ExtendedSignature
+metares_sig_8 = (([read "p1[0]",read "p2[0]"],[],0),([],0,[]),[],[])
+
+metares_maxproofdepth_8 :: Int
+metares_maxproofdepth_8 = 15
+
+metares_cnf_8 :: CNF
+metares_cnf_8 = read "[[+p1[0](),-p2[0]()],[-p1[0]()]]"
+
+metares_sols_8 :: Enumeration (_,Maybe (LogicalInstantiation,[Unifier],ResolutionProof,FullSolution,[UnifierDescription],Instantiation))
+metares_sols_8 = enumerate_cnf_unsat_instantiations (numeric_metaresolution_heuristic_2 metares_maxproofdepth_8) default_metaunification_heuristic metares_sig_8 metares_mvs_8 metares_cnf_8
+metares_sols_uniq_8 = filter_repeated_insts metares_mvs_8 metares_sols_8
+
+metares_8_t1 = AT "All solutions are distinct" (metares_all_insts_diff metares_mvs_8 metares_nsols_8 metares_sols_uniq_8)
+metares_8_t2 = AT "All proof steps in all solutions are correct" (metares_inst_correct_proofs metares_sig_8 metares_mvs_8 metares_cnf_8 metares_nsols_8 metares_sols_8)
+metares_8_t3 = AT "No solution" (metares_exactly_sols 0 metares_sols_8)
+
+metares_8_ts = [metares_8_t1,metares_8_t2,metares_8_t3]
+
+metares_test_8 = putStr (combine_test_results metares_8_ts)
+
+-- Test 9
+metares_nsols_9 = 1
+
+metares_mvs_9 = [read "X0"]
+
+metares_sig_9 :: ExtendedSignature
+metares_sig_9 = (([read "p1[0]",read "p2[0]"],[],0),([],0,[]),[],[])
+
+metares_maxproofdepth_9 :: Int
+metares_maxproofdepth_9 = 15
+
+metares_cnf_9 :: CNF
+metares_cnf_9 = read "[[+p1[0](),+X0],[-p1[0]()]]"
+
+metares_sols_9 :: Enumeration (_,Maybe (LogicalInstantiation,[Unifier],ResolutionProof,FullSolution,[UnifierDescription],Instantiation))
+metares_sols_9 = enumerate_cnf_unsat_instantiations (numeric_metaresolution_heuristic_2 metares_maxproofdepth_9) default_metaunification_heuristic metares_sig_9 metares_mvs_9 metares_cnf_9
+metares_sols_uniq_9 = filter_repeated_insts metares_mvs_9 metares_sols_9
+
+metares_9_t1 = AT "All solutions are distinct" (metares_all_insts_diff metares_mvs_9 metares_nsols_9 metares_sols_uniq_9)
+metares_9_t2 = AT "All proof steps in all solutions are correct" (metares_inst_correct_proofs metares_sig_9 metares_mvs_9 metares_cnf_9 metares_nsols_9 metares_sols_9)
+metares_9_t3 = AT "A := p1" (metares_inst_present metares_mvs_9 (build_loginst (read "X0") (FLit (read "p1[0]()")),build_inst (read "X0") (Right (read "p1[0]()"))) metares_nsols_9 metares_sols_9)
+--metares_9_t4 = AT "At most one solution" (metares_at_most_sols_timeout (2*onesec) 1 metares_sols_uniq_9)
+
+metares_9_ts = [metares_9_t1,metares_9_t2,metares_9_t3]
+
+metares_test_9 = putStr (combine_test_results metares_9_ts)
+
+
 
 metares_tests :: IO ()
 metares_tests = (putStr "***EXAMPLE 1***\n\n") >> metares_test_1 >>
 		(putStr "***EXAMPLE 2***\n\n") >> metares_test_2 >>
 		(putStr "***EXAMPLE 3***\n\n") >> metares_test_3 >>
-		(putStr "***EXAMPLE 4***\n\n") >> metares_test_4
+		(putStr "***EXAMPLE 4***\n\n") >> metares_test_4 >>
+		(putStr "***EXAMPLE 5***\n\n") >> metares_test_5 >>
+		(putStr "***EXAMPLE 6***\n\n") >> metares_test_6 >>
+		(putStr "***EXAMPLE 7***\n\n") >> metares_test_7 >>
+		(putStr "***EXAMPLE 8***\n\n") >> metares_test_8 >>
+		(putStr "***EXAMPLE 9***\n\n") >> metares_test_9
+
 
