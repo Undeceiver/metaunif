@@ -93,6 +93,9 @@ measure_time op = (do
 --	))
 
 
+-- First parameter is the test to compute. Second is the result if timeout. 
+timeout_test :: Int -> AutomatedTestResult -> AutomatedTestResult -> IO AutomatedTestResult
+timeout_test time actual_comp ifto = do {mb_timeout <- timeout time (deepseq (show actual_comp) (return actual_comp)); case mb_timeout of {Nothing -> return ifto; Just x -> return x}}
 
 doprint :: IO String -> IO ()
 doprint op = do {r <- op; putStr r}

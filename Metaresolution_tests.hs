@@ -1634,6 +1634,9 @@ do_batch_unsat_f_tests ns maxdepths solss id i = foldr (>>) (do_batch_unsat_f_te
 metares_all_insts_diff :: [Metavariable] -> Int -> Enumeration (_,Maybe (LogicalInstantiation,[Unifier],ResolutionProof,FullSolution,[UnifierDescription],Instantiation)) -> AutomatedTestResult
 metares_all_insts_diff mvs n en = metares_all_insts_diff_helper_3 mvs aslist where aslist = enum_up_to_h n en
 
+metares_all_insts_diff_timeout :: Int -> [Metavariable] -> Int -> Enumeration (_,Maybe (LogicalInstantiation,[Unifier],ResolutionProof,FullSolution,[UnifierDescription],Instantiation)) -> IO AutomatedTestResult
+metares_all_insts_diff_timeout time mvs n en = timeout_test time (metares_all_insts_diff mvs n en) (ATR True ("All solutions (that could be checked in " ++ (show ((fromIntegral time)/(fromIntegral onesec))) ++ " seconds) distinct."))
+
 metares_all_insts_diff_helper_3 :: [Metavariable] -> [Maybe (LogicalInstantiation,[Unifier],ResolutionProof,FullSolution,[UnifierDescription],Instantiation)] -> AutomatedTestResult
 metares_all_insts_diff_helper_3 _ [] = ATR True "All solutions distinct."
 metares_all_insts_diff_helper_3 mvs (s1:ss) = if (any (\s2 -> metares_all_insts_diff_helper mvs s1 s2) ss) then (ATR False ("At least solution \n" ++ (metares_all_insts_diff_helper_2 mvs s1) ++ " is repeated.")) else (metares_all_insts_diff_helper_3 mvs ss)
@@ -1674,6 +1677,9 @@ metares_inst_correct_proof sig mvs us uds loginst inst (cu:cus) (step:steps) = i
 metares_inst_correct_proofs :: ExtendedSignature -> [Metavariable] -> CNF -> Int -> Enumeration (_,Maybe (LogicalInstantiation,[Unifier],ResolutionProof,FullSolution,[UnifierDescription],Instantiation)) -> AutomatedTestResult
 metares_inst_correct_proofs sig mvs cnf n en = if (null ress) then (ATR True "All proof steps in all solutions checked for correctness after instantiation and unification.") else (ATR False ("The following proofs were not correct after instantiation and unification:\n\n" ++ (concat ress))) where (std_sig,std_mvs,_) = standardize_apart (sig,mvs,cnf); ress = metares_inst_correct_proofs_helper std_sig std_mvs (enum_up_to_h n en)
 
+metares_inst_correct_proofs_timeout :: Int -> ExtendedSignature -> [Metavariable] -> CNF -> Int -> Enumeration (_,Maybe (LogicalInstantiation,[Unifier],ResolutionProof,FullSolution,[UnifierDescription],Instantiation)) -> IO AutomatedTestResult
+metares_inst_correct_proofs_timeout  time sig mvs cnf n en = timeout_test time (metares_inst_correct_proofs sig mvs cnf n en) (ATR True ("All proof steps in all solutions (that could be checked in " ++ (show ((fromIntegral time)/(fromIntegral onesec))) ++ " seconds) checked for correctness after instantiation and unification."))
+
 metares_inst_correct_proofs_helper :: ExtendedSignature -> [Metavariable] -> [Maybe (LogicalInstantiation,[Unifier],ResolutionProof,FullSolution,[UnifierDescription],Instantiation)] -> [String]
 metares_inst_correct_proofs_helper _ _ [] = []
 metares_inst_correct_proofs_helper sig mvs (Nothing:ss) = metares_inst_correct_proofs_helper sig mvs ss
@@ -1690,13 +1696,15 @@ metares_at_least_sols :: Int -> Enumeration (_,Maybe (LogicalInstantiation,[Unif
 metares_at_least_sols n en = if ((length aslist) >= n) then (ATR True "At least the minimum number of solutions found.") else (ATR False ("There should have been at least " ++ (show n) ++ " solutions, but only " ++ (show (length aslist)) ++ " were found.")) where aslist = filter isJust (enum_up_to_h n en)
 
 metares_at_least_sols_timeout :: Int -> Int -> Enumeration (_,Maybe (LogicalInstantiation,[Unifier],ResolutionProof,FullSolution,[UnifierDescription],Instantiation)) -> IO AutomatedTestResult
-metares_at_least_sols_timeout time n en = do {mb_timeout <- timeout time (deepseq (show actual_comp) (return actual_comp)); case mb_timeout of {Nothing -> return (ATR False ("There should have been at least " ++ (show n) ++ " solutions, but not enough were found (in " ++ (show ((fromIntegral time)/(fromIntegral onesec))) ++ " seconds).")); Just x -> return x}} where actual_comp = (metares_at_least_sols n en)
+metares_at_least_sols_timeout time n en = timeout_test time (metares_at_least_sols n en) (ATR False ("There should have been at least " ++ (show n) ++ " solutions, but not enough were found (in " ++ (show ((fromIntegral time)/(fromIntegral onesec))) ++ " seconds)."))
+--metares_at_least_sols_timeout time n en = do {mb_timeout <- timeout time (deepseq (show actual_comp) (return actual_comp)); case mb_timeout of {Nothing -> return (ATR False ("There should have been at least " ++ (show n) ++ " solutions, but not enough were found (in " ++ (show ((fromIntegral time)/(fromIntegral onesec))) ++ " seconds).")); Just x -> return x}} where actual_comp = (metares_at_least_sols n en)
 
 metares_at_most_sols :: Int -> Enumeration (_,Maybe (LogicalInstantiation,[Unifier],ResolutionProof,FullSolution,[UnifierDescription],Instantiation)) -> AutomatedTestResult
 metares_at_most_sols n en = if ((length aslist) <= n) then (ATR True "At most the maximum number of solutions found.") else (ATR False ("There should have been at most " ++ (show n) ++ " solutions, but at least " ++ (show (length aslist)) ++ " were found.")) where aslist = filter isJust (enum_up_to_h (n+4) en)
 
 metares_at_most_sols_timeout :: Int -> Int -> Enumeration (_,Maybe (LogicalInstantiation,[Unifier],ResolutionProof,FullSolution,[UnifierDescription],Instantiation)) -> IO AutomatedTestResult
-metares_at_most_sols_timeout time n en = do {mb_timeout <- timeout time (deepseq (show actual_comp) (return actual_comp)); case mb_timeout of {Nothing -> return (ATR True ("At most the maximum number of solutions found (within " ++ (show ((fromIntegral time)/(fromIntegral onesec))) ++ " seconds).")); Just x -> return x}} where actual_comp = (metares_at_most_sols n en)
+metares_at_most_sols_timeout time n en = timeout_test time (metares_at_most_sols n en) (ATR True ("At most the maximum number of solutionns found (within " ++ (show ((fromIntegral time)/(fromIntegral onesec))) ++ " seconds)."))
+--metares_at_most_sols_timeout time n en = do {mb_timeout <- timeout time (deepseq (show actual_comp) (return actual_comp)); case mb_timeout of {Nothing -> return (ATR True ("At most the maximum number of solutions found (within " ++ (show ((fromIntegral time)/(fromIntegral onesec))) ++ " seconds).")); Just x -> return x}} where actual_comp = (metares_at_most_sols n en)
 
 metares_exactly_sols :: Int -> Enumeration (_,Maybe (LogicalInstantiation,[Unifier],ResolutionProof,FullSolution,[UnifierDescription],Instantiation)) -> AutomatedTestResult
 metares_exactly_sols n en = if ((length aslist) == n) then (ATR True "The exact expected number of solutions were found.") else (ATR False ("There should have been exactly " ++ (show n) ++ " solutions, but " ++ (show (length aslist)) ++ " were found.")) where aslist = filter isJust (enum_up_to_h (n+4) en)
@@ -1764,7 +1772,7 @@ metares_nsols_3 = 100
 metares_mvs_3 = [read "X0"]
 
 metares_sig_3 :: ExtendedSignature
-metares_sig_3 = (([read "p1[0]",read "p2[0]"],[],0),([],0,[]),[],[])
+metares_sig_3 = (([read "p1[0]",read "p2[0]"],[],0),([read "X0"],0,[0]),[],[])
 
 metares_maxproofdepth_3 :: Int
 metares_maxproofdepth_3 = 15
@@ -1791,7 +1799,7 @@ metares_nsols_4 = 100
 metares_mvs_4 = [read "X0"]
 
 metares_sig_4 :: ExtendedSignature
-metares_sig_4 = (([read "p1[0]",read "p2[0]"],[],0),([],0,[]),[],[])
+metares_sig_4 = (([read "p1[0]",read "p2[0]"],[],0),([read "X0"],0,[0]),[],[])
 
 metares_maxproofdepth_4 :: Int
 metares_maxproofdepth_4 = 15
@@ -1845,7 +1853,7 @@ metares_nsols_6 = 100
 metares_mvs_6 = [read "X0"]
 
 metares_sig_6 :: ExtendedSignature
-metares_sig_6 = (([read "p1[0]",read "p2[0]"],[],0),([],0,[]),[],[])
+metares_sig_6 = (([read "p1[0]",read "p2[0]"],[],0),([read "X0"],0,[0]),[],[])
 
 metares_maxproofdepth_6 :: Int
 metares_maxproofdepth_6 = 15
@@ -1920,12 +1928,12 @@ metares_8_ts = monadize_list [metares_8_t1,metares_8_t2,metares_8_t3]
 metares_test_8 = doprint (fmap combine_test_results metares_8_ts)
 
 -- Test 9
-metares_nsols_9 = 1
+metares_nsols_9 = 100
 
 metares_mvs_9 = [read "X0"]
 
 metares_sig_9 :: ExtendedSignature
-metares_sig_9 = (([read "p1[0]",read "p2[0]"],[],0),([],0,[]),[],[])
+metares_sig_9 = (([read "p1[0]",read "p2[0]"],[],0),([read "X0"],0,[0]),[],[])
 
 metares_maxproofdepth_9 :: Int
 metares_maxproofdepth_9 = 15
@@ -1937,14 +1945,42 @@ metares_sols_9 :: Enumeration (_,Maybe (LogicalInstantiation,[Unifier],Resolutio
 metares_sols_9 = enumerate_cnf_unsat_instantiations (numeric_metaresolution_heuristic_2 metares_maxproofdepth_9) default_metaunification_heuristic metares_sig_9 metares_mvs_9 metares_cnf_9
 metares_sols_uniq_9 = filter_repeated_insts metares_mvs_9 metares_sols_9
 
-metares_9_t1 = return (AT "All solutions are distinct" (metares_all_insts_diff metares_mvs_9 metares_nsols_9 metares_sols_uniq_9))
-metares_9_t2 = return (AT "All proof steps in all solutions are correct" (metares_inst_correct_proofs metares_sig_9 metares_mvs_9 metares_cnf_9 metares_nsols_9 metares_sols_9))
+metares_9_t1 = fmap (AT "All solutions are distinct") (metares_all_insts_diff_timeout (5*onesec) metares_mvs_9 metares_nsols_9 metares_sols_uniq_9)
+metares_9_t2 = fmap (AT "All proof steps in all solutions are correct") (metares_inst_correct_proofs_timeout (5*onesec) metares_sig_9 metares_mvs_9 metares_cnf_9 metares_nsols_9 metares_sols_9)
 metares_9_t3 = return (AT "A := p1" (metares_inst_present metares_mvs_9 (build_loginst (read "X0") (FLit (read "p1[0]()")),build_inst (read "X0") (Right (read "p1[0]()"))) metares_nsols_9 metares_sols_9))
 metares_9_t4 = fmap (AT "Unique solution") (metares_exactly_sols_timeout (2*onesec) 1 metares_sols_uniq_9)
 
 metares_9_ts = monadize_list [metares_9_t1,metares_9_t2,metares_9_t3,metares_9_t4]
 
 metares_test_9 = doprint (fmap combine_test_results metares_9_ts)
+
+-- Test 10
+metares_nsols_10 = 100
+
+metares_mvs_10 = [read "X0"]
+
+metares_sig_10 :: ExtendedSignature
+metares_sig_10 = (([read "p1[0]",read "p2[0]"],[],0),([read "X0"],0,[0]),[],[])
+
+metares_maxproofdepth_10 :: Int
+metares_maxproofdepth_10 = 15
+
+metares_cnf_10 :: CNF
+metares_cnf_10 = read "[[+p1[0](),+p1[0]()],[+X0]]"
+
+metares_sols_10 :: Enumeration (_,Maybe (LogicalInstantiation,[Unifier],ResolutionProof,FullSolution,[UnifierDescription],Instantiation))
+metares_sols_10 = enumerate_cnf_unsat_instantiations (numeric_metaresolution_heuristic_2 metares_maxproofdepth_10) default_metaunification_heuristic metares_sig_10 metares_mvs_10 metares_cnf_10
+metares_sols_uniq_10 = filter_repeated_insts metares_mvs_10 metares_sols_10
+
+metares_10_t1 = fmap (AT "All solutions are distinct") (metares_all_insts_diff_timeout (5*onesec) metares_mvs_10 metares_nsols_10 metares_sols_uniq_10)
+metares_10_t2 = fmap (AT "All proof steps in all solutions are correct") (metares_inst_correct_proofs_timeout (5*onesec) metares_sig_10 metares_mvs_10 metares_cnf_10 metares_nsols_10 metares_sols_10)
+metares_10_t3 = return (AT "A := p1" (metares_inst_present metares_mvs_10 (build_loginst (read "X0") (FNeg (FLit (read "p1[0]()"))),idinst) metares_nsols_10 metares_sols_10))
+metares_10_t4 = fmap (AT "Unique solution") (metares_exactly_sols_timeout (2*onesec) 1 metares_sols_uniq_10)
+
+metares_10_ts = monadize_list [metares_10_t1,metares_10_t2,metares_10_t3,metares_10_t4]
+
+metares_test_10 = doprint (fmap combine_test_results metares_10_ts)
+
 
 
 
@@ -1957,6 +1993,7 @@ metares_tests = (putStr "***EXAMPLE 1***\n\n") >> metares_test_1 >>
 		(putStr "***EXAMPLE 6***\n\n") >> metares_test_6 >>
 		(putStr "***EXAMPLE 7***\n\n") >> metares_test_7 >>
 		(putStr "***EXAMPLE 8***\n\n") >> metares_test_8 >>
-		(putStr "***EXAMPLE 9***\n\n") >> metares_test_9
+		(putStr "***EXAMPLE 9***\n\n") >> metares_test_9 >>
+		(putStr "***EXAMPLE 10***\n\n") >> metares_test_10
 
 
