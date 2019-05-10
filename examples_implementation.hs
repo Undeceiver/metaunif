@@ -256,7 +256,8 @@ multiples_decision_helper x ((i:is):js) = multiples_2 (x + i)
 all_multiples :: [Int] -> Enumeration (_,[Int])
 all_multiples xs = apply_enum_1_h reverse (recursively_diagonalize_h multiples_decision xs)
 
-
+show_all_multiples :: [Int] -> IO()
+show_all_multiples i = print (show (enum_up_to_h 100 (all_multiples i)))
 
 
 
@@ -346,3 +347,45 @@ xg2 = build_graph_from_constraints xscs2
 
 
 -- do_one_update_to_graph :: ExtendedSignature -> (FullSolution -> t -> (FullSolution,[Dependent])) -> FullSolution -> t -> (FullSolution,[(Dependent,Either Term Literal)])
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+-- instantiation_from_dgraph_sol_step :: ExtendedSignature -> FullSolution -> [Unifier] -> Either ([(Maybe ([UnifierDescription],Instantiation),[Either (Metaterm,Term) (Metaliteral,Literal)])] -> Enumeration (_,(Maybe ([UnifierDescription],Instantiation),[Either (Metaterm,Term) (Metaliteral,Literal)]))) ([Unifier],([(Maybe ([UnifierDescription],Instantiation),[Either (Metaterm,Term) (Metaliteral,Literal)])] -> Enumeration (_,(Maybe ([UnifierDescription],Instantiation),[Either (Metaterm,Term) (Metaliteral,Literal)])),CombinationScheme ((Maybe ([UnifierDescription],Instantiation),[Either (Metaterm,Term) (Metaliteral,Literal)]))))

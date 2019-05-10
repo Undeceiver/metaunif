@@ -1,6 +1,9 @@
 {-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE UndecidableInstances #-}
 module EnumProc where
 
 import Data.Time
@@ -11,28 +14,38 @@ import Data.Time.Clock
 import Data.Time.Calendar
 import System.Timeout
 import Data.Semigroup
+import Data.Functor.Compose
+import Data.Functor.Identity
 
 -- There are two fundamental assumptions for any instance of the type EnumProc:
 --
 -- 1. One step evaluation always terminates. That means that if it is continue, then the computation of the head of the continuation terminates. Same if it is produce (and so does the computation of the produced value).
 -- In other words, any function producing an EnumProc type should always provide its head. Recursion needs to be after a "Continue".
+-- More precisely, any safe element of type EnumProc t is always in Head Normal Form.
 --
 -- 2. The enumeration may be infinite, but, conceptually, the number of steps before any given element is always finite.
 -- In other words, you cannot "append" two infinite enumerations in the traditional sense. Instead, interleaving is produced.
 -- Of course, this is not a property of the data itself, but of how it is computed. What this means is that safe functions returning EnumProcs will always make sure that the search is complete in this sense.
+-- Note that this is not really a fully achievable assumption semantically speaking. For example, for any enumeration, en \\\ bottom will always produce an infinite succession of void steps, even though conceptually, en \\\ bottom == en. There is no way around this, there is no computation that will subtract a non-terminating enumeration from any enumeration and produce any result (we can never be sure that an element in the enumeration will not suddenly appear. We know in bottom it will not, but that is because we are reasoning at a higher level).
+-- More precisely this happens when negation of enumerations essentially happens. Since enumerations are semi-decidable, negating them is co-semi-decidable.
+-- All in all, only (\\\) and similar functions should produce this behaviour. If avoiding their usage, assumption 2 should be fulfilled.
 --
 -- Some functions provided may produce results that violate one or both of these assumptions. These functions are considered unsafe and are prepended with the "uns_" prefix on their name to indicate this.
 -- They should only be used for utility purposes, when the specific effects of the unsafety are known, but not for standard usage of the class.
 --
+-- In general, even safe functions may return unsafe results if functions passed as arguments to them are unsafe conceptually.
+-- For example, fmap, if given a non-terminating function, will violate both assumptions, because the application of fmap to the first element will not terminate (nor produce infinite Continues).
+-- For this purpose, we provide extra-safe functions, which are versions of these functions such that whenever they take a function as argument, the return type of the function must be wrapped in an EnumProc. These guarantee safety in all cases. We preffix these with "es_"
+--
 -- The difference between Halt and Empty is that Halt forces halting the computation, whereas Empty simply means there's not more for now.
--- For instance, Halt ..+ x = Halt, whereas Empty ..+ x =  x
+-- For instance, Halt ..+ x = Halt, whereas Empty ..+ x = x
 -- In general, Empty is the standard one. Halt is to be used when explicit termination is wanted.
 -- Error is a way to avoid using Maybe's and exceptions. Instead, we incorporate computation errors into the type itself (since it is designed for developing computations/enumerations anyway).
 data EnumProc t = Continue (EnumProc t) | Produce t (EnumProc t) | Halt | Empty | Error String
 
 instance Show t => Show (EnumProc t) where
 	show x = show_enumproc_run (run_enumproc x)
-
+	
 instance Functor EnumProc where
 	fmap f (Continue x) = Continue (fmap f x)
 	fmap f (Produce v x) = Produce (f v) (fmap f x)
@@ -40,24 +53,49 @@ instance Functor EnumProc where
 	fmap f Halt = Halt
 	fmap f Empty = Empty
 
+-- NOTE that foldl on an EnumProc (EnumProc t) is unsafe, as it will need to find the last element of the enumeration in order to produce any result at all.
+-- foldr, on the other hand, is still safe.
 instance Foldable EnumProc where
-	foldMap f = (foldMap f) . list_from_enum
-	foldr f b = (foldr f b) . list_from_enum
-	foldl f b = (foldl f b) . list_from_enum
+	foldr f b = (foldr f b) . list_from_enum	
+
+es_foldr :: (a -> EnumProc b -> EnumProc b) -> EnumProc b -> EnumProc a -> EnumProc b
+es_foldr f b Empty = b
+es_foldr f b Halt = Halt
+es_foldr f b (Error str) = Error str
+es_foldr f b (Continue x) = Continue (es_foldr f b x)
+es_foldr f b (Produce v x) = f v (Continue (es_foldr f b x))
+
 
 instance Applicative EnumProc where
 	pure x = single_enum x
-	fs <*> en = diagonalize_apply (($ en) . fmap) fs
-	en1 *> en2 = diagonalize_apply (\x -> en2) en1
-	en1 <* en2 = diagonalize_apply (\x -> fmap (\y -> x) en2) en1
+	--fs <*> en = diagonalize_apply (($ en) . fmap) fs
+	fs <*> en = es_econcat (fmap (($ en) . fmap) fs)
+	--en1 *> en2 = diagonalize_apply (\x -> en2) en1
+	en1 *> en2 = es_econcat (fmap (\x -> en2) en1)
+	--en1 <* en2 = diagonalize_apply (\x -> fmap (\y -> x) en2) en1
+	en1 <* en2 = es_econcat (fmap (\x -> fmap (\y -> x) en2) en1)
+
+-- Extra safe version
+(<**>) :: EnumProc (a -> EnumProc b) -> EnumProc a -> EnumProc b
+fs <**> en = es_econcat (fmap (take_each . ($ en) . fmap) fs)
+infixl 7 <**>
+
+instance Semigroup (EnumProc t) where
+	(<>) = (..+)
+	stimes 0 x = Empty
+	-- The continue here is actually for the case that some instance of integral has n-1 not terminate. If this does not happen this continue is unnecessary.
+	stimes n x = x ..+ (Continue (stimes (n-1) x))
 
 instance Monoid (EnumProc t) where
 	mempty = Empty
 	mappend = (..+)
 
+-- WARNING: Be very careful with using the do syntax for this Monad: Not everything you do inside is guaranteed safe (as per the assumptions above). Make sure that you know what you are doing if you use the do syntax. If you're not sure, use only the safe functions provided and use the Monad operators explicitly.
 instance Monad EnumProc where
 	en >>= f = diagonalize_apply f en
+	--en >>= f = es_econcat (fmap f en)
 	en1 >> en2 = diagonalize_apply (\_ -> en2) en1
+	--en1 >> en2 = es_econcat (fmap (\_ -> en2) en1)
 	return x = single_enum x
 	fail str = Error str
 
@@ -68,7 +106,7 @@ instance Monad EnumProc where
 v --> x = Produce v x
 infixr 7 -->
 
--- (.>) is just an alias for Continue
+-- () ..> is just an alias for Continue
 (..>) :: () -> EnumProc t -> EnumProc t
 _ ..> x = Continue x
 infixr 7 ..>
@@ -107,7 +145,16 @@ efilter f Halt = Halt
 efilter f Empty = Empty
 efilter f (Error x) = Error x
 efilter f (Continue x) = Continue (efilter f x)
-efilter f (Produce v x) = if f v then (v --> (efilter f x)) else (efilter f x)
+efilter f (Produce v x) = if f v then (v --> (efilter f x)) else (Continue (efilter f x))
+
+es_efilter :: (t -> EnumProc Bool) -> EnumProc t -> EnumProc t
+es_efilter f en = en >>= (\x -> (f x) >>= (\y -> if y then (return x) else Empty))
+
+--es_efilter f Halt = Halt
+--es_efilter f Empty = Empty
+--es_efilter f (Error x) = Error x
+--es_efilter f (Continue x) = Continue (es_efilter f x)
+--es_efilter f (Produce v x) = do {r <- f v; if r then (v --> (es_efilter f x)) else (Continue (es_efilter f x))}
 
 -- This is INTERLEAVING appending, NOT the same as list appending. List appending-kind of computation is provided as an unsafe function uns_append
 (..+) :: EnumProc t -> EnumProc t -> EnumProc t
@@ -127,7 +174,31 @@ uns_append (Continue x) y = Continue (uns_append x y)
 uns_append (Produce v x) y = v --> (uns_append x y)
 
 econcat :: Foldable t => t (EnumProc a) -> EnumProc a
-econcat procs = foldl (..+) Empty procs
+econcat procs = foldr (..+) Empty procs
+
+es_econcat :: EnumProc (EnumProc a) -> EnumProc a
+--es_econcat procs = es_foldr (..+) Empty procs
+es_econcat = diagonalize_enumproc
+
+(&&?) :: Bool -> Bool ->? Bool
+(&&?) True = varf id
+(&&?) False = constf False
+
+eand :: EnumProc Bool -> EnumProc Bool
+eand = es_foldr (\x -> ((apply_next_constf ((varf return) .? ((&&?) x))) $?)) (return True)
+
+(||?) :: Bool -> Bool ->? Bool
+(||?) True = constf True
+(||?) False = varf id
+
+eor :: EnumProc Bool -> EnumProc Bool
+eor = es_foldr (\x -> ((apply_next_constf ((varf return) .? ((||?) x))) $?)) (return False)
+
+eany :: (a -> EnumProc Bool) -> EnumProc a -> EnumProc Bool
+eany p en = eor (take_each (fmap p en))
+
+eall :: (a -> EnumProc Bool) -> EnumProc a -> EnumProc Bool
+eall p en = eand (take_each (fmap p en))
 
 -- !!! is a SAFE operation, unlike !!. It returns an enumeration procedure itself, so if there are not enough elements or they cannot be computed in finite time, the result behaves like so.
 -- The element itself can always be (unsafely) extracted using uns_produce_next
@@ -185,6 +256,7 @@ uns_ecollapse (Error x) = Error x
 uns_ecollapse (Continue x) = uns_ecollapse x
 uns_ecollapse (Produce v x) = v --> (uns_ecollapse x)
 
+-- Note that the following functions (intersperse and intercalate) are unlikely to be useful, given the semantics of (..+), but we can implement them... (I did before I properly defined the semantics of (..+))
 eintersperse :: t -> EnumProc t -> EnumProc t
 eintersperse a Halt = Halt
 eintersperse a Empty = Empty
@@ -201,6 +273,9 @@ eintersperse2 a (Produce v x) = a --> v --> (eintersperse2 a x)
 
 eintercalate :: (Foldable t, Monoid (t a)) => t a -> EnumProc (t a) -> t a
 eintercalate xs xss = foldMap id (eintersperse xs xss)
+
+es_eintercalate :: EnumProc a -> EnumProc (EnumProc a) -> EnumProc a
+es_eintercalate xs xss = es_econcat (eintersperse xs xss)
 
 etranspose :: EnumProc (EnumProc t) -> EnumProc (EnumProc t)
 etranspose x = (take_each x) --> (etranspose (fmap etail x))
@@ -233,7 +308,8 @@ epermutations2 Halt = Empty
 epermutations2 Empty = Empty
 epermutations2 (Error str) = Error str
 epermutations2 (Continue x) = Continue (epermutations2 x)
-epermutations2 (Produce v x) = (diagonalize_apply (epermutations_insert2 v) (epermutations x)) ..+ (fmap (v -->) (epermutations2 x))
+--epermutations2 (Produce v x) = (diagonalize_apply (epermutations_insert2 v) (epermutations x)) ..+ (fmap (v -->) (epermutations2 x))
+epermutations2 (Produce v x) = (es_econcat (fmap (epermutations_insert2 v) (epermutations x))) ..+ (fmap (v -->) (epermutations2 x))
 
 epermutations_insert :: t -> EnumProc t -> EnumProc (EnumProc t)
 epermutations_insert v Halt = Produce (v --> Halt) Empty
@@ -249,6 +325,270 @@ epermutations_insert2 v Empty = Empty
 epermutations_insert2 v (Error str) = Error str
 epermutations_insert2 v (Continue x) = Continue (epermutations_insert2 v x)
 epermutations_insert2 v (Produce w y) = fmap (w -->) (epermutations_insert v y)
+
+escanl :: (b -> a -> b) -> b -> EnumProc a -> EnumProc b
+escanl f cur Halt = (cur --> Halt)
+escanl f cur Empty = (cur --> Empty)
+escanl f cur (Error str) = (cur --> Error str)
+escanl f cur (Continue x) = Continue (escanl f cur x)
+escanl f cur (Produce v x) = cur --> (escanl f (f cur v) x)
+
+es_escanl :: (b -> a -> EnumProc b) -> b -> EnumProc a -> EnumProc b
+es_escanl f cur Halt = (cur --> Halt)
+es_escanl f cur Empty = (cur --> Empty)
+es_escanl f cur (Error str) = (cur --> Error str)
+es_escanl f cur (Continue x) = Continue (es_escanl f cur x)
+es_escanl f cur (Produce v x) = cur --> do {r <- f cur v; es_escanl f r x}
+
+-- UNSAFE: escanr may have steps that do not terminate when the enumeration is infinite
+uns_escanr :: (a -> b -> b) -> b -> EnumProc a -> EnumProc b
+uns_escanr f cur Halt = (cur --> Halt)
+uns_escanr f cur Empty = (cur --> Empty)
+uns_escanr f cur (Error str) = (cur --> Error str)
+uns_escanr f cur (Continue x) = Continue (uns_escanr f cur x)
+uns_escanr f cur (Produce v x) = (f v (uns_produce_next (ehead prev))) --> prev where prev = (uns_escanr f cur x)
+
+eiterate :: (a -> a) -> a -> EnumProc a
+eiterate f x = x --> (fmap f (eiterate f x))
+
+es_eiterate :: (a -> EnumProc a) -> a -> EnumProc a
+es_eiterate f x = x --> ((es_eiterate f x) >>= f)
+
+erepeat :: a -> EnumProc a
+erepeat x = x --> (erepeat x)
+
+ereplicate :: Int -> a -> EnumProc a
+ereplicate 0 _ = Empty
+ereplicate n x = x --> (ereplicate (n - 1) x)
+
+-- Note that, to ensure safety, our functions generally do not allow concatenating each other, and so this function is essentially against the usual things that you would like to do with enumerations. Therefore, we consider it unsafe. Indeed, cycling an infinite list creates an infinite set of infinite lists, but only the first instance is visited. This is all semantics, really, and the behaviour is clear, but we consider this function unsafe because it technically is and it does not provide a funtionality that one would usually want with enumeration procedures
+uns_ecycle :: EnumProc a -> EnumProc a
+uns_ecycle x = uns_ecycle_rec Empty x
+
+uns_ecycle_rec :: EnumProc a -> EnumProc a -> EnumProc a
+uns_ecycle_rec prev Empty = uns_ecycle prev
+uns_ecycle_rec prev Halt = Halt
+uns_ecycle_rec prev (Error str) = Error str
+uns_ecycle_rec prev (Continue x) = Continue (uns_ecycle_rec prev x)
+uns_ecycle_rec prev (Produce v x) = v --> (uns_ecycle_rec prev x)
+
+-- A semantically more adequate version of cycle is to econcat erepeat, same as cycle == concat . repeat. The ordering will be strange, it won't be exactly a "cycle", but it will be an infinite concatenation of an enumeration with itself, diagonalized!
+-- In other words: It is an enumeration that produces an infinite amount of each element in the enumeration provided, all safely.
+ecycle :: EnumProc a -> EnumProc a
+ecycle = es_econcat . erepeat
+
+etake :: Int -> EnumProc t -> EnumProc t
+etake 0 _ = Empty
+etake n Empty = Empty
+etake n Halt = Halt
+etake n (Error str) = Error str
+etake n (Continue x) = Continue (etake n x)
+etake n (Produce v x) = v --> (etake (n-1) x)
+
+etakeWhile :: (a -> Bool) -> EnumProc a -> EnumProc a
+etakeWhile _ Empty = Empty
+etakeWhile _ Halt = Halt
+etakeWhile _ (Error str) = Error str
+etakeWhile p (Continue x) = Continue (etakeWhile p x)
+etakeWhile p (Produce v x) | p v = v --> (etakeWhile p x)
+etakeWhile p (Produce v x) = Empty
+
+es_etakeWhile :: (a -> EnumProc Bool) -> EnumProc a -> EnumProc a
+es_etakeWhile _ Empty = Empty
+es_etakeWhile _ Halt = Halt
+es_etakeWhile _ (Error str) = Error str
+es_etakeWhile p (Continue x) = Continue (es_etakeWhile p x)
+es_etakeWhile p (Produce v x) = do {r <- p v; if r then (v --> es_etakeWhile p x) else Empty}
+
+edrop :: Int -> EnumProc t -> EnumProc t
+edrop 0 x = x
+edrop n Empty = Empty
+edrop n Halt = Halt
+edrop n (Error str) = Error str
+edrop n (Continue x) = Continue (edrop n x)
+edrop n (Produce v x) = Continue (edrop (n-1) x)
+
+edropWhile :: (a -> Bool) -> EnumProc a -> EnumProc a
+edropWhile _ Empty = Empty
+edropWhile _ Halt = Halt
+edropWhile _ (Error str) = Error str
+edropWhile p (Continue x) = Continue (edropWhile p x)
+edropWhile p (Produce v x) | p v = Continue (edropWhile p x)
+edropWhile p (Produce v x) = v --> x
+
+es_edropWhile :: (a -> EnumProc Bool) -> EnumProc a -> EnumProc a
+es_edropWhile _ Empty = Empty
+es_edropWhile _ Halt = Halt
+es_edropWhile _ (Error str) = Error str
+es_edropWhile p (Continue x) = Continue (es_edropWhile p x)
+es_edropWhile p (Produce v x) = do {r <- p v; if r then (Continue (es_edropWhile p x)) else (v --> x)}
+
+egroupBy :: (a -> a -> Bool) -> EnumProc a -> EnumProc (EnumProc a)
+egroupBy _ Empty = Empty
+egroupBy _ Halt = Halt
+egroupBy _ (Error str) = Error str
+egroupBy eq (Continue x) = Continue (egroupBy eq x)
+egroupBy eq (Produce v x) = case (egroupBy_rec eq v x) of {(cur,next) -> (v --> cur) --> (egroupBy eq next)} 
+
+egroupBy_rec :: (a -> a -> Bool) -> a -> EnumProc a -> (EnumProc a, EnumProc a)
+egroupBy_rec _ _ Empty = (Empty, Empty)
+egroupBy_rec _ _ Halt = (Empty, Halt)
+egroupBy_rec _ _ (Error str) = (Empty, Error str)
+egroupBy_rec eq e (Continue x) = case (egroupBy_rec eq e x) of {(cur,next) -> (() ..> cur, () ..> next)}
+egroupBy_rec eq e (Produce v x) | eq e v = case (egroupBy_rec eq e x) of {(cur,next) -> (v --> cur, () ..> next)}
+egroupBy_rec eq e (Produce v x) = (Empty,v --> x)
+
+es_egroupBy :: (a -> a -> EnumProc Bool) -> EnumProc a -> EnumProc (EnumProc a)
+es_egroupBy _ Empty = Empty
+es_egroupBy _ Halt = Halt
+es_egroupBy _ (Error str) = Error str
+es_egroupBy eq (Continue x) = Continue (es_egroupBy eq x)
+es_egroupBy eq (Produce v x) = case (es_egroupBy_rec eq v x) of {(cur,next) -> (v --> cur) --> (es_egroupBy eq next)}
+
+es_egroupBy_rec :: (a -> a -> EnumProc Bool) -> a -> EnumProc a -> (EnumProc a, EnumProc a)
+es_egroupBy_rec _ _ Empty = (Empty,Empty)
+es_egroupBy_rec _ _ Halt = (Empty,Halt)
+es_egroupBy_rec _ _ (Error str) = (Empty, Error str)
+es_egroupBy_rec eq e (Continue x) = case (es_egroupBy_rec eq e x) of {(cur,next) -> (() ..> cur, () ..> next)}
+es_egroupBy_rec eq e (Produce v x) = (rcur,rnext) where r = eq e v; (curtrue,nexttrue) = case (es_egroupBy_rec eq e x) of {(cur,next) -> (v --> cur, () ..> next)}; (curfalse,nextfalse) = (Empty, v --> x); rcur = r >>= (\rr -> if rr then curtrue else curfalse); rnext = r >>= (\rr -> if rr then nexttrue else nextfalse)
+
+-- To make egroup truly safe we'd have to implement equality as a function returning an EnumProc satisfying our assumptions.
+egroup :: Eq a => EnumProc a -> EnumProc (EnumProc a)
+egroup = egroupBy (==)
+
+einits :: EnumProc a -> EnumProc (EnumProc a)
+einits Empty = (Empty --> Empty)
+einits Halt = (Empty --> Halt)
+einits (Error str) = (Empty --> Error str)
+einits (Continue x) = (Empty --> (fmap Continue (einits x)))
+einits (Produce v x) = (Empty --> (fmap (v -->) (einits x)))
+
+etails :: EnumProc a -> EnumProc (EnumProc a)
+etails Empty = (Empty --> Empty)
+etails Halt = (Empty --> Halt)
+etails (Error str) = (Empty --> Error str)
+etails (Continue x) = (() ..> x) --> (etails x)
+etails (Produce v x) = (v --> x) --> (etails x)
+
+eelem :: Eq t => t -> EnumProc t -> EnumProc Bool
+eelem x Empty = (False --> Empty)
+eelem x Halt = (False --> Halt)
+eelem x (Error str) = Error str
+eelem x (Continue y) = Continue (eelem x y)
+eelem x (Produce v y) | x == v = (True --> Empty)
+eelem x (Produce v y) = Continue (eelem x y)
+
+efind :: (t -> Bool) -> EnumProc t -> EnumProc (Maybe t)
+efind p Empty = (Nothing --> Empty)
+efind p Halt = (Nothing --> Halt)
+efind p (Error str) = Error str
+efind p (Continue x) = Continue (efind p x)
+efind p (Produce v x) | p v = (Just v --> Empty)
+efind p (Produce v x) = Continue (efind p x)
+
+es_efind :: (t -> EnumProc Bool) -> EnumProc t -> EnumProc (Maybe t)
+es_efind p Empty = (Nothing --> Empty)
+es_efind p Halt = (Nothing --> Halt)
+es_efind p (Error str) = Error str
+es_efind p (Continue x) = Continue (es_efind p x)
+es_efind p (Produce v x) = do {r <- p v; if r then (Just v --> Empty) else (Continue (es_efind p x))}
+
+epartition :: (t -> Bool) -> EnumProc t -> (EnumProc t, EnumProc t)
+epartition p Empty = (Empty,Empty)
+epartition p Halt = (Halt,Halt)
+epartition p (Error str) = (Error str, Error str)
+epartition p (Continue x) = (Continue ryes, Continue rno) where (ryes,rno) = epartition p x
+epartition p (Produce v x) | p v = (v --> ryes, Continue rno) where (ryes,rno) = epartition p x
+epartition p (Produce v x) = (Continue ryes, v --> rno) where (ryes,rno) = epartition p x
+
+es_epartition :: (t -> EnumProc Bool) -> EnumProc t -> (EnumProc t, EnumProc t)
+es_epartition p Empty = (Empty,Empty)
+es_epartition p Halt = (Halt,Halt)
+es_epartition p (Error str) = (Error str, Error str)
+es_epartition p (Continue x) = (Continue ryes, Continue rno) where (ryes,rno) = es_epartition p x
+es_epartition p (Produce v x) = (rryes, rrno) where (ryes,rno) = es_epartition p x; r = p v; rryes = r >>= (\rr -> if rr then (v --> ryes) else (Continue ryes)); rrno = r >>= (\rr -> if rr then (Continue rno) else (v --> rno))
+
+-- To be honest, given that ordering in enumeration procedures may not be fully controllable, zipping seems like not the right solution for whatever you're trying to do in most cases, but we provide it anyway.
+ezip :: EnumProc a -> EnumProc b -> EnumProc (a,b)
+ezip Empty _ = Empty
+ezip Halt _ = Halt
+ezip (Error str) _ = Error str
+ezip (Continue x) y = Continue (ezip x y)
+ezip (Produce v x) y = Continue (ezip2 v y x)
+
+ezip2 :: a -> EnumProc b -> EnumProc a -> EnumProc (a,b)
+ezip2 v Empty _ = Empty
+ezip2 v Halt _ = Halt
+ezip2 v (Error str) _ = Error str
+ezip2 v (Continue y) x = Continue (ezip2 v y x)
+ezip2 v (Produce w y) x = ((v,w) --> ezip x y)
+
+-- Unzip, on the other hand, seems a lot more useful
+-- Worth saying: eunzip really is a very very particular case of <*>
+eunzip :: EnumProc (a,b) -> (EnumProc a, EnumProc b)
+eunzip Empty = (Empty,Empty)
+eunzip Halt = (Halt,Halt)
+eunzip (Error str) = (Error str,Error str)
+eunzip (Continue x) = (Continue ras, Continue rbs) where (ras,rbs) = eunzip x
+eunzip (Produce (va,vb) x) = (va --> ras, vb --> rbs) where (ras,rbs) = eunzip x
+
+enubBy :: (a -> a -> Bool) -> EnumProc a -> EnumProc a
+enubBy p Empty = Empty
+enubBy p Halt = Halt
+enubBy p (Error str) = Error str
+enubBy p (Continue x) = Continue (enubBy p x)
+enubBy p (Produce v x) = v --> (enubBy p (efilter (not . (p v)) x))
+
+es_enubBy :: (a -> a -> EnumProc Bool) -> EnumProc a -> EnumProc a
+es_enubBy p Empty = Empty
+es_enubBy p Halt = Halt
+es_enubBy p (Error str) = Error str
+es_enubBy p (Continue x) = Continue (es_enubBy p x)
+es_enubBy p (Produce v x) = v --> (es_enubBy p (es_efilter (\y -> (p v y) >>= (return . not)) x))
+
+-- To produce a truly safe enub we'd have to reimplement equality ensuring it fulfills our assumptions.
+enub :: Eq t => EnumProc t -> EnumProc t
+enub = enubBy (==)
+
+edeleteBy :: (a -> a -> Bool) -> a -> EnumProc a -> EnumProc a
+edeleteBy p x Empty = Empty
+edeleteBy p x Halt = Halt
+edeleteBy p x (Error str) = Error str
+edeleteBy p x (Continue y) = Continue (edeleteBy p x y)
+edeleteBy p x (Produce v y) | p x v = y
+edeleteBy p x (Produce v y) = v --> (edeleteBy p x y)
+
+es_edeleteBy :: (a -> a -> EnumProc Bool) -> a -> EnumProc a -> EnumProc a
+es_edeleteBy p x en = en >>= (\v -> p x v >>= (\r -> if r then Empty else (return v)))
+
+-- Same comment again about safe equality
+edelete :: Eq t => t -> EnumProc t -> EnumProc t
+edelete = edeleteBy (==)
+
+-- Subtracting infinite enumerations is guaranteed to produce bottom.
+-- So don't do it.
+(\\\) :: Eq t => EnumProc t -> EnumProc t -> EnumProc t
+en1 \\\ en2 = es_foldr edelete en1 en2
+
+eunionBy :: (a -> a -> Bool) -> EnumProc a -> EnumProc a -> EnumProc a
+eunionBy p e1 e2 = enubBy p (e1 ..+ e2)
+
+es_eunionBy :: (a -> a -> EnumProc Bool) -> EnumProc a -> EnumProc a -> EnumProc a
+es_eunionBy p e1 e2 = es_enubBy p (e1 ..+ e2)
+
+-- Again, true safety only if reimplementing equality
+eunion :: Eq a => EnumProc a -> EnumProc a -> EnumProc a
+eunion = eunionBy (==)
+
+eintersectBy :: (a -> a -> Bool) -> EnumProc a -> EnumProc a -> EnumProc a
+eintersectBy p e1 e2 = es_efilter (\x -> eany (return . (p x)) e1) e2
+
+es_eintersectBy :: (a -> a -> EnumProc Bool) -> EnumProc a -> EnumProc a -> EnumProc a
+es_eintersectBy p e1 e2 = es_efilter (\x -> eany (p x) e1) e2
+
+-- True safety only if reimplementing equality.
+eintersect :: Eq a => EnumProc a -> EnumProc a -> EnumProc a
+eintersect = eintersectBy (==)
 
 single_enum :: t -> EnumProc t
 single_enum x = Produce x Empty
@@ -322,6 +662,8 @@ do_run_enumproc x = putStr (show_enumproc_run (run_enumproc x))
 show_collapsed_enumproc :: Show t => EnumProc t -> IO ()
 show_collapsed_enumproc x = putStr (show (uns_ecollapse x))
 
+-- I leave this for honor purposes, but I realized that a way more elegant way of implementing diagonalize is... econcat!!! It is just a folding of interleaving. It does not output things in the same order as this implementation of diagonalize (in a sense, foldr (..+) is "recursive" whereas this implementation of diagonalize is "iterative", so foldr (..+) will output exponentially as many elements from earlier enumerations than from latter ones, whereas diagonalize will output a constant number as many), but that is not relevant for the semantics of diagonalize.
+-- Update: This implementation is HUGELY more efficient, so I use it instead whenever I can. In fact, econcat will be an alias to this. The recursive implementation is simply too slow.
 diagonalize_enumproc :: EnumProc (EnumProc t) -> EnumProc t
 diagonalize_enumproc x = diagonalize_enumproc_rec [] [] x
 
@@ -358,6 +700,9 @@ take_next (Produce v _) = v
 apply_next :: (a -> EnumProc b) -> EnumProc a -> EnumProc b
 apply_next f x = take_next (fmap f x)
 
+apply_next_constf :: ConstF a (EnumProc b) -> ConstF (EnumProc a) (EnumProc b)
+apply_next_constf f = (Right take_next) .? (constfmap f)
+
 -- And the dual, which instead of taking the first element of the enumeration, takes the enumeration of first elements.
 take_each :: EnumProc (EnumProc t) -> EnumProc t
 take_each Halt = Halt
@@ -373,6 +718,42 @@ take_each (Produce (Produce v _) y) = v --> (take_each y)
 apply_each :: (a -> EnumProc b) -> EnumProc a -> EnumProc b
 apply_each f x = take_each (fmap f x)
 
+apply_each_constf :: ConstF a (EnumProc b) -> ConstF (EnumProc a) (EnumProc b)
+apply_each_constf f = (Right take_each) .? (constfmap f)
+
+-- Wrapper for function type designed to enable lifting constant functions to functors without needing to have the structure of the functor.
+-- Not all instances of ConstF are constant, it just explicitly distinguishes between constant and non-constant behaviour in the type, so that it can be pattern matched against.
+type ConstF a b = Either b  (a -> b)
+type a ->? b = ConstF a b
+infixr 7 ->?
+
+constf :: b -> (a ->? b)
+constf x = Left x
+
+varf :: (a -> b) -> (a ->? b)
+varf f = Right f
+
+(.?) :: ConstF b c -> ConstF a b -> ConstF a c
+(Left x) .? _ = Left x
+(Right f) .? (Left y) = Left (f y)
+(Right f) .? (Right g) = Right (f . g)
+infixr 9 .?
+
+($?) :: ConstF a b -> a -> b
+(Left x) $? _ = x
+(Right f) $? x = f x
+infixr 0 $?
+
+-- A type being an instance of ConstFFunctor means that **it can have constant behaviour**, it is not necessarily the case (and it is most interesting when) constfmap \== fmap.
+-- In the case of EnumProc, for example, constant behaviour can happen only when we are applying to a single element in the enumeration.
+-- So constfmap should be read as: "fmap in a way that preserves constants".
+-- It is true that another way to look at this is to have two different types which are related and instantiate Functor, one of which instantiates ConstFFunctor and constfmap == fmap and the other does not. We forget about that for now.
+class Functor f => ConstFFunctor f where
+	constfmap :: ConstF a b -> ConstF (f a) (f b)
+
+instance (Functor f, Applicative f) => ConstFFunctor f where
+	constfmap (Left x) = Left (pure x)
+	constfmap (Right f) = Right (fmap f)
 
 -- Provenance information for enumeration procedures
 -- It is implemented as a wrapper to offer useful functions for seamless use without having to worry too much about the provenance and its handling.
@@ -410,6 +791,9 @@ flatten_provenance (Provenance c p) = fmap ((>:>) p) c
 diagonalize_with_prov :: Semigroup p => ProvEnumProc p (ProvEnumProc p t) -> ProvEnumProc p t
 diagonalize_with_prov = diagonalize_enumproc . (fmap flatten_provenance)
 
+econcat_with_prov :: Semigroup p => ProvEnumProc p (ProvEnumProc p t) -> ProvEnumProc p t
+econcat_with_prov = es_econcat . (fmap flatten_provenance)
+
 
 -- Apply a function and append to the provenance indicating something
 apply_with_prov :: Semigroup p => (a -> b) -> (a -> p) -> Provenance p a -> Provenance p b
@@ -418,3 +802,14 @@ apply_with_prov f prov (Provenance ax px) = (f ax) >: px >>: (prov ax)
 -- The standard way to use the above is on functors
 map_with_prov :: (Functor f, Semigroup p) => (a -> b) -> (a -> p) -> f (Provenance p a) -> f (Provenance p b)
 map_with_prov f prov = fmap (apply_with_prov f prov)
+
+-- Put everything together. Apply the function on all elements in the first enumeration, and introduce provenance information for this operation
+diagonalize_apply_with_prov :: Semigroup p => (a -> ProvEnumProc p b) -> (a -> p) -> ProvEnumProc p a -> ProvEnumProc p b
+diagonalize_apply_with_prov f prov en = econcat_with_prov (map_with_prov f prov en)
+
+(->:) :: (a -> ProvEnumProc p b) -> (a -> p) -> ((a -> ProvEnumProc p b),(a -> p))
+(->:) = (,)
+
+(>>=:) :: Semigroup p => ProvEnumProc p a -> ((a -> ProvEnumProc p b),(a -> p)) -> ProvEnumProc p b
+e1 >>=: (f,fp) = diagonalize_apply_with_prov f fp e1
+infixl 7 >>=:

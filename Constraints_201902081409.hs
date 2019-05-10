@@ -127,7 +127,6 @@ instance Read Metaterm where
 				in [(MTermT (fst r),(snd r))])
 
 data Metaliteral = MLitL Literal | MLitR Unifier Metaliteral | MLitP Predicate [Metaterm] deriving Eq
-
 instance Show Metaliteral where
 	show (MLitL l) = (show l)
 	show (MLitR u ml) = (show u) ++ " " ++ (show ml)
@@ -215,83 +214,33 @@ all_simpl_mlit ml = delid_mlit (simpl_mlit (norm_mlit ml))
 -- Introduce instantiations and meta-variable mappings
 -- Keep in mind that Literal and Term may contain meta-variables, so this includes partial instantiations.
 
---type LitInstantiation = (Metavariable -> Literal)
---type TermInstantiation = (Metavariable -> Term)
-type LitInstantiation = [(Metavariable,Literal)]
-type TermInstantiation = [(Metavariable,Term)]
-
-fun_from_litinst :: LitInstantiation -> Metavariable -> Literal
-fun_from_litinst [] mv = LitM mv
-fun_from_litinst ((mv1,l):mvs) mv2 | mv1 == mv2 = l
-fun_from_litinst ((mv1,l):mvs) mv2 = fun_from_litinst mvs mv2
-
-fun_from_terminst :: TermInstantiation -> Metavariable -> Term
-fun_from_terminst [] mv = TMeta mv
-fun_from_terminst ((mv1,t):mvs) mv2 | mv1 == mv2 = t
-fun_from_terminst ((mv1,t):mvs) mv2 = fun_from_terminst mvs mv2
-
+type LitInstantiation = (Metavariable -> Literal)
+type TermInstantiation = (Metavariable -> Term)
 -- Identity instantiations
 idinst_lit :: LitInstantiation
-idinst_lit = []
---idinst_lit mv = LitM mv
+idinst_lit mv = LitM mv
 idinst_term :: TermInstantiation
---idinst_term mv = TMeta mv
-idinst_term = []
+idinst_term mv = TMeta mv
 idinst :: Instantiation
 idinst = (idinst_lit, idinst_term)
 
-list_contained_no_order :: Eq t => [t] -> [t] -> Bool
-list_contained_no_order [] _ = True
-list_contained_no_order (x:xs) l = (elem x l) && (list_contained_no_order xs l)
-
-list_eq_no_order :: Eq t => [t] -> [t] -> Bool
-list_eq_no_order l1 l2 = (list_contained_no_order l1 l2) && (list_contained_no_order l2 l1)
-
-eq_litinst :: LitInstantiation -> LitInstantiation -> Bool
-eq_litinst = list_eq_no_order
-
-eq_terminst :: TermInstantiation -> TermInstantiation -> Bool
-eq_terminst = list_eq_no_order
-
 type Instantiation = (LitInstantiation,TermInstantiation)
 
-eq_inst :: Instantiation -> Instantiation -> Bool
-eq_inst (li1,ti1) (li2,ti2) = (eq_litinst li1 li2) && (eq_terminst ti1 ti2)
-
-eq_inst_mvs :: [Metavariable] -> Instantiation -> Instantiation -> Bool
-eq_inst_mvs [] _ _ = True
-eq_inst_mvs (mv:mvs) i1 i2 = ((apply_inst i1 mv) == (apply_inst i2 mv)) && (eq_inst_mvs mvs i1 i2)
-
 has_inst_value :: Instantiation -> Metavariable -> Bool
---has_inst_value i mv = (((fst i) mv /= (LitM mv)) || ((snd i) mv /= (TMeta mv)))
-has_inst_value (li,ti) mv = (has_inst_value_lit li mv) || (has_inst_value_term ti mv)
-
-has_inst_value_lit :: LitInstantiation -> Metavariable -> Bool
-has_inst_value_lit [] mv = False
-has_inst_value_lit ((mv1,(LitM mv2)):mvs) mv3 | mv1 == mv2 = has_inst_value_lit mvs mv3
-has_inst_value_lit ((mv1,l):mvs) mv2 | mv1 == mv2 = True
-has_inst_value_lit ((mv1,l):mvs) mv2 = has_inst_value_lit mvs mv2
-
-has_inst_value_term :: TermInstantiation -> Metavariable -> Bool
-has_inst_value_term [] mv = False
-has_inst_value_term ((mv1,(TMeta mv2)):mvs) mv3 | mv1 == mv2 = has_inst_value_term mvs mv3
-has_inst_value_term ((mv1,t):mvs) mv2 | mv1 == mv2 = True
-has_inst_value_term ((mv1,t):mvs) mv2 = has_inst_value_term mvs mv2
+has_inst_value i mv = (((fst i) mv /= (LitM mv)) || ((snd i) mv /= (TMeta mv)))
 
 show_inst_mv :: Instantiation -> Metavariable -> String
-show_inst_mv i mv | (fun_from_litinst (fst i) mv /= (LitM mv)) = (show mv) ++ " -> " ++ (show (fun_from_litinst (fst i) mv))
-show_inst_mv i mv | (fun_from_terminst (snd i) mv /= (TMeta mv)) = (show mv) ++ " -> " ++ (show (fun_from_terminst (snd i) mv))
+show_inst_mv i mv | ((fst i) mv /= (LitM mv)) = (show mv) ++ " -> " ++ (show ((fst i) mv))
+show_inst_mv i mv | ((snd i) mv /= (TMeta mv)) = (show mv) ++ " -> " ++ (show ((snd i) mv))
 show_inst_mv i mv = (show mv) ++ " -> " ++ (show mv)
 
 show_inst :: Instantiation -> [Metavariable] -> String
 show_inst i [] = "{}"
 show_inst i (x:xs) = "{" ++ (foldl (\s -> \mv -> s ++ "," ++ (show_inst_mv i mv)) (show_inst_mv i x) xs) ++ "}"
---show_inst (li,ti) _ = case mvs of {[] -> "{}"; (x:xs) -> "{" ++ (foldl (\s -> \mv -> s ++ "," ++ (show_inst_mv (li,ti) mv)) (show_inst_mv (li,ti) x) xs) ++ "}"} where mvs = (map fst li) ++ (map fst ti)
-
 
 apply_inst :: Instantiation -> Metavariable -> Maybe (Either Term Literal)
-apply_inst (li,ti) mv | lv /= (LitM mv) = Just (Right lv) where lv = fun_from_litinst li mv
-apply_inst (li,ti) mv | tv /= (TMeta mv) = Just (Left tv) where tv = fun_from_terminst ti mv
+apply_inst (li,ti) mv | li mv /= (LitM mv) = Just (Right (li mv))
+apply_inst (li,ti) mv | ti mv /= (TMeta mv) = Just (Left (ti mv))
 apply_inst (li,ti) mv = Nothing
 
 contains_variable :: Variable -> Maybe (Either Term Literal) -> Bool
@@ -312,11 +261,11 @@ contains_variable_l y (Lit p ts) = any (contains_variable_t y) ts
 
 apply_inst_term :: Instantiation -> Term -> Term
 apply_inst_term i (TVar v) = TVar v
-apply_inst_term i (TMeta mv) = fun_from_terminst (snd i) mv
+apply_inst_term i (TMeta mv) = (snd i) mv
 apply_inst_term i (TFun f l) = TFun f (map (apply_inst_term i) l)
 
 apply_inst_lit :: Instantiation -> Literal -> Literal
-apply_inst_lit i (LitM mv) = fun_from_litinst (fst i) mv
+apply_inst_lit i (LitM mv) = (fst i) mv
 apply_inst_lit i (Lit p l) = Lit p (map (apply_inst_term i) l)
 
 apply_inst_mterm :: Instantiation -> Metaterm -> Metaterm
@@ -329,84 +278,22 @@ apply_inst_mlit i (MLitL l) = MLitL (apply_inst_lit i l)
 apply_inst_mlit i (MLitR u ml) = MLitR u (apply_inst_mlit i ml)
 apply_inst_mlit i (MLitP p l) = MLitP p (map (apply_inst_mterm i) l)
 
-clean_dups_inst :: Instantiation -> Instantiation
-clean_dups_inst (li,ti) = (clean_dups_inst_lit [] li,clean_dups_inst_term [] ti)
-
-clean_dups_inst_lit :: [(Metavariable,Literal)] -> LitInstantiation -> LitInstantiation
-clean_dups_inst_lit mvs [] = []
-clean_dups_inst_lit mvs ((mv,l):ls) | elem (mv,l) mvs = clean_dups_inst_lit mvs ls
-clean_dups_inst_lit mvs ((mv1,(LitM mv2)):ls) | mv1 == mv2 = clean_dups_inst_lit mvs ls
-clean_dups_inst_lit mvs ((mv,l):ls) = (mv,l):(clean_dups_inst_lit ((mv,l):mvs) ls)
-
-clean_dups_inst_term :: [(Metavariable,Term)] -> TermInstantiation -> TermInstantiation
-clean_dups_inst_term mvs [] = []
-clean_dups_inst_term mvs ((mv,t):ts) | elem (mv,t) mvs = clean_dups_inst_term mvs ts
-clean_dups_inst_term mvs ((mv1,(TMeta mv2)):ts) | mv1 == mv2 = clean_dups_inst_term mvs ts
-clean_dups_inst_term mvs ((mv,t):ts) = (mv,t):(clean_dups_inst_term ((mv,t):mvs) ts)
-
 -- As usual, read from right to left. The first instantiation applied is the second parameter.
 compose_inst :: Instantiation -> Instantiation -> Instantiation
---compose_inst i j = (\mv -> apply_inst_lit i ((fst j) mv), \mv -> apply_inst_term i ((snd j) mv))
-compose_inst i (lj,tj) = clean_dups_inst (compose_inst_lit i lj,compose_inst_term i tj)
-
-compose_inst_lit :: Instantiation -> LitInstantiation -> LitInstantiation
-compose_inst_lit (li,ti) [] = li
-compose_inst_lit i ((mv,l):mvs) = ((mv,apply_inst_lit i l):(compose_inst_lit i mvs))
-
-compose_inst_term :: Instantiation -> TermInstantiation -> TermInstantiation
-compose_inst_term (li,ti) [] = ti
-compose_inst_term i ((mv,t):mvs) = ((mv,apply_inst_term i t):(compose_inst_term i mvs)) 
+compose_inst i j = (\mv -> apply_inst_lit i ((fst j) mv), \mv -> apply_inst_term i ((snd j) mv))
 
 compose_insts :: [Instantiation] -> Instantiation
 compose_insts l = foldr compose_inst (idinst_lit,idinst_term) l
 
 build_inst :: Metavariable -> Either Term Literal -> Instantiation
---build_inst mv (Left t) = (idinst_lit,(\mx -> if (mx == mv) then t else (TMeta mx)))
-build_inst mv (Left t) = (idinst_lit,[(mv,t)])
---build_inst mv (Right l) = (\mx -> if (mx == mv) then l else (LitM mx),idinst_term)
-build_inst mv (Right l) = ([(mv,l)],idinst_term)
-
-build_inst_from_list :: [(Metavariable,Either Term Literal)] -> Instantiation
-build_inst_from_list [] = (idinst_lit,idinst_term)
-build_inst_from_list ((mv,Left t):mvs) = (prevli,((mv,t):prevti)) where (prevli,prevti) = build_inst_from_list mvs
-build_inst_from_list ((mv,Right l):mvs) = (((mv,l):prevli),prevti) where (prevli,prevti) = build_inst_from_list mvs
+build_inst mv (Left t) = (idinst_lit,(\mx -> if (mx == mv) then t else (TMeta mx)))
+build_inst mv (Right l) = (\mx -> if (mx == mv) then l else (LitM mx),idinst_term)
 
 set_instantiation_fs :: FullSolution -> Metavariable -> Either Term Literal -> FullSolution
 set_instantiation_fs (mvs,eqs,(inst,cs),(g,sol,ueqs)) mv v = (mvs,eqs,(compose_inst (build_inst mv v) inst,cs),(g,sol,ueqs))
---set_instantiation_fs (mvs,eqs,((li,ti),cs),(g,sol,ueqs)) mv (Left t) = (mvs,eqs,((li,(mv,t):ti),cs),(g,sol,ueqs))
---set_instantiation_fs (mvs,eqs,((li,ti),cs),(g,sol,ueqs)) mv (Right l) = (mvs,eqs,(((mv,l):li,ti),cs),(g,sol,ueqs))
 
 set_instantiation :: Instantiation -> Metavariable -> Either Term Literal -> Instantiation
 set_instantiation inst mv v = compose_inst (build_inst mv v) inst
---set_instantiation (li,ti) mv (Left t) = (li,(mv,t):ti)
---set_instantiation (li,ti) mv (Right l) = ((mv,l):li,ti)
-
--- Make the instantiation single, if possible, by performing unification at the meta-level.
-most_instantiated_all :: Instantiation -> Maybe Instantiation
-most_instantiated_all inst = if (any (isNothing . snd) results) then Nothing else (Just (build_inst_from_list (map (\(mv,v) -> (mv,fromJust v)) results))) where sorted = all_insts_permv inst; results = map (\(mv,vs) -> (mv,most_instantiated_all_permv vs)) sorted
-
-all_insts_permv :: Instantiation -> [(Metavariable, [Either Term Literal])]
-all_insts_permv (li,ti) = all_insts_permv_rec li ti
-
-all_insts_permv_rec :: LitInstantiation -> TermInstantiation -> [(Metavariable, [Either Term Literal])]
-all_insts_permv_rec [] [] = []
-all_insts_permv_rec [] ((mv,t):ts) = ((mv,(Left t):prev_mv):prev) where (prev,prev_mv) = all_insts_permv_rec_findprev (all_insts_permv_rec [] ts) mv
-all_insts_permv_rec ((mv,l):ls) ti = ((mv,(Right l):prev_mv):prev) where (prev,prev_mv) = all_insts_permv_rec_findprev (all_insts_permv_rec ls ti) mv
-
-all_insts_permv_rec_findprev :: [(Metavariable, [Either Term Literal])] -> Metavariable -> ([(Metavariable, [Either Term Literal])],[Either Term Literal])
-all_insts_permv_rec_findprev [] _ = ([],[])
-all_insts_permv_rec_findprev ((mv1,l):mvs) mv2 | mv1 == mv2 = (mvs,l)
-all_insts_permv_rec_findprev ((mv1,l):mvs) mv2 = ((mv1,l):prev,prev_mv) where (prev,prev_mv) = all_insts_permv_rec_findprev mvs mv2
-
-most_instantiated_all_permv :: [Either Term Literal] -> Maybe (Either Term Literal)
--- This case should never happen. Leave it unexpressed to signal the bad bug.
--- Another option would be to use the plain meta-variable as the initial value, but while more elegant, it is a lot less efficient and more bug-prone.
---most_instantiated_all_permv [] = Nothing
-most_instantiated_all_permv (x:xs) = foldr most_instantiated_mbs (Just x) (map Just xs)
-
-most_instantiated_mbs :: Maybe (Either Term Literal) -> Maybe (Either Term Literal) -> Maybe (Either Term Literal)
-most_instantiated_mbs x y = demaybize (maybe_apply_2 most_instantiated x y)
--- most_instantiated :: Either Term Literal -> Either Term Literal -> Maybe (Either Term Literal)
 
 data Constraint = Tcstr Metaterm Metaterm | Lcstr Metaliteral Metaliteral | Unsatisfiable deriving Eq
 instance Show Constraint where
@@ -498,24 +385,7 @@ new_metavars l (_:xs) = (mv:(new_metavars (mv:l) xs)) where mv = new_metavar l
 add_metavars :: [Metavariable] -> [a] -> ([Metavariable],[Metavariable])
 add_metavars l1 l2 = (l1++r,r) where r = new_metavars l1 l2
 
-get_metavars_term :: Term -> [Metavariable]
-get_metavars_term (TVar _) = []
-get_metavars_term (TFun _ ts) = foldr List.union [] (map get_metavars_term ts)
-get_metavars_term (TMeta mv) = [mv]
 
-get_metavars_lit :: Literal -> [Metavariable]
-get_metavars_lit (Lit _ ts) = foldr List.union [] (map get_metavars_term ts)
-get_metavars_lit (LitM mv) = [mv]
-
-get_metavars_mterm :: Metaterm -> [Metavariable]
-get_metavars_mterm (MTermT t) = get_metavars_term t
-get_metavars_mterm (MTermF f mts) = foldr List.union [] (map get_metavars_mterm mts)
-get_metavars_mterm (MTermR u mt) = get_metavars_mterm mt
-
-get_metavars_mlit :: Metaliteral -> [Metavariable]
-get_metavars_mlit (MLitL l) = get_metavars_lit l
-get_metavars_mlit (MLitP p mts) = foldr List.union [] (map get_metavars_mterm mts)
-get_metavars_mlit (MLitR u ml) = get_metavars_mlit ml
 
 
 -- We use numbers instead of using lists all along because while we need to consider having lots of variables, in practice most of them will not be used
@@ -581,7 +451,7 @@ simpl_cstr mvs (Lcstr (MLitP p mt1) (MLitP q mt2)) | p == q = (True, mvs, (idins
 simpl_cstr mvs (Lcstr (MLitP p mt1) (MLitP q mt2)) = (True, mvs, (idinst, [Unsatisfiable]))
 simpl_cstr mvs (Lcstr (MLitP p mt) ml) | isJust (mmv) = 	(True, total_mvs, (
 								(
-									([(Metavar m,Lit p (map TMeta new_mvs))],
+									((\mv -> case mv of {Metavar n | n == m -> Lit p (map (\mv -> TMeta mv) new_mvs); otherwise -> idinst_lit mv}),
 									idinst_term),
 								(map (\pair -> Tcstr (fst pair) (snd pair)) (zip (map (\mv -> build_metaterm us (MTermT (TMeta mv))) new_mvs) mt))) 
 							)) where mmv = is_metavar_lit ml ; m = case mmv of {Just (Metavar x,_) -> x} ; us = case mmv of {Just (_,x) -> reverse x} ; new_mvs = new_metavars mvs mt; total_mvs = mvs ++ new_mvs
@@ -609,15 +479,14 @@ all_simpl_cstr_step_helper j (b,c) = (b || (c /= nc),nc) where nc = simpl_sides_
 
 -- Dependency graphs
 
+-- This function is purposely not applied when meta-variables are present, raising an error.
 type Substitution = (Variable -> Term)
 apply_subst :: Substitution -> Term -> Term
 apply_subst s (TVar v) = s v
 apply_subst s (TFun f l) = TFun f (map (apply_subst s) l)
-apply_subst s (TMeta m) = TMeta m
 
 apply_subst_lit :: Substitution -> Literal -> Literal
 apply_subst_lit s (Lit p ts) = Lit p (map (apply_subst s) ts)
-apply_subst_lit s (LitM m) = LitM m
 
 apply_subst_tlit :: Substitution -> Either Term Literal -> Either Term Literal
 apply_subst_tlit s (Left t) = Left (apply_subst s t)
@@ -649,9 +518,6 @@ instance Show UnifierValue where
 
 type UnifierDescription = [UnifierValue]
 
-eq_unifier :: UnifierDescription -> UnifierDescription -> Bool
-eq_unifier = list_eq_no_order
-
 -- We avoid duplicates here, as this should not be called too often.
 -- It is the dumb way to check duplicates, with no hashes, but "hey man, I'm too tired for this".
 vars_in_unif_desc :: UnifierDescription -> [Variable]
@@ -675,31 +541,6 @@ obtain_substitution :: Int -> Unifier ->  UnifierDescription -> Substitution
 obtain_substitution nvars u [] v = TVar (get_image_var nvars u v)
 obtain_substitution nvars u ((UV v1 t):uvs) v2 | v1 == v2 = t
 obtain_substitution nvars u ((UV v1 t):uvs) v2 | v1 /= v2 = obtain_substitution nvars u uvs v2
-
-
--- This is under the last unifier. If there are any remaining unifiers, we throw a non-exhaustive exception, to flag this up.
-apply_subst_mterm :: Substitution -> Metaterm -> Metaterm
-apply_subst_mterm subst (MTermT t) = MTermT (apply_subst subst t)
-apply_subst_mterm subst (MTermF f mts) = MTermF f (map (apply_subst_mterm subst) mts)
---apply_subst_mterm subst (MTermR u mt) = MTermR u mt
-
-apply_subst_mlit :: Substitution -> Metaliteral -> Metaliteral
-apply_subst_mlit subst (MLitL l) = MLitL (apply_subst_lit subst l)
-apply_subst_mlit subst (MLitP p mts) = MLitP p (map (apply_subst_mterm subst) mts)
---apply_subst_mlit subst (MLitR u ml) = MLitR u ml
-
--- The substitutions need to be applied in order, the first unifier first. This is essential.
-apply_substitution_mterm :: Int -> Unifier -> UnifierDescription -> Metaterm -> Metaterm
-apply_substitution_mterm nvars u ud (MTermT t) = MTermT t
-apply_substitution_mterm nvars u ud (MTermF f mts) = MTermF f (map (apply_substitution_mterm nvars u ud) mts)
-apply_substitution_mterm nvars u ud (MTermR v mt) | u == v = apply_subst_mterm (obtain_substitution nvars u ud) mt
-apply_substitution_mterm nvars u ud (MTermR v mt) = MTermR v (apply_substitution_mterm nvars u ud mt)
-
-apply_substitution_mlit :: Int -> Unifier -> UnifierDescription -> Metaliteral -> Metaliteral
-apply_substitution_mlit nvars u ud (MLitL l) = MLitL l
-apply_substitution_mlit nvars u ud (MLitP p mts) = MLitP p (map (apply_substitution_mterm nvars u ud) mts)
-apply_substitution_mlit nvars u ud (MLitR v ml) | u == v = apply_subst_mlit (obtain_substitution nvars u ud) ml
-apply_substitution_mlit nvars u ud (MLitR v ml) = MLitR v (apply_substitution_mlit nvars u ud ml)
 
 data Dependent = DVar Variable | DMetaT Metavariable | DMetaL Metavariable | DRec Unifier Dependent deriving Eq
 metaterm_from_depnode :: Dependent -> Metaterm
@@ -748,11 +589,7 @@ get_inner_dependent :: Dependent -> Dependent
 get_inner_dependent (DRec _ d) = d
 
 instance Show Dependent where
-	show (DVar x) = show x
-	show (DMetaT mt) = show mt
-	show (DMetaL ml) = show ml
-	show (DRec u d) = (show u) ++ " " ++ (show d)
-
+	show n = show (metaterm_from_depnode n)
 instance Ord Dependent where
 	(DVar _) <= (DMetaT _) = True
 	(DVar _) <= (DMetaL _) = True
@@ -3252,7 +3089,6 @@ enumerate_terms_dependent_helper sig d l ts t = case ts of
 		(rt:rts) -> Just (((d,l),rts),rt)
 	}
 	where nd = (terms_next_depth_dependent sig l)
---	where nd = if (d < 3) then (terms_next_depth_dependent sig l) else []
 
 terms_next_depth_dependent :: ExtendedSignature -> [Term] -> [Term]
 terms_next_depth_dependent ((_,fs,_),_,_,_) ts = concat (map (apply_fun_terms ts) (filter (\f -> arity f > 0) fs))
@@ -3367,10 +3203,6 @@ maybe_apply_2 f (Just x) (Just y) = Just (f x y)
 maybe_apply_co2 :: (a -> (b,c)) -> Maybe a -> (Maybe b,Maybe c)
 maybe_apply_co2 _ Nothing = (Nothing,Nothing)
 maybe_apply_co2 f (Just x) = (Just y,Just z) where (y,z) = f x
-
-demaybize :: Maybe (Maybe a) -> Maybe a
-demaybize Nothing = Nothing
-demaybize (Just x) = x
 
 pair_x_mb :: a -> Maybe b -> Maybe (a,b)
 pair_x_mb _ Nothing = Nothing
@@ -3773,9 +3605,7 @@ do_apply_metavar_link_inst :: [(Metavariable,Either Term Literal)] -> Instantiat
 do_apply_metavar_link_inst rs inst = foldr do_apply_metavar_link_inst_single inst rs
 
 do_apply_metavar_link_inst_single :: (Metavariable,Either Term Literal) -> Instantiation -> Instantiation
---do_apply_metavar_link_inst_single (mv,v) inst = compose_inst (build_inst mv v) inst
-do_apply_metavar_link_inst_single (mv,(Left t)) (li,ti) = (li,(mv,t):ti)
-do_apply_metavar_link_inst_single (mv,(Right l)) (li,ti) = ((mv,l):li,ti)
+do_apply_metavar_link_inst_single (mv,v) inst = compose_inst (build_inst mv v) inst
 
 apply_metavar_link_apply :: Either Term Literal -> (Metavariable,Either Term Literal -> Either Term Literal) -> (Metavariable,Either Term Literal)
 apply_metavar_link_apply v (mv,f) = (mv,f v)
@@ -3842,7 +3672,6 @@ most_instantiated_inst tmv smv f (Just inst) = case nv of {Nothing -> Just inst;
 	--resv = f (fromJust nv);
 	--mostv = most_instantiated (fromJust ov) resv
 
--- This is really just unification, where the variables are meta-variables, by the way.
 -- Returns a least instantiated common instantiation of the two terms or literals, if there is one.
 most_instantiated :: Either Term Literal -> Either Term Literal -> Maybe (Either Term Literal)
 most_instantiated (Left t1) (Left t2) = maybe_apply Left (most_instantiated_term t1 t2)
@@ -3916,7 +3745,7 @@ expose_metavariable fs (DRec u d) = (((nmv:rmvs),(MetaEq nmv u rmv):reqs,(rinst,
 -- We provide both the dependent in the graph (which has unifiers on it) and the exposed meta-variable. We assume that the provided solution already includes this exposed meta-variable and the necessary equations, but has not replaced it in the graph (because it is not necessary to do this).
 -- We replace this value in the solution, by re-building the constraints it is involved in and re-calculating the graph, and also adding it to the instantiation.
 propagate_metavar_value :: FullSolution -> Dependent -> Metavariable -> Either Term Literal -> FullSolution
-propagate_metavar_value (mvs,eqs,(inst,cs),(g,sol,ueqs)) dep mv v = (mvs1,eqs,(rinst,[]),(rg,rsol,rueqs)) where (mvs1,(inst1,cs1)) = recalculate_constraints_from_dependent mvs (inst,cs) g dep v; (mvs2,mveqs2,(inst2,cs2),(rg,rsol,rueqs)) = update_graph_with_constraints_fsol (mvs1,eqs,(inst1,[]),((remove_node g dep),sol,ueqs)) cs1; rinst = set_instantiation inst1 mv v
+propagate_metavar_value (mvs,eqs,(inst,cs),(g,sol,ueqs)) dep mv v = (mvs1,eqs,(rinst,[]),(rg,rsol,rueqs)) where (mvs1,(inst1,cs1)) = recalculate_constraints_from_dependent mvs (inst,cs) g dep v; (mvs2,mveqs2,(inst2,cs2),(rg,rsol,rueqs)) = update_graph_with_constraints_fsol (mvs1,eqs,(inst1,[]),((remove_node g dep),sol,ueqs)) cs1; rinst = compose_inst (build_inst mv v) inst1
 
 recalculate_constraints_from_dependent :: [Metavariable] -> UnifSolution -> DependencyGraph -> Dependent -> Either Term Literal -> ([Metavariable],UnifSolution)
 recalculate_constraints_from_dependent mvs (inst,cs) g dep (Left t) = recalculate_constraints_eqdep mvs1 (inst1,cs1) (Left (all_simpl_mterm (metaterm_from_depnode dep))) (Left (MTermT t)) g [dep] where n = find_node g dep; (mvs1,(inst1,cs1)) = recalculate_constraints_hdep mvs (inst,cs) (Left (all_simpl_mterm (metaterm_from_depnode dep))) (Left (MTermT t)) ((get_outgoing_hdeps n) ++ (get_incoming_hdeps n))
@@ -4107,7 +3936,7 @@ get_value_metavar (linst,tinst) mv =
 		(True,False) -> Left t;
 		(False,True) -> Right l
 	}
-	where l = fun_from_litinst linst mv; t = fun_from_terminst tinst mv; bl = has_lit_metavar l; bt = has_term_metavar t
+	where l = linst mv; t = tinst mv; bl = has_lit_metavar l; bt = has_term_metavar t
 
 has_lit_metavar :: Literal -> Bool
 has_lit_metavar (Lit _ ts) = any has_term_metavar ts
@@ -4541,10 +4370,10 @@ capture_value x y = if (capture_net x) then y else y
 
 
 -- Added as not present in the library
---fromLeft :: a -> Either a b -> a
---fromLeft _ (Left x) = x
---fromLeft dflt (Right _) = dflt
+fromLeft :: a -> Either a b -> a
+fromLeft _ (Left x) = x
+fromLeft dflt (Right _) = dflt
 
---fromRight :: a -> Either b a -> a
---fromRight dflt (Left _) = dflt
---fromRight _ (Right x) = x
+fromRight :: a -> Either b a -> a
+fromRight dflt (Left _) = dflt
+fromRight _ (Right x) = x

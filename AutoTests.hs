@@ -97,5 +97,15 @@ measure_time op = (do
 timeout_test :: Int -> AutomatedTestResult -> AutomatedTestResult -> IO AutomatedTestResult
 timeout_test time actual_comp ifto = do {mb_timeout <- timeout time (deepseq (show actual_comp) (return actual_comp)); case mb_timeout of {Nothing -> return ifto; Just x -> return x}}
 
+-- When there is an integer parameter that should be increased iteratively, to avoid deadlocks that fail to output errors that could be caught.
+timeout_test_failfast :: Int -> Int -> (Int -> AutomatedTestResult) -> AutomatedTestResult -> IO AutomatedTestResult
+timeout_test_failfast time n actual_comp ifto = do {mb_timeout <- timeout time (deepseq (show todo) (return todo)); case mb_timeout of {Nothing -> return ifto; Just x -> return x}} where todo = timeout_test_failfast_rec n actual_comp
+
+timeout_test_failfast_rec :: Int -> (Int -> AutomatedTestResult) -> AutomatedTestResult
+timeout_test_failfast_rec 0 actual_comp = ATR True "Base case for iterative testing. No tests were performed"
+timeout_test_failfast_rec n actual_comp = case (timeout_test_failfast_rec (n-1) actual_comp) of {ATR True str -> (actual_comp n); ATR False str -> ATR False str}
+
+
+
 doprint :: IO String -> IO ()
 doprint op = do {r <- op; putStr r}

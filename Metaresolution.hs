@@ -226,14 +226,18 @@ apply_loginst_lit_atom mv1 (MLitR u ml) = LAtomR u (apply_loginst_lit_atom mv1 m
 apply_loginst_lit_atom mv1 ml | isJust aslit && mv1 == mv2 = LAtomVar LFBaseVar where aslit = is_metavar_lit ml; (mv2,us) = fromJust aslit
 apply_loginst_lit_atom mv1 ml = LAtomLit ml
 
-set_loginst :: LogicalInstantiation -> Metavariable -> Formula -> LogicalInstantiation
-set_loginst loginst mv f = compose_loginst (build_loginst mv f) loginst
+set_loginst :: LogicalInstantiation -> Metavariable -> Formula -> Maybe LogicalInstantiation
+set_loginst loginst mv f = compose_loginst_most_instantiated [mv] (build_loginst mv f) loginst
 
 compose_loginst :: LogicalInstantiation -> LogicalInstantiation -> LogicalInstantiation
 compose_loginst i1 i2 mv = apply_loginst_formula i1 (i2 mv)
 
 compose_loginst_inst :: Instantiation -> LogicalInstantiation -> LogicalInstantiation
 compose_loginst_inst i li mv = apply_inst_formula i (li mv)
+
+-- We keep instantiations in either of them that were not mentioned in the meta-variables. If these are inconsistent, then that's the caller's problem.
+compose_loginst_most_instantiated :: [Metavariable] -> LogicalInstantiation -> LogicalInstantiation -> Maybe LogicalInstantiation
+compose_loginst_most_instantiated mvs loginst1 loginst2 = foldr (maybe_apply_2 compose_loginst) (Just (compose_loginst loginst1 loginst2)) (map (\mv -> maybe_apply (build_loginst mv) (most_instantiated_logical (loginst1 mv) (loginst2 mv))) mvs)
 
 idloginst :: LogicalInstantiation
 idloginst mv = FLit (LitM mv)
@@ -265,11 +269,11 @@ apply_resolution_rule u ml1 ml2 c1 c2 = (Lcstr (MLitR u ml1) (MLitR u ml2), (map
 
 -- Does the flipping around if necessary, wrapping the previous function.
 -- Performance "trick": We receive the logical instantiation and only compose with it when it is actually necessary.
-apply_resolution_rule_lits :: [Metavariable] -> LogicalInstantiation -> Unifier -> ActualLiteral -> ActualLiteral -> Clause -> Clause -> (Constraint,Clause,LogicalInstantiation,[Metavariable],Metaliteral,Metaliteral)
-apply_resolution_rule_lits mvs loginst u (PosLit ml1) (NegLit ml2) c1 c2 = (cstr,rsv,loginst,mvs,ml1,ml2) where (cstr,rsv) = apply_resolution_rule u ml1 ml2 c1 c2
+apply_resolution_rule_lits :: [Metavariable] -> LogicalInstantiation -> Unifier -> ActualLiteral -> ActualLiteral -> Clause -> Clause -> Maybe (Constraint,Clause,LogicalInstantiation,[Metavariable],Metaliteral,Metaliteral)
+apply_resolution_rule_lits mvs loginst u (PosLit ml1) (NegLit ml2) c1 c2 = Just (cstr,rsv,loginst,mvs,ml1,ml2) where (cstr,rsv) = apply_resolution_rule u ml1 ml2 c1 c2
 -- If they are flipped then it HAS to be a meta-variable.
-apply_resolution_rule_lits mvs loginst u (NegLit ml1) al2 c1 c2 = (cstr,rsv,compose_loginst (build_loginst mv (FNeg (idloginst nmv))) rloginst,nmv:rmvs,rml1,rml2) where (mv,us) = fromJust (is_metavar_lit ml1); nmv = new_metavar mvs; nml = build_metaliteral (reverse us) (MLitL (LitM nmv)); (cstr,rsv,rloginst,rmvs,rml1,rml2) = apply_resolution_rule_lits mvs loginst u (PosLit nml) al2 c1 c2
-apply_resolution_rule_lits mvs loginst u (PosLit ml1) (PosLit ml2) c1 c2 = (cstr,rsv,compose_loginst (build_loginst mv (FNeg (idloginst nmv))) rloginst,nmv:rmvs,rml1,rml2) where (mv,us) = fromJust (is_metavar_lit ml2); nmv = new_metavar mvs; nml = build_metaliteral (reverse us) (MLitL (LitM nmv)); (cstr,rsv,rloginst,rmvs,rml1,rml2) = apply_resolution_rule_lits mvs loginst u (PosLit ml1) (NegLit nml) c1 c2
+apply_resolution_rule_lits mvs loginst u (NegLit ml1) al2 c1 c2 = if (isNothing mb_rec) then Nothing else (case mb_loginst of {Nothing -> Nothing; Just rrloginst -> Just (cstr,rsv,rrloginst,nmv:rmvs,rml1,rml2)}) where (mv,us) = fromJust (is_metavar_lit ml1); nmv = new_metavar mvs; nml = build_metaliteral (reverse us) (MLitL (LitM nmv)); mb_rec = apply_resolution_rule_lits mvs loginst u (PosLit nml) al2 c1 c2; (cstr,rsv,rloginst,rmvs,rml1,rml2) = fromJust mb_rec; mb_loginst = set_loginst rloginst mv (FNeg (idloginst nmv))
+apply_resolution_rule_lits mvs loginst u (PosLit ml1) (PosLit ml2) c1 c2 = if (isNothing mb_rec) then Nothing else (case mb_loginst of {Nothing -> Nothing; Just rrloginst -> Just (cstr,rsv,rrloginst,nmv:rmvs,rml1,rml2)}) where (mv,us) = fromJust (is_metavar_lit ml2); nmv = new_metavar mvs; nml = build_metaliteral (reverse us) (MLitL (LitM nmv)); mb_rec = apply_resolution_rule_lits mvs loginst u (PosLit ml1) (NegLit nml) c1 c2; (cstr,rsv,rloginst,rmvs,rml1,rml2) = fromJust mb_rec; mb_loginst = set_loginst rloginst mv (FNeg (idloginst nmv))
 
 -- Cleaning that definitely needs to be done.
 
@@ -373,7 +377,7 @@ combine_force_empty_clause flag u ml1 (Just ((mvs,mveqs,(inst,cs),gsol),loginst)
 combine_force_empty_clause_helper :: Maybe (FullSolution,LogicalInstantiation) -> Maybe (Constraint,LogicalInstantiation,[Metavariable]) -> Maybe (FullSolution,LogicalInstantiation)
 combine_force_empty_clause_helper Nothing _ = Nothing
 combine_force_empty_clause_helper _ Nothing = Nothing
-combine_force_empty_clause_helper (Just ((mvs,mveqs,(inst,cs),gsol),loginst)) (Just (c,nloginst,nmvs)) = Just ((nmvs,mveqs,(inst,c:cs),gsol),compose_loginst nloginst loginst)
+combine_force_empty_clause_helper (Just ((mvs,mveqs,(inst,cs),gsol),loginst)) (Just (c,nloginst,nmvs)) = case mb_loginst of {Nothing -> Nothing; Just rloginst -> Just ((nmvs,mveqs,(inst,c:cs),gsol),rloginst)} where mb_loginst = compose_loginst_most_instantiated mvs nloginst loginst
 -- This is an old version: Updates the graph at each step. We update them outside the force_empty_clause call, all at once.
 --combine_force_empty_clause_helper (Just ((mvs,mveqs,(inst,cs),gsol),loginst)) (Just (c,nloginst,nmvs)) = Just ((rmvs,mveqs,(rinst,[]),update_graph_with_constraints gsol rcs),compose_loginst nloginst loginst) where (rmvs,(rinst,rcs)) = all_simpl_cstr nmvs (inst,c:cs)
 
@@ -626,11 +630,12 @@ mb_flip_step_with_complementary_literal sig (fs,loginst,proof) cnf u ipclause ip
 -- The first pair is Nothing if it turns out the empty clause is found through least commitment (so no more search is needed).
 -- The second pair is Nothing if the empty clause cannot be possibly found.
 step_with_complementary_literal :: ExtendedSignature -> (FullSolution,LogicalInstantiation,ResolutionProof) -> CNF -> Unifier -> Int -> Int -> Int -> Int -> (Maybe (CNF,FullSolution,LogicalInstantiation,ResolutionProof),Maybe (FullSolution,LogicalInstantiation,ResolutionProof))
-step_with_complementary_literal sig ((mvs,mveqs,(inst,cs),(g,gsol,ueqs)),loginst,proof) cnf u ipclause iplit inclause inlit = (rescont,maybe_empty_prop)
+step_with_complementary_literal sig ((mvs,mveqs,(inst,cs),(g,gsol,ueqs)),loginst,proof) cnf u ipclause iplit inclause inlit = if (isJust mb_resol) then (rescont,maybe_empty_prop) else (Nothing,Nothing)
 	where
 	pclause = cnf !! ipclause; plit = pclause !! iplit; patom = get_atom plit; rempclause = pclause \\ [plit];
 	nclause = cnf !! inclause; nlit = nclause !! inlit; natom = get_atom nlit; remnclause = nclause \\ [nlit];
-	(newcstr,newcl,rsvloginst,rsvmvs,rpa,rna) = apply_resolution_rule_lits mvs loginst u plit nlit rempclause remnclause;
+	mb_resol = apply_resolution_rule_lits mvs loginst u plit nlit rempclause remnclause;
+	(newcstr,newcl,rsvloginst,rsvmvs,rpa,rna) = fromJust mb_resol
 	(rmvs,(rinst,rcs)) = all_simpl_cstr rsvmvs (inst,newcstr:cs);
 	parcfs = (rmvs,mveqs,(rinst,rcs),(g,gsol,ueqs));
 	resfs = update_graph_with_constraints_and_propagate sig (rmvs,mveqs,(rinst,[]),(g,gsol,ueqs)) rcs;
@@ -930,7 +935,7 @@ apply_loginst loginst mv = if (r /= (FLit (LitM mv))) then (Just r) else Nothing
 
 most_instantiated_logical_inst :: Metavariable -> Metavariable -> (Either Term Literal -> Either Term Literal) -> Maybe LogicalInstantiation -> Maybe LogicalInstantiation
 most_instantiated_logical_inst _ _ _ Nothing = Nothing
-most_instantiated_logical_inst tmv smv f (Just loginst) = case nv of {Nothing -> Just loginst; Just f1 -> case ov of {Nothing -> Just (set_loginst loginst tmv (lift_metavar_link f f1)); Just f2 -> case (most_instantiated_logical f2 (lift_metavar_link f f1)) of {Nothing -> Nothing; Just rf -> Just (set_loginst loginst tmv rf)}}}  
+most_instantiated_logical_inst tmv smv f (Just loginst) = case nv of {Nothing -> Just loginst; Just f1 -> case ov of {Nothing -> set_loginst loginst tmv (lift_metavar_link f f1); Just f2 -> case (most_instantiated_logical f2 (lift_metavar_link f f1)) of {Nothing -> Nothing; Just rf -> set_loginst loginst tmv rf}}}  
 	where 
 	nv = apply_loginst loginst smv;
 	ov = apply_loginst loginst tmv;	
