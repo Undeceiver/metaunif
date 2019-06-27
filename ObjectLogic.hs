@@ -25,6 +25,7 @@ import Control.Monad.Error.Class
 import Syntax
 import Data.Functor.Fixedpoint
 import Data.Bifunctor
+import HaskellPlus
 
 newtype OVariable = OVar Int deriving (Eq, Ord)
 
@@ -34,7 +35,11 @@ instance Read OVariable where
 	readsPrec _ ('x':xs) = (let r = (head (reads xs))
 				in [(OVar (fst r),(snd r))])
 instance Variabilizable OVariable where 
+	from_var (IntVar x) = OVar x
 	get_var (OVar x) = IntVar x
+
+instance Variable OVariable where
+	getVarID = getVarID_gen
 
 data OFunction = OFun Int Int deriving (Eq, Ord)
 
@@ -62,28 +67,28 @@ instance Read OPredicate where
 instance HasArity OPredicate where
 	arity (OPred _ x) = x
 
-data CTermF f = TFun OFunction [f] deriving (Eq, Ord, Functor, Foldable, Traversable)
-type CTerm = Fix CTermF
+data CTermF fn f = TFun fn [f] deriving (Eq, Ord, Functor, Foldable, Traversable)
 
-instance Show f => Show (CTermF f) where
+fixTFun :: fn -> [Fix (CTermF fn)] -> Fix (CTermF fn)
+fixTFun = build_functor_fix TFun
+
+type CTermFn = CTermF OFunction
+type CTerm = Fix CTermFn
+
+instance (Show f, Show fn) => Show (CTermF fn f) where
 	show (TFun x []) = (show x) ++ "()"
 	show (TFun x (y:ys)) = (show x) ++ "(" ++ (foldl (\x -> \y -> x ++ "," ++ (show y)) (show y) ys) ++ ")"
 
-instance Read f => Read (CTermF f) where
+instance Read f => Read (CTermFn f) where
 	readsPrec _ ('f':xs) = (let r = (head (reads ('f':xs))::(OFunction,String))
 				in (let r2 = read_term_list (snd r)
 					in [(TFun (fst r) (fst r2),(snd r2))]))
 
-type GTerm = UTerm CTermF
-type Term = GTerm OVariable
+instance Bifunctor CTermF where
+	bimap f g (TFun fn ts) = TFun (f fn) (map g ts)
 
-read_term_list :: Read v => String -> ([v],String)
-read_term_list ('(':xs) = read_term_list xs
-read_term_list (')':xs) = ([],xs)
-read_term_list (',':xs) = read_term_list xs
-read_term_list x = (let r = (head (reads x))
-			in (let r2 = read_term_list (snd r)
-				in ((fst r):(fst r2),(snd r2))))
+type GTerm = UTerm CTermFn
+type Term = GTerm OVariable
 
 instance Read Term where
 	readsPrec _ ('x':xs) = (let r = (head (reads ('x':xs))::(OVariable,String))
@@ -93,27 +98,45 @@ instance Read Term where
 					in [(UTerm (TFun (fst r) (fst r2)),(snd r2))]))
 
 
-instance Unifiable CTermF where
+instance (Eq fn, Show fn) => Unifiable (CTermF fn) where
 	zipMatch (TFun f t1s) (TFun g t2s) | (f == g) && ((length t1s) == (length t2s)) = Just (TFun f (map Right (zip t1s t2s)))
 	zipMatch (TFun f t1s) (TFun g t2s) | (f == g) && ((length t1s) /= (length t2s)) = error ("Unifying function " ++ (show f) ++ " but arities don't match! Arities: " ++ (show (length t1s)) ++  " and " ++ (show (length t2s)))
 	zipMatch (TFun f t1s) (TFun g t2s) = Nothing
 
-data CAtomPF f = APred OPredicate [f] deriving (Eq, Ord, Functor, Foldable, Traversable)
-type CAtomF = Predicabilize CAtomPF
+data CAtomPF pd f = APred pd [f] deriving (Eq, Ord, Functor, Foldable, Traversable)
 
-instance Show f => Show (CAtomPF f) where
+fixAPred :: pd -> [Fix (CAtomPF pd)] -> Fix (CAtomPF pd)
+fixAPred = build_functor_fix APred
+
+type CAtomPd = CAtomPF OPredicate
+type CAtomF = Predicabilize CAtomPd
+
+instance (Show f, Show pd) => Show (CAtomPF pd f) where
 	show (APred p []) = (show p) ++ "()"
 	show (APred p (y:ys)) = (show p) ++ "(" ++ (foldl (\x -> \y -> x ++ "," ++ (show y)) (show y) ys) ++ ")"
 
-instance Read f => Read (CAtomPF f) where
+instance Read f => Read (CAtomPd f) where
 	readsPrec _ ('p':xs) = (let r = (head (reads ('p':xs))::(OPredicate,String))
 				in (let r2 = read_term_list (snd r)
 					in [(APred (fst r) (fst r2),(snd r2))]))
 
-type GAtom = Predicabilize CAtomPF
+instance Bifunctor CAtomPF where
+	bimap f g (APred pd ts) = APred (f pd) (map g ts)
+
+type GAtom = Predicabilize CAtomPd
 type Atom = GAtom Term
 
-instance Unifiable CAtomPF where
+instance Read Atom where
+	readsPrec _ ('x':xs) = (let r = (head (reads ('x':xs))::(OVariable,String))
+				in [(Term (UVar (fst r)),(snd r))])
+	readsPrec _ ('f':xs) = (let r = (head (reads ('f':xs))::(OFunction,String))
+				in (let r2 = read_term_list (snd r)
+					in [(Term (UTerm (TFun (fst r) (fst r2))),(snd r2))]))
+	readsPrec _ ('p':xs) = (let r = (head (reads ('p':xs))::(OPredicate,String))
+				in (let r2 = read_term_list (snd r)
+					in [(Atom (APred (fst r) (fst r2)),(snd r2))]))
+
+instance (Eq pd, Show pd) => Unifiable (CAtomPF pd) where
 	zipMatch (APred p t1s) (APred q t2s) | (p == q) && ((length t1s) == (length t2s)) = Just (APred p (map Right (zip t1s t2s)))
 	zipMatch (APred p t1s) (APred q t2s) | (p == q) && ((length t1s) /= (length t2s)) = error ("Unifying predicate " ++ (show p) ++ " but arities don't match! Arities: " ++ (show (length t1s)) ++  " and " ++ (show (length t2s)))
 	zipMatch (APred p t1s) (APred q t2s) = Nothing

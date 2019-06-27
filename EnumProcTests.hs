@@ -7,7 +7,7 @@ module EnumProcTests where
 import EnumProc
 
 multiples_enum :: Int -> EnumProc Int
-multiples_enum n = multiples_enum_rec n 0
+multiples_enum n = multiples_enum_rec n n
 
 multiples_enum_rec :: Int -> Int -> EnumProc Int
 multiples_enum_rec b x = Produce x (multiples_enum_rec b (x+b))

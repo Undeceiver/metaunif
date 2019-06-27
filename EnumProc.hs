@@ -104,12 +104,12 @@ instance Monad EnumProc where
 -- (-->) is the equivalent of (:), it is just an infix alias for Produce
 (-->) :: t -> EnumProc t -> EnumProc t
 v --> x = Produce v x
-infixr 7 -->
+infixr 5 -->
 
 -- () ..> is just an alias for Continue
 (..>) :: () -> EnumProc t -> EnumProc t
 _ ..> x = Continue x
-infixr 7 ..>
+infixr 5 ..>
 
 -- E.g.: Write: 4 --> 5 --> () ..> () ..> 6 --> () ..> 7 --> Empty
 
@@ -610,6 +610,42 @@ list_from_enum (Error x) = error x
 list_from_enum (Continue x) = list_from_enum x
 list_from_enum (Produce v x) = v:(list_from_enum x)
 
+-- Version of the above that, if everything goes fine, returns an enum with just one element, the list containing the first n elements of the enumeration.
+-- If Empty is found, it returns the list with all elements in the enum
+-- Similarly if Halt is found, except the Enum is appended with Halt.
+-- If an error occurs, the same and we append with Error
+-- Of course, if a non-terminating enumeration with not enough elements is given, the result is a non-terminating enumeration with no results.
+
+list_n_from_enum :: Int -> EnumProc t -> EnumProc [t]
+list_n_from_enum n x = fst (list_n_from_enum_full n x)
+
+list_n_from_enum_strict :: Int -> EnumProc t -> EnumProc [t]
+list_n_from_enum_strict n x = fst (list_n_from_enum_strict_full n x)
+
+-- And now the versions that return the remaining enumeration too (safely).
+list_n_from_enum_full :: Int -> EnumProc t -> (EnumProc [t],EnumProc t)
+list_n_from_enum_full 0 x = ([] --> Empty,x)
+list_n_from_enum_full n Empty = ([] --> Empty,Empty)
+list_n_from_enum_full n Halt = ([] --> Halt,Halt)
+list_n_from_enum_full n (Error str) = ([] --> (Error str),Error str)
+list_n_from_enum_full n (Continue x) = (Continue r1,Continue r2) where (r1,r2) = list_n_from_enum_full n x
+list_n_from_enum_full n (Produce v x) = (fmap (v:) r1,Continue r2) where (r1,r2) = list_n_from_enum_full (n-1) x
+
+-- Version of the above that returns Empty/Halt/Error if no elements were found.
+list_n_from_enum_strict_full :: Int -> EnumProc t -> (EnumProc [t],EnumProc t)
+list_n_from_enum_strict_full n x = (list_n_from_enum_strict_rec r1,r2) where (r1,r2) = list_n_from_enum_full n x
+
+list_n_from_enum_strict_rec :: EnumProc [t] -> EnumProc [t]
+list_n_from_enum_strict_rec Empty = Empty
+list_n_from_enum_strict_rec Halt = Halt
+list_n_from_enum_strict_rec (Error str) = Error str
+list_n_from_enum_strict_rec (Continue x) = Continue (list_n_from_enum_strict_rec x)
+list_n_from_enum_strict_rec (Produce [] x) = x
+list_n_from_enum_strict_rec (Produce l x) = Produce l x
+
+
+
+
 step :: EnumProc t -> EnumProc t
 step (Continue next) = next
 step (Produce v next) = next
@@ -619,6 +655,28 @@ step (Error x) = Error x
 
 nstep :: Int -> EnumProc t -> EnumProc t
 nstep n x = (iterate step x) !! n
+
+
+get_nstep :: Int -> EnumProc t -> [t]
+get_nstep 0 x = []
+get_nstep n Empty = []
+get_nstep n Halt = []
+get_nstep n (Error str) = error str
+-- A cool thing about get_nstep is that we can safely compress Continues while applying it, because it will only be a finite number of them.
+--get_nstep n (Continue x) = Continue (get_nstep (n-1) x)
+get_nstep n (Continue x) = get_nstep (n-1) x
+get_nstep n (Produce v x) = v:(get_nstep (n-1) x)
+
+get_nstep_full :: Int -> EnumProc t -> ([t], EnumProc t)
+get_nstep_full 0 x = ([],x)
+get_nstep_full n Empty = ([],Empty)
+get_nstep_full n Halt = ([],Halt)
+get_nstep_full n (Error str) = (error str,Error str)
+-- A cool thing about get_nstep is that we can safely compress Continues while applying it, because it will only be a finite number of them.
+--get_nstep n (Continue x) = Continue (get_nstep (n-1) x)
+get_nstep_full n (Continue x) = get_nstep_full (n-1) x
+get_nstep_full n (Produce v x) = (v:rf,rr) where (rf,rr) = get_nstep_full (n-1) x
+
 
 -- UNSAFE: This function may produce steps that do not terminate (ass 1).
 uns_next_result :: EnumProc t -> EnumProc t
@@ -754,62 +812,3 @@ class Functor f => ConstFFunctor f where
 instance (Functor f, Applicative f) => ConstFFunctor f where
 	constfmap (Left x) = Left (pure x)
 	constfmap (Right f) = Right (fmap f)
-
--- Provenance information for enumeration procedures
--- It is implemented as a wrapper to offer useful functions for seamless use without having to worry too much about the provenance and its handling.
-data Provenance p t = Provenance t p
-
-instance (Show t, Show p) => Show (Provenance p t) where
-	show (Provenance x p) = (show x) ++ " (" ++ (show p) ++ ")"
-
-instance Eq t => Eq (Provenance p t) where
-	(Provenance x1 _) == (Provenance x2 _) = x1 == x2
-
-instance Functor (Provenance p) where
-	fmap f (Provenance x p) = Provenance (f x) p
-
-raw :: Provenance p t -> t
-raw (Provenance x _) = x
-
-(>:) :: t -> p -> Provenance p t
-x >: p = Provenance x p
-infixl 9 >:
-
-(>>:) :: Semigroup p => Provenance p t -> p -> Provenance p t
-(Provenance x p1) >>: p2 = Provenance x (p1 <> p2)
-infixl 8 >>:
-
-(>:>) :: Semigroup p => p -> Provenance p t -> Provenance p t
-p1 >:> (Provenance x p2) = Provenance x (p1 <> p2)
-infixr 8 >:>
-
-type ProvEnumProc p t = EnumProc (Provenance p t)
-
-flatten_provenance :: (Semigroup p,Functor f) => Provenance p (f (Provenance p t)) -> f (Provenance p t)
-flatten_provenance (Provenance c p) = fmap ((>:>) p) c
-
-diagonalize_with_prov :: Semigroup p => ProvEnumProc p (ProvEnumProc p t) -> ProvEnumProc p t
-diagonalize_with_prov = diagonalize_enumproc . (fmap flatten_provenance)
-
-econcat_with_prov :: Semigroup p => ProvEnumProc p (ProvEnumProc p t) -> ProvEnumProc p t
-econcat_with_prov = es_econcat . (fmap flatten_provenance)
-
-
--- Apply a function and append to the provenance indicating something
-apply_with_prov :: Semigroup p => (a -> b) -> (a -> p) -> Provenance p a -> Provenance p b
-apply_with_prov f prov (Provenance ax px) = (f ax) >: px >>: (prov ax)
-
--- The standard way to use the above is on functors
-map_with_prov :: (Functor f, Semigroup p) => (a -> b) -> (a -> p) -> f (Provenance p a) -> f (Provenance p b)
-map_with_prov f prov = fmap (apply_with_prov f prov)
-
--- Put everything together. Apply the function on all elements in the first enumeration, and introduce provenance information for this operation
-diagonalize_apply_with_prov :: Semigroup p => (a -> ProvEnumProc p b) -> (a -> p) -> ProvEnumProc p a -> ProvEnumProc p b
-diagonalize_apply_with_prov f prov en = econcat_with_prov (map_with_prov f prov en)
-
-(->:) :: (a -> ProvEnumProc p b) -> (a -> p) -> ((a -> ProvEnumProc p b),(a -> p))
-(->:) = (,)
-
-(>>=:) :: Semigroup p => ProvEnumProc p a -> ((a -> ProvEnumProc p b),(a -> p)) -> ProvEnumProc p b
-e1 >>=: (f,fp) = diagonalize_apply_with_prov f fp e1
-infixl 7 >>=:
