@@ -90,3 +90,12 @@ parse_atom_tests = [parse_atom1,parse_atom2,parse_atom3,parse_atom4]
 
 parse_atom_test :: IO ()
 parse_atom_test = putStr (combine_test_results parse_atom_tests)
+
+-- Unification tests
+unif_term1_t1 :: Term
+unif_term1_t1 = read "f1[0]()"
+
+unif_term1_t2 :: Term
+unif_term1_t2 = read "f1[0]()"
+
+unif_unif1 :: Unifier 

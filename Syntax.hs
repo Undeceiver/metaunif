@@ -28,6 +28,7 @@ import Control.Monad.Error.Class
 import Control.Monad.Trans.Identity
 import Control.Monad.Except
 import Control.Unification.Types
+import Extensionality
 
 class Variabilizable t where
 	from_var :: IntVar -> t
@@ -75,7 +76,6 @@ instance (Show (a f), Show f) => Show (Predicabilize a f) where
 instance Unifiable a => Unifiable (Predicabilize a) where
 	zipMatch (Atom a1) (Atom a2) = (zipMatch a1 a2) >>= (Just . Atom)
 	zipMatch (Term t1) (Term t2) = Just (Term (Right (t1,t2)))
-
 
 -- Like UTerm but with no recursive data type. Used to modify it before doing the fixed point, and there is a simple translation back and forth.
 data FlatTerm t v f = Var v | FTerm (t f) deriving (Eq, Ord, Functor, Foldable, Traversable)
@@ -307,9 +307,9 @@ instance (Unifiable t, Variabilizable v, Variable v) => BindingMonad t v (IntBin
 	newVar x = IntBindingW . (fmap from_var) $ (newVar . (fmap get_var) $ x)
 	bindVar v x = IntBindingW ((bindVar (get_var v)) . (fmap get_var) $ x)
 
-(=::=) :: (BindingMonad t v m, Functor m, Show v, Show (t (UTerm t v))) => UTerm t v -> UTerm t v -> m (UTerm t v)
-t1 =::= t2 = floatExceptT (unif_exceptt_helper t1 t2)
-infix 4 =::=
+(=:.=) :: (BindingMonad t v m, Functor m, Show v, Show (t (UTerm t v))) => UTerm t v -> UTerm t v -> m (UTerm t v)
+t1 =:.= t2 = floatExceptT (unif_exceptt_helper t1 t2)
+infix 4 =:.=
 
 unif_exceptt_helper :: BindingMonad t v m => UTerm t v -> UTerm t v -> (ExceptT (UFailure t v) m) (UTerm t v)
 unif_exceptt_helper t1 t2 = (t1 =:= t2)
@@ -322,5 +322,74 @@ get_u_value u v = runIdentity . evalIntBindingT . fromIntBindingW . floatExceptT
 
 get_u_value_helper :: BindingMonad t v m => v -> (ExceptT (UFailure t v) m) (UTerm t v)
 get_u_value_helper v = applyBindings (UVar v)
+
+-- We use ExceptT directly because it is just simpler to write. We keep the error class open so that we can include other errors at the higher level of unification. But in principle this shouldn't change things very much.
+type MaybeUnifier t v e = (ExceptT e (IntBindingW t v)) ()
+(=::=) :: (Unifiable t, Variabilizable v, Variable v) => UTerm t v -> UTerm t v -> MaybeUnifier t v (UFailure t v)
+t1 =::= t2 = clear_value (t1 =:= t2)
+
+get_mu_value :: (Unifiable t, Variabilizable v, Variable v, Fallible t v e) => MaybeUnifier t v e -> v -> Maybe (UTerm t v)
+get_mu_value u v = get_mu_tvalue u (UVar v)
+
+get_mu_tvalue :: (Unifiable t, Variabilizable v, Variable v, Fallible t v e) => MaybeUnifier t v e -> UTerm t v -> Maybe (UTerm t v)
+get_mu_tvalue u t = runIdentity . evalIntBindingT . fromIntBindingW . mb_from_exceptT $ (u >> (applyBindings t))
+
+-- TypeClass indicating something is unifiable and results in a unifier of a certain term/variable type. That's why it has three type parameters
+class (Unifiable t, Variabilizable v, Variable v) => DirectlyUnifiable t v s e | s -> t v e where	
+	(=.=) :: s -> s -> MaybeUnifier t v e
+	infix 4 =.=
+	($=) :: MaybeUnifier t v e -> s -> Maybe s
+	infix 4 $=
+
+instance (Functor t, Traversable t, Unifiable t, Variabilizable v, Variable v) => DirectlyUnifiable t v (UTerm t v) (UFailure t v) where
+	(=.=) = (=::=)
+	u $= t = get_mu_tvalue u t
+
+-- No occurs checks may happen at higher levels with this approach.
+data DUFailure s e = LowFailure e | HighFailure s s
+
+instance (Show e, Show s) => Show (DUFailure s e) where
+	show (LowFailure e) = show e
+	show (HighFailure s1 s2) = "Unification error. Could not unify " ++ (show s1) ++ " and " ++ (show s2) ++ "."
+
+with_lowfailure :: Monad m => (ExceptT e m) a -> (ExceptT (DUFailure s e) m) a
+with_lowfailure x = ExceptT (fmap (\y -> case y of {Left e -> Left (LowFailure e); Right v -> Right v}) (runExceptT x))
+
+-- These two functions *necessarily* apply the bindings because it is the only way to bring the error outside. This is done, however, lazily of course, so it only happens if the result is pattern matched against.
+-- This one returns maybe
+reduce_from_highfailure :: (Unifiable t, Variabilizable v, Variable v, Fallible t v e) => MaybeUnifier t v (DUFailure s e) -> ((Maybe (MaybeUnifier t v e)) |: (UTerm t v))
+reduce_from_highfailure u = rextensional (\t -> 
+						case (runIdentity . evalIntBindingT . fromIntBindingW . mb_from_exceptT $ (u >> (with_lowfailure (applyBindings t)))) of
+						{
+							Nothing -> Nothing;
+							Just v -> Just (withExceptT (\(LowFailure x) -> x) u)
+						}
+					)
+
+-- This one throws the error
+float_from_highfailure :: (Unifiable t, Variabilizable v, Variable v, Fallible t v e, Show e, Show s) => MaybeUnifier t v (DUFailure s e) -> ((MaybeUnifier t v e) |: (UTerm t v))
+float_from_highfailure u = rextensional (\t -> 
+						case (runIdentity . evalIntBindingT . fromIntBindingW . mb_from_exceptT $ (u >> (with_lowfailure (applyBindings t)))) of
+						{
+							Nothing -> ExceptT ((runExceptT (u >> (with_lowfailure (applyBindings t)))) >>= (\x -> case x of {Left e -> error (show e); Right y -> return (Right ())}));
+							Just v -> (withExceptT (\(LowFailure x) -> x) u)
+						}
+					)
+
+instance (Functor t, Functor a, Traversable t, Traversable a, Unifiable t, Unifiable a, Variabilizable v, Variable v, DirectlyUnifiable t v (UTerm t v) e, Fallible t v e) => DirectlyUnifiable t v (Predicabilize a (UTerm t v)) (DUFailure (Predicabilize a (UTerm t v)) e) where
+	(Atom a1) =.= (Atom a2) = case (zipMatch a1 a2) of 
+					{
+						Nothing -> ExceptT (return (Left (HighFailure (Atom a1) (Atom a2))));
+						Just m -> foldr (\x -> \p -> p >> (case x of
+											{
+												Left v -> return (); -- No unification needed
+												Right (t1,t2) -> with_lowfailure (t1 =.= t2) 
+											}
+											)) (return ()) m
+					}
+	(Term t1) =.= (Term t2) = with_lowfailure (t1 =.= t2)
+	s1 =.= s2 = ExceptT (return (Left (HighFailure s1 s2)))
+	u $= (Atom a) = fmap Atom (traverse (\t -> collapse_mb ((fmap (\v -> v $= t)) $<> ((reduce_from_highfailure u) |: t))) a)
+	u $= (Term t) = fmap Term (collapse_mb ((fmap (\v -> v $= t)) $<> ((reduce_from_highfailure u) |: t))) 
 
 -- And with unifiers, we need to start considering the concept of a signature (variables that are being considered).

@@ -103,13 +103,14 @@ instance (Eq fn, Show fn) => Unifiable (CTermF fn) where
 	zipMatch (TFun f t1s) (TFun g t2s) | (f == g) && ((length t1s) /= (length t2s)) = error ("Unifying function " ++ (show f) ++ " but arities don't match! Arities: " ++ (show (length t1s)) ++  " and " ++ (show (length t2s)))
 	zipMatch (TFun f t1s) (TFun g t2s) = Nothing
 
+type TermUnifier = Unifier CTermFn OVariable
+
 data CAtomPF pd f = APred pd [f] deriving (Eq, Ord, Functor, Foldable, Traversable)
 
 fixAPred :: pd -> [Fix (CAtomPF pd)] -> Fix (CAtomPF pd)
 fixAPred = build_functor_fix APred
 
 type CAtomPd = CAtomPF OPredicate
-type CAtomF = Predicabilize CAtomPd
 
 instance (Show f, Show pd) => Show (CAtomPF pd f) where
 	show (APred p []) = (show p) ++ "()"
