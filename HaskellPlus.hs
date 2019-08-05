@@ -236,3 +236,8 @@ tfill9 :: v0 :* v1 :* v2 :* v3 :* v4 :* v5 :* v6 :* v7 :* v8 :* r -> v0 :* v1 :*
 tfill9 = tinsert9 ()
 
 
+
+
+-- Types that are essentially functions with added functionality.
+class Functional t a b where
+	tofun :: t -> a -> b
