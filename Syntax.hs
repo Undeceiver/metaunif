@@ -13,6 +13,7 @@
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE QuantifiedConstraints #-}
+{-# LANGUAGE FlexibleContexts #-}
 module Syntax where
 
 import Control.Unification
@@ -29,6 +30,8 @@ import Control.Monad.Trans.Identity
 import Control.Monad.Except
 import Control.Unification.Types
 import Extensionality
+import Data.List
+import Data.Maybe
 
 class Variabilizable t where
 	from_var :: IntVar -> t
@@ -53,6 +56,10 @@ class FunctorBase b where
 fromRecSafe :: (Functor f, FunctorBase b) => f (b f t) -> (b f t) -> f (b f t)
 fromRecSafe def r = if (isBase r) then def else (fromRec r)
 
+class SimpleTerm (t :: * -> * -> *) where
+	build_term :: fn -> [a] -> t fn a
+	unbuild_term :: t fn a -> (fn,[a])
+
 read_term_list :: Read v => String -> ([v],String)
 read_term_list = read_term_list_gen '(' ')' ','
 
@@ -60,9 +67,11 @@ read_soterm_list :: Read v => String -> ([v],String)
 read_soterm_list = read_term_list_gen '{' '}' ','
 
 read_term_list_gen :: Read v => Char -> Char -> Char -> String -> ([v],String)
+read_term_list_gen o c s [] = ([],"")
 read_term_list_gen o c s (x:xs) | x == o = read_term_list_gen o c s xs
 read_term_list_gen o c s (x:xs) | x == c = ([],xs)
 read_term_list_gen o c s (x:xs) | x == s = read_term_list_gen o c s xs
+read_term_list_gen o c s (x:xs) | x == ' ' = read_term_list_gen o c s xs
 read_term_list_gen o c s x = (let r = (head (reads x))
 			in (let r2 = read_term_list_gen o c s (snd r)
 				in ((fst r):(fst r2),(snd r2))))
@@ -97,6 +106,9 @@ flat_to_uterm (Fix (FTerm st)) = UTerm (fmap flat_to_uterm st)
 uterm_to_flat :: Functor t => UTerm t v -> Fix (FlatTerm t v)
 uterm_to_flat (UVar v) = Fix (Var v)
 uterm_to_flat (UTerm st) = Fix (FTerm (fmap uterm_to_flat st))
+
+type GroundT t fn = Fix (t fn)
+type GroundA a t pd fn = a pd (GroundT t fn)
 
 -------------------------------------------------------------------
 -- Big design decision: Meta-variables as second-order variables.
@@ -197,11 +209,15 @@ instance (Show fn, Show f, Show r) => Show (SOTermF fn r f) where
 	show (CConstF aty v) = "(\\x -> " ++ (show v) ++ ")[" ++ (show aty) ++ "]"
 	show (Proj aty idx) = "pi" ++ (show idx) ++ "[" ++ (show aty) ++ "]"
 
+instance HasArity [(f,ArgumentMap)] where
+	arity args = foldr max 0 (map (\(f,arg) -> arity arg) args)
+
 instance HasArity fn => HasArity (SOTermF fn r f) where
 	arity (ConstF x) = arity x
-	arity (CompF x args) = foldr max 0 (map (\(f,arg) -> arity arg) args)
+	arity (CompF x args) = arity args
 	arity (CConstF aty _) = aty
 	arity (Proj aty _) = aty
+
 
 type SOTerm fn r = Fix (SOTermF fn r)
 
@@ -209,19 +225,42 @@ instance HasArity fn => HasArity (SOTerm fn r) where
 	arity (Fix x) = arity x
 
 -- Need to indicate into what structure it gets translated. That is the first (function) argument.
-apply_soterm :: (fn -> [t] -> t) -> SOTerm fn t -> [t] -> t
-apply_soterm c (Fix (ConstF f)) args = c f args
-apply_soterm c (Fix (CompF f sargs)) args = c f (map (\(s,argmap) -> apply_soterm c s (apply_argmap argmap args)) sargs)
-apply_soterm c (Fix (CConstF aty v)) args = v
-apply_soterm c (Fix (Proj aty idx)) args = if (idx >= (length args)) then (error ("Projection on the " ++ (show idx) ++ " argument being applied to only " ++ (show (length args)) ++ " arguments.")) else (args !! idx)
+apply_soterm :: HasArity fn => (fn -> [t] -> t) -> SOTerm fn t -> [t] -> t
+apply_soterm c f args = apply_soterm_checkarity f args (apply_soterm_actual c f args)
+
+apply_soterm_actual :: HasArity fn => (fn -> [t] -> t) -> SOTerm fn t -> [t] -> t
+apply_soterm_actual c (Fix (ConstF f)) args = c f args
+apply_soterm_actual c (Fix (CompF f sargs)) args = c f (map (\(s,argmap) -> apply_soterm c s (apply_argmap argmap args)) sargs)
+apply_soterm_actual c (Fix (CConstF aty v)) args = v
+apply_soterm_actual c (Fix (Proj aty idx)) args = if (idx >= (length args)) then (error ("Projection on the " ++ (show idx) ++ " argument being applied to only " ++ (show (length args)) ++ " arguments.")) else (args !! idx)
+
+apply_soterm_checkarity :: HasArity fn => SOTerm fn t -> [t] -> a -> a
+apply_soterm_checkarity f args r = if (arity f <= length args) then r else (error ("The arity of the function (" ++ (show (arity f)) ++ ") is larger than the number of arguments (" ++ (show (length args)) ++ ")."))
 
 apply_argmap :: ArgumentMap -> [a] -> [a]
 apply_argmap inds args = map (args !!) inds
 
+-- Composition of second-order terms
+compose_soterm :: HasArity fn => SOTerm fn t -> [(SOTerm fn t, ArgumentMap)] -> SOTerm fn t
+compose_soterm f args = compose_soterm_checkarity f args (compose_soterm_actual f args)
+
+compose_soterm_actual :: HasArity fn => SOTerm fn t -> [(SOTerm fn t, ArgumentMap)] -> SOTerm fn t
+compose_soterm_actual (Fix (ConstF f)) args = Fix (CompF f args)
+compose_soterm_actual (Fix (CompF f sargs)) args = Fix (CompF f (map (\(s,argmap) -> (compose_soterm s (apply_argmap argmap args),[0..(arity args - 1)])) sargs))
+compose_soterm_actual (Fix (CConstF aty v)) args = Fix (CConstF (arity args) v)
+compose_soterm_actual (Fix (Proj aty idx)) args = case (args !! idx) of {(Fix (Proj saty sidx),argmap) -> Fix (Proj resarity (argmap !! sidx)); (s,argmap) -> compose_soterm s (map (\i -> (Fix (Proj resarity i),[0..resarity - 1])) argmap)} where resarity = arity args
+
+compose_soterm_checkarity :: HasArity fn => SOTerm fn t -> [(SOTerm fn t, ArgumentMap)] -> a -> a
+compose_soterm_checkarity f args r = if (arity f <= length args) then r else (error ("The arity of the function (" ++ (show (arity f)) ++ ") is larger than the number of arguments (" ++ (show (length args)) ++ ")."))
+
+(*.) :: HasArity fn => SOTerm fn t -> [(SOTerm fn t, ArgumentMap)] -> SOTerm fn t
+(*.) = compose_soterm
+
 -- We do not provide equality checking for the unfixed versions on purpose, to avoid confusion. On the fixed versions, equality could happen even when syntactically they are not the same if the argument maps "cancel" each other.
+-- As a note, it turns out constant functions are redundant in the fixed point, as it turns out that you can just express them by having 0-ary compositions of the others. However, we do *not* check this equality here. This could potentially become a problem, but I doubt it.
 
 -- Don't use this directly, please.
-data GenericTermForSO fn r f = GTFSO fn [f] | GTFSOBase Int | GTFSOBaseR r deriving (Eq, Ord, Functor, Foldable, Traversable)
+data GenericTermForSO fn r f = GTFSO fn [f] | GTFSOBase Int | GTFSOBaseR r deriving (Eq, Ord, Functor, Foldable, Traversable, Show)
 
 fixGtfso :: fn -> [Fix (GenericTermForSO fn r)] -> Fix (GenericTermForSO fn r)
 fixGtfso = build_functor_fix GTFSO
@@ -237,11 +276,37 @@ instance {-# OVERLAPPING #-} (Eq fn, Eq r, HasArity fn) => Eq (SOTerm fn r) wher
 
 type SOAtom pd fn pr fr = SOTermF pd pr (SOTerm fn fr)
 
-apply_soatom :: (pd -> [t] -> p) -> (fn -> [t] -> t) -> SOAtom pd fn p t -> [t] -> p
-apply_soatom cp cf (ConstF p) args = cp p args
-apply_soatom cp cf (CompF p sargs) args = cp p (map (\(s,argmap) -> apply_soterm cf s (apply_argmap argmap args)) sargs)
-apply_soatom cp cf (CConstF aty v) args = v
-apply_soatom cp cf (Proj aty idx) args = error "Projections should not be present in predicates."
+apply_soatom :: (HasArity fn, HasArity pd) => (pd -> [t] -> p) -> (fn -> [t] -> t) -> SOAtom pd fn p t -> [t] -> p
+apply_soatom cp cf p args = apply_soatom_checkarity p args (apply_soatom_actual cp cf p args)
+
+apply_soatom_actual :: (HasArity fn, HasArity pd) => (pd -> [t] -> p) -> (fn -> [t] -> t) -> SOAtom pd fn p t -> [t] -> p
+apply_soatom_actual cp cf (ConstF p) args = cp p args
+apply_soatom_actual cp cf (CompF p sargs) args = cp p (map (\(s,argmap) -> apply_soterm cf s (apply_argmap argmap args)) sargs)
+apply_soatom_actual cp cf (CConstF aty v) args = v
+apply_soatom_actual cp cf (Proj aty idx) args = error "Projections should not be present in predicates."
+
+apply_soatom_checkarity :: HasArity pd => SOAtom pd fn p t -> [t] -> a -> a
+apply_soatom_checkarity p args r = if (arity p <= length args) then r else (error ("The arity of the predicate (" ++ (show (arity p)) ++ ") is larger than the number of arguments (" ++ (show (length args)) ++ ")."))
+
+compose_soatom :: (HasArity pd, HasArity fn) => SOAtom pd fn p t -> [(SOTerm fn t, ArgumentMap)] -> SOAtom pd fn p t
+compose_soatom p args = compose_soatom_checkarity p args (compose_soatom_actual p args)
+
+compose_soatom_actual :: (HasArity pd, HasArity fn) => SOAtom pd fn p t -> [(SOTerm fn t, ArgumentMap)] -> SOAtom pd fn p t
+compose_soatom_actual (ConstF p) args = (CompF p args)
+compose_soatom_actual (CompF p sargs) args = (CompF p (map (\(s,argmap) -> (compose_soterm s (apply_argmap argmap args),[0..(arity args - 1)])) sargs))
+compose_soatom_actual (CConstF aty v) args = (CConstF (arity args) v)
+compose_soatom_actual (Proj aty idx) args = error "Projections should not be present in predicates."
+
+compose_soatom_checkarity :: (HasArity pd, HasArity fn) => SOAtom pd fn p t -> [(SOTerm fn t, ArgumentMap)] -> a -> a
+compose_soatom_checkarity p args r = if (arity p <= length args) then r else (error ("The arity of the predicate (" ++ (show (arity p)) ++ ") is larger than the number of arguments (" ++ (show (length args)) ++ ")."))
+
+(**.) :: (HasArity pd, HasArity fn) => SOAtom pd fn p t -> [(SOTerm fn t, ArgumentMap)] -> SOAtom pd fn p t
+(**.) = compose_soatom
+
+
+type GroundSOT t fn = SOTerm fn (GroundT t fn)
+type GroundSOA a t pd fn = SOAtom pd fn (GroundA a t pd fn) (GroundT t fn)
+
 
 generic_soatom :: SOAtom pd fn pr fr -> SOAtom pd fn (GenericTermForSO pd pr f) (Fix (GenericTermForSO fn fr))
 generic_soatom (ConstF p) = ConstF p
@@ -252,7 +317,7 @@ generic_soatom (Proj aty idx) = Proj aty idx
 instance {-# OVERLAPPING #-} (Eq pd, Eq fn, Eq pr, Eq fr, HasArity pd, HasArity fn) => Eq (SOAtom pd fn pr fr) where
 	p1 == p2 = (apply_soatom GTFSO fixGtfso (generic_soatom p1) (map (Fix . GTFSOBase) [1..(arity p1)])) == (apply_soatom GTFSO fixGtfso (generic_soatom p2) (map (Fix . GTFSOBase) [1..(arity p2)]))
 
-data SOMetawrapperV fn mv = CFunc fn | SOMV mv
+data SOMetawrapperV fn mv = CFunc fn | SOMV mv deriving Eq
 type SOMetawrapF t fn v mv = SOTerm (SOMetawrapperV fn mv) (SOMetawrap t fn v mv)
 type SOMetawrapper (t :: * -> * -> *) fn v mv f = FlatTerm (t (SOMetawrapF t fn v mv)) v f
 
@@ -260,12 +325,56 @@ instance (Show fn, Show mv) => Show (SOMetawrapperV fn mv) where
 	show (CFunc x) = show x
 	show (SOMV x) = show x
 
+instance (HasArity fn, HasArity mv) => HasArity (SOMetawrapperV fn mv) where
+	arity (CFunc fn) = arity fn
+	arity (SOMV mv) = arity mv
+
 data SOMetawrap (t :: * -> * -> *) fn v mv = SOMetawrap (UTerm (t (SOMetawrapF t fn v mv)) v)
 fromSOMetawrap :: SOMetawrap t fn v mv -> UTerm (t (SOMetawrapF t fn v mv)) v
 fromSOMetawrap (SOMetawrap x) = x
 
 instance (Show v, Show (t (SOMetawrapF t fn v mv) (UTerm (t (SOMetawrapF t fn v mv)) v))) => Show (SOMetawrap t fn v mv) where
 	show (SOMetawrap x) = show x
+
+data NormSOMetawrap (t :: * -> * -> *) fn v mv = NSOMetawrap (UTerm (t (SOMetawrapperV fn mv)) v)
+fromNormSOMetawrap :: NormSOMetawrap t fn v mv -> UTerm (t (SOMetawrapperV fn mv)) v
+fromNormSOMetawrap (NSOMetawrap x) = x
+
+instance (Show v, Show (t (SOMetawrapperV fn mv) (UTerm (t (SOMetawrapperV fn mv)) v))) => Show (NormSOMetawrap t fn v mv) where
+	show (NSOMetawrap x) = show x
+
+instance Eq (UTerm (t (SOMetawrapperV fn mv)) v) => Eq (NormSOMetawrap t fn v mv) where
+	(NSOMetawrap x1) == (NSOMetawrap x2) = x1 == x2
+
+-- Remove all second-order structure and dump it into the first-order structure.
+normalize_metawrap :: SimpleTerm t => SOMetawrap t fn v mv -> NormSOMetawrap t fn v mv
+normalize_metawrap (SOMetawrap (UVar v)) = NSOMetawrap (UVar v)
+normalize_metawrap (SOMetawrap (UTerm t)) = NSOMetawrap . fromFlippedBifunctor $ (normalize_metawrap_helper (Just h) (map FlippedBifunctor ts)) where (h,ts) = unbuild_term t
+
+normalize_metawrap_helper :: SimpleTerm t => Maybe (SOMetawrapF t fn v mv) -> [FlippedBifunctor UTerm v (t (SOMetawrapF t fn v mv))] -> FlippedBifunctor UTerm v (t (SOMetawrapperV fn mv))
+normalize_metawrap_helper Nothing [t] = normalize_metawrap_helper2 t
+normalize_metawrap_helper Nothing _ = error "Trying to build a term with no head and multiple arguments. This is multiple terms!"
+normalize_metawrap_helper (Just (Fix (ConstF f))) ts = normalize_metawrap_build_term (Just f,map normalize_metawrap_helper2 ts)
+normalize_metawrap_helper (Just (Fix (CompF f sargs))) ts = normalize_metawrap_build_term (Just f, rsargs) where rsargs = map (\(g,argmap) -> normalize_metawrap_helper (Just g) (apply_argmap argmap ts)) sargs
+normalize_metawrap_helper (Just (Fix (CConstF aty v))) ts = FlippedBifunctor . fromNormSOMetawrap $ (normalize_metawrap v)
+normalize_metawrap_helper (Just (Fix (Proj aty idx))) ts = normalize_metawrap_helper Nothing [ts !! idx]
+
+normalize_metawrap_helper2 :: SimpleTerm t => FlippedBifunctor UTerm v (t (SOMetawrapF t fn v mv)) -> FlippedBifunctor UTerm v (t (SOMetawrapperV fn mv))
+normalize_metawrap_helper2 = FlippedBifunctor . fromNormSOMetawrap . normalize_metawrap . SOMetawrap . fromFlippedBifunctor
+
+normalize_metawrap_build_term :: SimpleTerm t => (Maybe (SOMetawrapperV fn mv),[FlippedBifunctor UTerm v (t (SOMetawrapperV fn mv))]) -> FlippedBifunctor UTerm v (t (SOMetawrapperV fn mv))
+normalize_metawrap_build_term (Nothing,[t]) = t
+normalize_metawrap_build_term (Nothing,_) = error "Trying to build a term with no head and multiple arguments. This is multiple terms!"
+normalize_metawrap_build_term (Just h,ts) = FlippedBifunctor (UTerm (build_term h (map fromFlippedBifunctor ts)))
+
+-- This only really deals with constant functions that are not explicitly indicated as constants.
+normalize_metawrapf :: (SimpleTerm t, HasArity fn, HasArity mv) => SOMetawrapF t fn v mv -> SOMetawrapF t fn v mv
+normalize_metawrapf (Fix (CConstF aty idx)) = (Fix (CConstF aty idx))
+normalize_metawrapf f | arity f == 0 = Fix (CConstF 0 (SOMetawrap (UTerm (build_term f []))))
+normalize_metawrapf x = x
+
+instance (SimpleTerm t, Functor (t (SOMetawrapF t fn v mv)), Functor (t (SOMetawrapperV fn mv)), Eq (UTerm (t (SOMetawrapperV fn mv)) v)) => Eq (SOMetawrap t fn v mv) where
+	mw1 == mw2 = (normalize_metawrap mw1 == normalize_metawrap mw2)
 
 type SOMetawrapP a t pd fn v pmv fmv = SOAtom (SOMetawrapperV pd pmv) (SOMetawrapperV fn fmv) (SOMetawrapA a t pd fn v pmv fmv) (SOMetawrap t fn v fmv)
 
@@ -275,6 +384,9 @@ fromSOMetawrapA (SOMetawrapA x) = x
 
 instance (Show v, Show (t (SOMetawrapF t fn v fmv) (UTerm (t (SOMetawrapF t fn v fmv)) v)), Show (a (SOMetawrapP a t pd fn v pmv fmv) (SOMetawrap t fn v fmv))) => Show (SOMetawrapA a t pd fn v pmv fmv) where
 	show (SOMetawrapA x) = show x
+
+instance Eq (Predicabilize (a (SOMetawrapP a t pd fn v pmv fmv)) (SOMetawrap t fn v fmv)) => Eq (SOMetawrapA a t pd fn v pmv fmv) where
+	(SOMetawrapA mw1) == (SOMetawrapA mw2) = mw1 == mw2
 
 somw :: Bifunctor t => UTerm (t fn) v -> SOMetawrap t fn v mv
 somw (UVar v) = SOMetawrap (UVar v)
@@ -390,6 +502,48 @@ instance (Functor t, Functor a, Traversable t, Traversable a, Unifiable t, Unifi
 	(Term t1) =.= (Term t2) = with_lowfailure (t1 =.= t2)
 	s1 =.= s2 = ExceptT (return (Left (HighFailure s1 s2)))
 	u $= (Atom a) = fmap Atom (traverse (\t -> collapse_mb ((fmap (\v -> v $= t)) $<> ((reduce_from_highfailure u) |: t))) a)
-	u $= (Term t) = fmap Term (collapse_mb ((fmap (\v -> v $= t)) $<> ((reduce_from_highfailure u) |: t))) 
+	u $= (Term t) = fmap Term (collapse_mb ((fmap (\v -> v $= t)) $<> ((reduce_from_highfailure u) |: t)))
+
+
+-- A particular case for applying the unifier extracted from a Predicabilize to a basic term.
+($$=) :: (Functor t, Functor a, Traversable t, Traversable a, Unifiable t, Unifiable a, Variabilizable v, Variable v, DirectlyUnifiable t v (UTerm t v) e, Fallible t v e) => MaybeUnifier t v (DUFailure (Predicabilize a (UTerm t v)) e) -> UTerm t v -> Maybe (UTerm t v)
+u $$= t = collapse_mb ((fmap ($= t)) $<> ut) where ut = ((reduce_from_highfailure u) |: t)
+
+-- With the following, we can apply term unifiers and atom unifiers indistinctively to terms.
+
+class (Unifiable t, Variabilizable v, Variable v) => SimplyUnifiable t v u | u -> t v where 
+	($:=) :: u -> UTerm t v -> Maybe (UTerm t v)
+
+instance (Functor t, Traversable t, Unifiable t, Variabilizable v, Variable v) => SimplyUnifiable t v (MaybeUnifier t v (UFailure t v)) where
+	u $:= t = u $= t
+
+instance (Functor t, Traversable t, Unifiable t, Variabilizable v, Variable v, Unifiable a, Functor a) => SimplyUnifiable t v (MaybeUnifier t v (DUFailure (Predicabilize a (UTerm t v)) (UFailure t v))) where
+	u $:= t = u $$= t
+
+-- And now back, to apply it to atoms indistinctively.
+($$:=) :: (Functor t, Traversable t, Unifiable t, Variabilizable v, Variable v, SimplyUnifiable t v u, Functor a, Traversable a, Unifiable a) => u -> Predicabilize a (UTerm t v) -> Maybe (Predicabilize a (UTerm t v))
+u $$:= a = traverse (u $:=) a
+
+-- First-order unifying second-order terms. This is used to merge solutions to second-order variables.
+-- Note that constant functions are only unifiable if they are equal: that is why this is "first-order unifying" second-order terms.
+instance (Eq fn, Eq r) => Unifiable (SOTermF fn r) where
+	zipMatch (ConstF f1) (ConstF f2) | f1 == f2 = Just (ConstF f1)
+	zipMatch (CConstF aty1 r1) (CConstF aty2 r2) | r1 == r2 = Just (CConstF (max aty1 aty2) r1)
+	zipMatch (Proj aty1 idx1) (Proj aty2 idx2) | idx1 == idx2 = Just (Proj (max aty1 aty2) idx1)
+	zipMatch (CompF f1 args1) (CompF f2 args2) | f1 == f2 = fmap (\rargs -> CompF f1 rargs) (traverse (\((f1,argmap1),(f2,argmap2)) -> if (argmap1 == argmap2) then Just (Right (f1,f2), argmap1) else Nothing) (zip args1 args2))
+
+
+
+
+
+
+
 
 -- And with unifiers, we need to start considering the concept of a signature (variables that are being considered).
+data Signature v = Signature {getVars :: [v]}
+
+show_unif :: (Show v, Show (UTerm t v), Unifiable t, Variabilizable v, Variable v) => [v] -> MaybeUnifier t v _ -> String
+show_unif vs u = "{" ++ (intercalate "," (map show (fromMaybe [] (traverse (\v -> u $= (UVar v)) vs)))) ++ "}"
+
+doshow_unif :: (Show v, Show (UTerm t v), Unifiable t, Variabilizable v, Variable v) => [v] -> MaybeUnifier t v _ -> IO ()
+doshow_unif vs u = putStr ((show_unif vs u) ++ "\n")

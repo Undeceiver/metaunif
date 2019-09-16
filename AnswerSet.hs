@@ -8,6 +8,7 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE QuantifiedConstraints #-}
+-- Important note: By answer set here we really refer to what in databases is usually thought of as a "result set". It is not trivially the same thing as answer sets in answer set programming. We chose not to change this name because result set would not be that much more clear and it would imply changing a large amount of stuff.
 module AnswerSet where
 
 import HaskellPlus
@@ -25,6 +26,12 @@ data AnswerSet s a = SingleAS a | ExplicitAS (EnumProc (AnswerSet s a)) | Implic
 
 emptyAS :: AnswerSet s a
 emptyAS = ExplicitAS Empty
+
+-- Make the answer set explicit, and therefore the implicit structure type becomes irrelevant. Useful when we need to convert types for when we know there are no more implicit things we can usefully do with it.
+explicit :: AnswerSet s1 a -> AnswerSet s2 a
+explicit (SingleAS a) = SingleAS a
+explicit (ExplicitAS en) = ExplicitAS (fmap explicit en)
+explicit (ImplicitAS s) = ExplicitAS (fmap SingleAS (enumImplicit s))
 
 checkAS :: Eq a => AnswerSet s a -> a -> Bool
 checkAS (SingleAS a1) a2 | a1 == a2 = True
@@ -90,3 +97,25 @@ instance (Implicit sa a, Functional (Invertible sa sb a b) a (AnswerSet (Inversi
 
 instance (Implicit sa a, Eq a, Eq b) => Functional (Invertible sa sb a b) a (AnswerSet (Inversion sa sb a b) b) where
 	tofun f a = enum_inversion (Inversion f (SingleAS a))
+
+
+
+-- Similarly, making a tuple is always implicitly composable (independent answer sets).
+instance (Implicit sa a, Implicit sb b, Eq a, Eq b) => Implicit (AnswerSet sa a, AnswerSet sb b) (a,b) where
+	checkImplicit (asa,asb) (a,b) = (checkAS asa a) && (checkAS asb b)
+	enumImplicit (asa,asb) = (enumAS asa) >>= (\x -> (enumAS asb) >>= (\y -> ((x,y) --> Empty)))
+
+-- Because this makes the type "grow", it is highly recommended that it is only used to construct, meaning that the implicit type can be left as a wildcard and then simply enumAS or checkAS are used on the final result. Otherwise, use with care.
+tupleAS :: (Implicit sa a, Implicit sb b, Eq a, Eq b) => AnswerSet sa a -> AnswerSet sb b -> AnswerSet (AnswerSet sa a, AnswerSet sb b) (a,b)
+tupleAS asa asb = ImplicitAS (asa,asb)
+
+
+-- An answer set of implicit solutions is also an implicit solution. But, if enumeration is infinite for the set of implicit solutions, then even checking for the set of combined solutions could be non-terminating.
+instance (Implicit sa a, Eq a) => Implicit (AnswerSet ssa sa) a where
+	checkImplicit as a = uns_produce_next (as_checkImplicit as a)
+	enumImplicit as = (enumAS as) >>= enumImplicit
+
+as_checkImplicit :: (Implicit sa a, Eq a) => AnswerSet ssa sa -> a -> EnumProc Bool
+as_checkImplicit (SingleAS imp) a = (checkImplicit imp a) --> Empty
+as_checkImplicit (ExplicitAS en) a = eany (\imp -> as_checkImplicit imp a) en
+as_checkImplicit (ImplicitAS iimp) a = eany (\imp -> (checkImplicit imp a) --> Empty) (enumImplicit iimp)

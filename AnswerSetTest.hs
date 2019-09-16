@@ -41,7 +41,7 @@ m4n6 = MCM (Mults 4) (Mults 6)
 m4n6t10 :: AnswerSet Mults Int
 m4n6t10 = (ImplicitAS m4n6) ?>>= (Times 10)
 
--- m4n6t10alt is the explicit multipliciation of the same set by 10.
+-- m4n6t10alt is the explicit multiplication of the same set by 10.
 m4n6t10alt :: AnswerSet Mults Int
 m4n6t10alt = (ImplicitAS m4n6) >>= (return . (*10))
 

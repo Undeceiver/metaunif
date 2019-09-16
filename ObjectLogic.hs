@@ -87,8 +87,15 @@ instance Read f => Read (CTermFn f) where
 instance Bifunctor CTermF where
 	bimap f g (TFun fn ts) = TFun (f fn) (map g ts)
 
+instance SimpleTerm CTermF where
+	build_term = TFun
+	unbuild_term (TFun f ts) = (f,ts)
+
 type GTerm = UTerm CTermFn
 type Term = GTerm OVariable
+type GroundTerm = GroundT CTermF OFunction
+
+type TermUnifier = MaybeUnifier CTermFn OVariable (UFailure CTermFn OVariable)
 
 instance Read Term where
 	readsPrec _ ('x':xs) = (let r = (head (reads ('x':xs))::(OVariable,String))
@@ -102,8 +109,6 @@ instance (Eq fn, Show fn) => Unifiable (CTermF fn) where
 	zipMatch (TFun f t1s) (TFun g t2s) | (f == g) && ((length t1s) == (length t2s)) = Just (TFun f (map Right (zip t1s t2s)))
 	zipMatch (TFun f t1s) (TFun g t2s) | (f == g) && ((length t1s) /= (length t2s)) = error ("Unifying function " ++ (show f) ++ " but arities don't match! Arities: " ++ (show (length t1s)) ++  " and " ++ (show (length t2s)))
 	zipMatch (TFun f t1s) (TFun g t2s) = Nothing
-
-type TermUnifier = Unifier CTermFn OVariable
 
 data CAtomPF pd f = APred pd [f] deriving (Eq, Ord, Functor, Foldable, Traversable)
 
@@ -126,6 +131,9 @@ instance Bifunctor CAtomPF where
 
 type GAtom = Predicabilize CAtomPd
 type Atom = GAtom Term
+type GroundAtom = GroundA CAtomPF CTermF OPredicate OFunction
+
+type AtomUnifier = MaybeUnifier CTermFn OVariable (DUFailure (Predicabilize CAtomPd Term) (UFailure CTermFn OVariable))
 
 instance Read Atom where
 	readsPrec _ ('x':xs) = (let r = (head (reads ('x':xs))::(OVariable,String))

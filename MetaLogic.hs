@@ -104,6 +104,9 @@ instance Read SOMVariable where
 				in (let r2 = (read_arity (snd r))
 					in [(SOMVar (fst r) (fst r2),(snd r2))]))
 
+instance HasArity SOMVariable where
+	arity (SOMVar _ a) = a
+
 --instance Variabilizable SOMVariable where 
 --	from_var (IntVar x) = SOMVar x ??
 --	get_var (SOMVar x _) = IntVar x
@@ -114,6 +117,7 @@ instance {-# OVERLAPPING #-} Read (SOMetawrapperV OFunction SOMVariable) where
 
 type SOMetatermF = SOMetawrapF CTermF OFunction OVariable SOMVariable
 type SOMetaterm = SOMetawrap CTermF OFunction OVariable SOMVariable
+type GroundSOMetaterm = GroundSOT CTermF OFunction
 
 instance Read SOMetatermF where
 	readsPrec _ xs = 
@@ -198,6 +202,9 @@ instance Read SOAMVariable where
 				in (let r2 = (read_arity (snd r))
 					in [(SOAMVar (fst r) (fst r2),(snd r2))]))
 
+instance HasArity SOAMVariable where
+	arity (SOAMVar _ a) = a
+
 --instance Variabilizable SOAMVariable where 
 --	get_var (SOAMVar x _) = IntVar x
 
@@ -207,6 +214,7 @@ instance {-# OVERLAPPING #-} Read (SOMetawrapperV OPredicate SOAMVariable) where
 
 type SOMetaatomP = SOMetawrapP CAtomPF CTermF OPredicate OFunction OVariable SOAMVariable SOMVariable
 type SOMetaatom = SOMetawrapA CAtomPF CTermF OPredicate OFunction OVariable SOAMVariable SOMVariable
+type GroundSOMetaatom = GroundSOA CAtomPF CTermF OPredicate OFunction
 
 instance Read SOMetaatomP where
 	readsPrec _ xs = 
@@ -237,14 +245,14 @@ instance Read SOMetaatomP where
 			Just rest -> (let r = (head (reads rest)::(SOMetaatom,String))
 				in (case (snd r) of {(')':xs2) -> (let r2 = read_arity xs2
 					in [(CConstF (fst r2) (fst r),(snd r2))])}));
-			Nothing ->
-		case stripPrefix "zpi" xs of
-		{
-			Just rest -> (let r = (head (reads rest)::(Int,String))
-				in (let r2 = read_arity (snd r)
-					in [(Proj (fst r2) (fst r),(snd r2))]));
 			Nothing -> error ("Cannot read meta-atom: " ++ xs)
-		}}}}
+		--case stripPrefix "zpi" xs of
+		--{
+		--	Just rest -> (let r = (head (reads rest)::(Int,String))
+		--		in (let r2 = read_arity (snd r)
+		--			in [(Proj (fst r2) (fst r),(snd r2))]));
+		--	Nothing -> error ("Cannot read meta-atom: " ++ xs)
+		}}}
 
 
 instance Read (Predicabilize (CAtomPF SOMetaatomP) SOMetaterm) where
@@ -295,14 +303,14 @@ instance Read (Predicabilize (CAtomPF SOMetaatomP) SOMetaterm) where
 			Just rest -> (let r = (head (reads ("\\z -> " ++ rest))::(SOMetaatomP,String))
 				in (let r2 = read_term_list (snd r)
 					in [(Atom (APred (fst r) (fst r2)),(snd r2))]));
-			Nothing ->
-		case stripPrefix "zpi" xs of
-		{
-			Just rest -> (let r = (head (reads ("zpi" ++ rest))::(SOMetaatomP,String))
-				in (let r2 = read_term_list (snd r)
-					in [(Atom (APred (fst r) (fst r2)),(snd r2))]));
 			Nothing -> error ("Cannot read meta-atom: " ++ xs)
-		}}}}}}}}}
+		--case stripPrefix "zpi" xs of
+		--{
+		--	Just rest -> (let r = (head (reads ("zpi" ++ rest))::(SOMetaatomP,String))
+		--		in (let r2 = read_term_list (snd r)
+		--			in [(Atom (APred (fst r) (fst r2)),(snd r2))]));
+		--	Nothing -> error ("Cannot read meta-atom: " ++ xs)
+		}}}}}}}}
 
 instance Read SOMetaatom where
 	readsPrec i xs = case (readsPrec i xs) of ((r,xs):_) -> [(SOMetawrapA r,xs)]

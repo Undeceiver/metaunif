@@ -19,6 +19,7 @@ module HaskellPlus where
 import Data.Bifunctor
 import Data.Maybe
 import Data.Functor.Fixedpoint
+import Data.Functor.Identity
 import Control.Unification
 import Control.Monad.Except
 
@@ -61,12 +62,17 @@ show_as_args sh (x:xs) = sh x ++ ", " ++ (show_as_args sh xs)
 
 class Fixpoint (fx :: (* -> *) -> *) where
 	fixp :: forall (t :: * -> *). Functor t => t (fx t) -> fx t
+	-- We cannot in general extract the element because some fixedpoint instances may not have such elements, but we can always "map" into those elements of the fixpoint that are, in fact, fixedpoints.
+	unfixp :: forall (t :: * -> *) (s :: * -> *). (Functor t, Functor s) => (t (fx t) -> s (fx s)) -> fx t -> fx s
 
 instance Fixpoint Fix where
 	fixp = Fix
+	unfixp f (Fix x) = (Fix (f x))
 
 instance Fixpoint (FlippedBifunctor UTerm v) where
 	fixp = FlippedBifunctor . UTerm . (fmap fromFlippedBifunctor)
+	unfixp f (FlippedBifunctor (UVar v)) = FlippedBifunctor (UVar v)
+	unfixp f (FlippedBifunctor (UTerm t)) = FlippedBifunctor (UTerm (fmap fromFlippedBifunctor (f (fmap FlippedBifunctor t))))
 
 -- Take some initial information (e.g. a head) and an already built functor (such as a list) that is used on the constructor of another functor, and map it to its fixed point.
 build_functor_fix :: (Fixpoint fx, Functor t) => (forall f. h -> l f -> t f) -> h -> l (fx t) -> fx t
@@ -241,3 +247,6 @@ tfill9 = tinsert9 ()
 -- Types that are essentially functions with added functionality.
 class Functional t a b where
 	tofun :: t -> a -> b
+
+instance Functional (a -> b) a b where
+	tofun = id
