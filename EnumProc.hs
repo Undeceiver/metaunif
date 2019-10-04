@@ -4,6 +4,7 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE KindSignatures #-}
 module EnumProc where
 
 import Data.Time
@@ -64,6 +65,25 @@ es_foldr f b Halt = Halt
 es_foldr f b (Error str) = Error str
 es_foldr f b (Continue x) = Continue (es_foldr f b x)
 es_foldr f b (Produce v x) = f v (Continue (es_foldr f b x))
+
+-- Coinductive fold
+-- Thanks to Olaf Klinke for providing this idea.
+class CoFoldable (f :: * -> *) where
+	cofoldr :: (a -> b -> b) -> f a -> b
+
+instance CoFoldable EnumProc where	
+	cofoldr f Empty = undefined
+	cofoldr f Halt = undefined
+	cofoldr f (Error str) = error str
+	cofoldr f (Continue x) = cofoldr f x
+	cofoldr f (Produce v x) = f v (cofoldr f x)
+
+es_cofoldr :: (a -> EnumProc b -> EnumProc b) -> EnumProc a -> EnumProc b
+es_cofoldr f Empty = bottom
+es_cofoldr f Halt = bottom
+es_cofoldr f (Error str) = Error str
+es_cofoldr f (Continue x) = Continue (es_cofoldr f x)
+es_cofoldr f (Produce v x) = f v (es_cofoldr f x)
 
 
 instance Applicative EnumProc where
@@ -183,6 +203,9 @@ es_econcat = diagonalize_enumproc
 (&&?) :: Bool -> Bool ->? Bool
 (&&?) True = varf id
 (&&?) False = constf False
+
+eifelse :: EnumProc Bool -> EnumProc t -> EnumProc t -> EnumProc t
+eifelse cond true false = cond >>= (\r -> if r then true else false)
 
 eand :: EnumProc Bool -> EnumProc Bool
 eand = es_foldr (\x -> ((apply_next_constf ((varf return) .? ((&&?) x))) $?)) (return True)
@@ -580,6 +603,9 @@ es_eunionBy p e1 e2 = es_enubBy p (e1 ..+ e2)
 eunion :: Eq a => EnumProc a -> EnumProc a -> EnumProc a
 eunion = eunionBy (==)
 
+eunionAll :: Eq a => EnumProc (EnumProc a) -> EnumProc a
+eunionAll = enub . diagonalize_enumproc
+
 eintersectBy :: (a -> a -> Bool) -> EnumProc a -> EnumProc a -> EnumProc a
 eintersectBy p e1 e2 = es_efilter (\x -> eany (return . (p x)) e1) e2
 
@@ -589,6 +615,15 @@ es_eintersectBy p e1 e2 = es_efilter (\x -> eany (p x) e1) e2
 -- True safety only if reimplementing equality.
 eintersect :: Eq a => EnumProc a -> EnumProc a -> EnumProc a
 eintersect = eintersectBy (==)
+
+eintersectAll :: Eq a => EnumProc (EnumProc a) -> EnumProc a
+-- Because there's no (computable) neutral element with intersection, we need to pick apart the empty case, and take the first enumeration as the base case for the foldr.
+-- We produce an error when attempting to perform the intersection of no enumerations.
+eintersectAll Empty = Error "Attempting to intersect zero enumerations."
+eintersectAll Halt = Halt
+eintersectAll (Error str) = Error str
+eintersectAll (Continue x) = Continue (eintersectAll x)
+eintersectAll (Produce en x) = en >>= (\el -> eifelse (eall (\en2 -> eelem el en2) x) (return el) Empty)
 
 single_enum :: t -> EnumProc t
 single_enum x = Produce x Empty

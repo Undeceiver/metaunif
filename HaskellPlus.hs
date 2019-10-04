@@ -14,13 +14,16 @@
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE DataKinds #-}
 module HaskellPlus where
 
 import Data.Bifunctor
 import Data.Maybe
 import Data.Functor.Fixedpoint
+import Data.Functor.Identity
 import Control.Unification
 import Control.Monad.Except
+import Data.Map.Strict
 
 -- Here I put functions/types that I feel should be part of Haskell but aren't. It is likely that at least half of them ACTUALLY are part of Haskell, but I wasn't smart enough to find them.
 
@@ -54,19 +57,24 @@ instance Bifunctor b => Bifunctor (FlippedBifunctor b) where
 --instance Bifunctor f => Functor (f t) where
 --	fmap = bimap id
 
-show_as_args :: (t -> String) -> [t] -> String
-show_as_args _ [] = ""
-show_as_args sh [x] = sh x
-show_as_args sh (x:xs) = sh x ++ ", " ++ (show_as_args sh xs)
+show_as_args :: [String] -> String
+show_as_args [] = ""
+show_as_args [x] = x
+show_as_args (x:xs) = x ++ ", " ++ (show_as_args xs)
 
 class Fixpoint (fx :: (* -> *) -> *) where
-	fixp :: forall (t :: * -> *). Functor t => t (fx t) -> fx t
+	fixp :: Functor t => t (fx t) -> fx t
+	-- We cannot in general extract the element because some fixedpoint instances may not have such elements, but we can always "map" into those elements of the fixpoint that are, in fact, fixedpoints; plus indicate what to do with the added base cases the fixpoint may have.
+	unfixp :: Functor t => (t (fx t) -> fx a) -> fx t -> fx a
 
 instance Fixpoint Fix where
 	fixp = Fix
+	unfixp f (Fix x) = f x
 
 instance Fixpoint (FlippedBifunctor UTerm v) where
 	fixp = FlippedBifunctor . UTerm . (fmap fromFlippedBifunctor)
+	unfixp f (FlippedBifunctor (UVar v)) = FlippedBifunctor (UVar v)
+	unfixp f (FlippedBifunctor (UTerm t)) = (f (fmap FlippedBifunctor t))
 
 -- Take some initial information (e.g. a head) and an already built functor (such as a list) that is used on the constructor of another functor, and map it to its fixed point.
 build_functor_fix :: (Fixpoint fx, Functor t) => (forall f. h -> l f -> t f) -> h -> l (fx t) -> fx t
@@ -241,3 +249,20 @@ tfill9 = tinsert9 ()
 -- Types that are essentially functions with added functionality.
 class Functional t a b where
 	tofun :: t -> a -> b
+
+instance Functional (a -> b) a b where
+	tofun = id
+
+-- The idea when you use a Normalizable type is that you define all your functions on the a type, and simply use the type n to indicate when an element needs to be normalized, and only define functions on n that are necessarily to be performed on normalized types. The rest can be performed on normalized types by simply injecting them into a. If at some point it is important to keep normality while performing an operation, we can implement a different version for n.
+class Normalizable a n | a -> n, n -> a where
+	normalize :: a -> n
+	inject_normal :: n -> a
+	-- If every element of the type n is normal, it should obey: normalize . inject_normal = id.
+	-- However, we can relax this constraint to say that n contains normal elements but not all are normal, and then it must be normalize . inject_normal . normalize = normalize
+	-- normalize itself should not produce non-termination.
+
+(~~) :: (Normalizable a n, Eq n) => a -> a -> Bool
+x1 ~~ x2 = (normalize x1) == (normalize x2)
+
+-- Mapping a set of results to a set of arguments in something that is similar to a functional.
+type (v := r) = Map v r
