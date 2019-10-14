@@ -18,7 +18,7 @@ class Implicit (s :: *) (t :: *) | s -> t where
 	checkImplicit :: s -> t -> Bool
 	enumImplicit :: s -> EnumProc t
 
-class (Implicit sa a, Implicit sb b, Functional f a (AnswerSet sb b)) => ImplicitF (sa :: *) (a :: *) (sb :: *) (b :: *) (f :: *) | sa -> a, sb -> b, f sa a -> sb b where
+class (Implicit sa a, Implicit sb b, Functional f a (AnswerSet sb b)) => ImplicitF (sa :: *) (a :: *) (sb :: *) (b :: *) (f :: *) | f sa -> sb, f a -> b where
 	composeImplicit :: sa -> f -> AnswerSet sb b
 
 -- Any functional can be "composed implicitly" by doing it absolutely explicitly. This is the most inefficient thing to do, but it can always be done. Only use when no more clever thing can be done.

@@ -264,5 +264,10 @@ class Normalizable a n | a -> n, n -> a where
 (~~) :: (Normalizable a n, Eq n) => a -> a -> Bool
 x1 ~~ x2 = (normalize x1) == (normalize x2)
 
+newtype NormalizedFunctor (f :: * -> *) (t :: *) = NormalizedFunctor {fromNormalizedFunctor :: f t}
+instance (Functor f, Normalizable a b) => Normalizable (NormalizedFunctor f a) (NormalizedFunctor f b) where
+	inject_normal = NormalizedFunctor . (fmap inject_normal) . fromNormalizedFunctor
+	normalize = NormalizedFunctor. (fmap normalize) . fromNormalizedFunctor
+
 -- Mapping a set of results to a set of arguments in something that is similar to a functional.
 type (v := r) = Map v r

@@ -16,6 +16,7 @@
 {-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LiberalTypeSynonyms #-}
+{-# LANGUAGE StandaloneDeriving #-}
 module Syntax where
 
 import Control.Unification
@@ -41,6 +42,9 @@ class Variabilizable t where
 
 getVarID_gen :: Variabilizable v => v -> Int
 getVarID_gen x = getVarID (get_var x)
+
+ordFromVar :: Variabilizable t => t -> t -> Bool
+ordFromVar a b = (getVarID_gen a) <= (getVarID_gen b)
 
 read_arity :: String -> (Int,String)
 read_arity ('[':xs) = (let r = (head (reads xs))
@@ -235,7 +239,7 @@ instance HasArity x => HasArity [x] where
 instance (HasArity fn, HasArity p, HasArity f) => HasArity (SOTermPF fn p f) where
 	arity (ConstF x) = arity x
 	arity (CompF x args) = arity args
-	arity (Proj idx) = idx
+	arity (Proj idx) = (idx + 1)
 
 instance (HasArity fn, HasArity f) => HasArity (SOTermF fn f) where
 	arity (SOF x) = arity x
@@ -260,7 +264,7 @@ inject_groundsot (Fix x) = UTerm (fmap inject_groundsot x)
 -- Need to indicate into what structure it gets translated. That is the first (function) argument.
 -- Application can only be used on ground second-order terms. Composition can be used on any fixed point.
 apply_soterm :: HasArity fn => (fn -> [t] -> t) -> GroundSOT fn -> [t] -> t
-apply_soterm c f args = apply_soterm_checkarity (normalize f) args (apply_soterm_actual c f args)
+apply_soterm c f args = apply_soterm_checkarity ff args (apply_soterm_actual c ff args) where ff = normalize f
 
 apply_soterm_actual :: HasArity fn => (fn -> [t] -> t) -> GroundSOT fn -> [t] -> t
 apply_soterm_actual c (Fix (SOF (ConstF f))) args = c f args
@@ -349,7 +353,7 @@ inject_groundsoa :: GroundSOA pd fn -> SOAtom pd fn soav sov
 inject_groundsoa (Fix x) = UTerm (bimap inject_groundsot inject_groundsoa x)
 
 apply_soatom :: (HasArity fn, HasArity pd) => (pd -> [t] -> p) -> (fn -> [t] -> t) -> GroundSOA pd fn -> [t] -> p
-apply_soatom cp cf p args = apply_soatom_checkarity (normalize p) args (apply_soatom_actual cp cf p args)
+apply_soatom cp cf p args = apply_soatom_checkarity pp args (apply_soatom_actual cp cf pp args) where pp = normalize p
 
 apply_soatom_actual :: (HasArity fn, HasArity pd) => (pd -> [t] -> p) -> (fn -> [t] -> t) -> GroundSOA pd fn -> [t] -> p
 apply_soatom_actual cp cf (Fix (SOP (ConstF p))) args = cp p args
@@ -368,6 +372,10 @@ compose_soatom_actual h args = UTerm (SOP (CompF h args))
 
 compose_soatom_checkarity :: (HasArity pd, HasArity soav, HasArity fn, HasArity sov) => SOAtom pd fn soav sov -> [SOTerm fn sov] -> a -> a
 compose_soatom_checkarity p args r = if (arity p <= length args) then r else (error ("The arity of the predicate (" ++ (show (arity p)) ++ ") is larger than the number of arguments (" ++ (show (length args)) ++ ")."))
+
+(**.) :: (HasArity pd, HasArity soav, HasArity fn, HasArity sov) => SOAtom pd fn soav sov -> [SOTerm fn sov] -> SOAtom pd fn soav sov
+(**.) = compose_soatom
+
 
 compose_gsoatom :: (HasArity pd, HasArity fn) => GroundSOA pd fn -> [GroundSOT fn] -> GroundSOA pd fn
 compose_gsoatom p args = compose_gsoatom_checkarity p args (compose_gsoatom_actual p args)
@@ -415,6 +423,8 @@ fromSOMetawrap (SOMetawrap x) = x
 instance (Show v, Show (t (SOTerm fn mv) (UTerm (t (SOTerm fn mv)) v))) => Show (SOMetawrap t fn v mv) where
 	show (SOMetawrap x) = show x
 
+deriving instance Eq (UTerm (t (SOTerm fn mv)) v) => Eq (SOMetawrap t fn v mv)
+	
 -- Remove all second-order structure and dump it into the first-order structure.
 instance (HasArity fn, HasArity mv, SimpleTerm t) => Normalizable (SOMetawrap t fn v mv) (SOMetawrap t fn v mv) where
 	inject_normal = id
@@ -429,24 +439,63 @@ normalize_metawrap_helper (Just (UTerm (SOF (ConstF f)))) ts = normalize_metawra
 normalize_metawrap_helper (Just (UTerm (SOF (Proj idx)))) ts | idx < length ts = normalize_metawrap_helper2 (ts !! idx)
 normalize_metawrap_helper (Just (UTerm (SOF (Proj idx)))) ts = error ("Trying to project on the " ++ (show idx) ++ "th argument, but there are only " ++ (show (length ts)) ++ " arguments.")
 normalize_metawrap_helper (Just (UTerm (SOF (CompF (UTerm (SOF (ConstF f))) sargs)))) ts = normalize_metawrap_build_term ((Just (UTerm (SOF (ConstF f)))),(map (\g -> normalize_metawrap_helper (Just g) ts) sargs))
+normalize_metawrap_helper (Just (UTerm (SOF (CompF (UVar v) sargs)))) ts = normalize_metawrap_build_term ((Just (UVar v)),(map (\g -> normalize_metawrap_helper (Just g) ts) sargs))
 
 normalize_metawrap_helper2 :: (HasArity fn, HasArity mv, SimpleTerm t) => FlippedBifunctor UTerm v (t (SOTerm fn mv)) -> FlippedBifunctor UTerm v (t (SOTerm fn mv))
 normalize_metawrap_helper2 = FlippedBifunctor . fromSOMetawrap . normalize . SOMetawrap . fromFlippedBifunctor
 
-normalize_metawrap_build_term :: SimpleTerm t => (Maybe (SOTerm fn mv),[FlippedBifunctor UTerm v (t (SOTerm fn mv))]) -> FlippedBifunctor UTerm v (t (SOTerm fn mv))
+normalize_metawrap_build_term :: (HasArity fn, HasArity mv, SimpleTerm t) => (Maybe (SOTerm fn mv),[FlippedBifunctor UTerm v (t (SOTerm fn mv))]) -> FlippedBifunctor UTerm v (t (SOTerm fn mv))
 normalize_metawrap_build_term (Nothing,[t]) = t
 normalize_metawrap_build_term (Nothing,_) = error "Trying to build a term with no head and multiple arguments. This is multiple terms!"
-normalize_metawrap_build_term (Just h,ts) = FlippedBifunctor (UTerm (build_term h (map fromFlippedBifunctor ts)))
+normalize_metawrap_build_term (Just h,ts) = FlippedBifunctor (UTerm (build_term h (map fromFlippedBifunctor (take (arity h) ts))))
 
-data SOMetawrapA (a :: * -> * -> *) (t :: * -> * -> *) pd fn v pmv fmv = SOMetawrapA (a (SOAtom pd fn pmv fmv) (SOMetawrap t fn v fmv))
+-- With the metawrap, we can indeed apply variable functions.
+apply_vsoterm :: (HasArity fn, HasArity mv, SimpleTerm t) => SOTerm fn mv -> [SOMetawrap t fn v mv] -> SOMetawrap t fn v mv
+apply_vsoterm f args = apply_vsoterm_checkarity f args (apply_vsoterm_actual f args)
+
+-- The hard work is done in the normalization. Here it is enough to just indicate the application. We do not normalize here yet, it should be done when needed.
+apply_vsoterm_actual :: (HasArity fn, HasArity mv, SimpleTerm t) => SOTerm fn mv -> [SOMetawrap t fn v mv] -> SOMetawrap t fn v mv
+apply_vsoterm_actual f args = SOMetawrap (UTerm (build_term f (map fromSOMetawrap args)))
+
+apply_vsoterm_checkarity :: (HasArity fn, HasArity mv) => SOTerm fn mv -> [SOMetawrap t fn v mv] -> a -> a
+apply_vsoterm_checkarity f args r = if (arity f <= length args) then r else (error ("The arity of the function (" ++ (show (arity f)) ++ ") is larger than the number of arguments (" ++ (show (length args)) ++ ")."))
+
+
+newtype SOMetawrapA (a :: * -> * -> *) (t :: * -> * -> *) pd fn v pmv fmv = SOMetawrapA (a (SOAtom pd fn pmv fmv) (SOMetawrap t fn v fmv))
 fromSOMetawrapA :: SOMetawrapA a t pd fn v pmv fmv -> a (SOAtom pd fn pmv fmv) (SOMetawrap t fn v fmv)
 fromSOMetawrapA (SOMetawrapA x) = x
 
 instance Show (a (SOAtom pd fn pmv fmv) (SOMetawrap t fn v fmv)) => Show (SOMetawrapA a t pd fn v pmv fmv) where
 	show (SOMetawrapA x) = show x
 
-instance Eq (a (SOAtom pd fn pmv fmv) (SOMetawrap t fn v fmv)) => Eq (SOMetawrapA a t pd fn v pmv fmv) where
-	(SOMetawrapA mw1) == (SOMetawrapA mw2) = mw1 == mw2
+deriving instance Eq (a (SOAtom pd fn pmv fmv) (SOMetawrap t fn v fmv)) => Eq (SOMetawrapA a t pd fn v pmv fmv)
+	
+instance (HasArity pd, HasArity fn, HasArity pmv, HasArity fmv, SimpleTerm a, SimpleTerm t) => Normalizable (SOMetawrapA a t pd fn v pmv fmv) (SOMetawrapA a t pd fn v pmv fmv) where
+	inject_normal = id
+	normalize (SOMetawrapA a) = SOMetawrapA (normalize_metawrapa_helper nh (map (FlippedBifunctor . fromSOMetawrap) ts)) where (h,ts) = unbuild_term a; nh = normalize h
+
+normalize_metawrapa_helper :: (HasArity pd, HasArity fn, HasArity pmv, HasArity fmv, SimpleTerm a, SimpleTerm t) => SOAtom pd fn pmv fmv -> [FlippedBifunctor UTerm v (t (SOTerm fn fmv))] -> a (SOAtom pd fn pmv fmv) (SOMetawrap t fn v fmv)
+normalize_metawrapa_helper (UVar soav) ts = normalize_metawrapa_build_atom (UVar soav, map normalize_metawrap_helper2 ts)
+normalize_metawrapa_helper (UTerm (SOP (ConstF p))) ts = normalize_metawrapa_build_atom (UTerm (SOP (ConstF p)),map normalize_metawrap_helper2 ts)
+normalize_metawrapa_helper (UTerm (SOP (Proj idx))) ts = error "Projections should not be present in predicates"
+normalize_metawrapa_helper (UTerm (SOP (CompF (UTerm (SOP (ConstF p))) sargs))) ts = normalize_metawrapa_build_atom (UTerm (SOP (ConstF p)),(map (\g -> normalize_metawrap_helper (Just g) ts) sargs))
+normalize_metawrapa_helper (UTerm (SOP (CompF (UVar v) sargs))) ts = normalize_metawrapa_build_atom (UVar v,(map (\g -> normalize_metawrap_helper (Just g) ts) sargs))
+
+--normalize_metawrapa_helper2 :: (HasArity fn, HasArity mv, SimpleTerm t) => FlippedBifunctor UTerm v (t (SOTerm fn mv)) -> FlippedBifunctor UTerm v (t (SOTerm fn mv))
+
+normalize_metawrapa_build_atom :: (HasArity pd, HasArity fn, HasArity pmv, HasArity fmv, SimpleTerm a) => (SOAtom pd fn pmv fmv,[FlippedBifunctor UTerm v (t (SOTerm fn fmv))]) -> a (SOAtom pd fn pmv fmv) (SOMetawrap t fn v fmv)
+normalize_metawrapa_build_atom (h,ts) = build_term h (map (SOMetawrap . fromFlippedBifunctor) (take (arity h) ts))
+
+
+apply_vsoatom :: (HasArity pd, HasArity fn, HasArity pmv, HasArity fmv, SimpleTerm a) => SOAtom pd fn pmv fmv -> [SOMetawrap t fn v fmv] -> SOMetawrapA a t pd fn v pmv fmv
+apply_vsoatom p args = apply_vsoatom_checkarity p args (apply_vsoatom_actual p args)
+
+-- The hard work is done in the normalization. Here it is enough to just indicate the application. We do not normalize here yet, it should be done when needed.
+apply_vsoatom_actual :: (HasArity pd, HasArity fn, HasArity pmv, HasArity fmv, SimpleTerm a) => SOAtom pd fn pmv fmv -> [SOMetawrap t fn v fmv] -> SOMetawrapA a t pd fn v pmv fmv
+apply_vsoatom_actual p args = SOMetawrapA (build_term p args)
+
+apply_vsoatom_checkarity :: (HasArity pd, HasArity fn, HasArity pmv, HasArity fmv) => SOAtom pd fn pmv fmv -> [SOMetawrap t fn v fmv] -> a -> a
+apply_vsoatom_checkarity p args r = if (arity p <= length args) then r else (error ("The arity of the predicate (" ++ (show (arity p)) ++ ") is larger than the number of arguments (" ++ (show (length args)) ++ ")."))
 
 somw :: Bifunctor t => UTerm (t fn) v -> SOMetawrap t fn v mv
 somw (UVar v) = SOMetawrap (UVar v)
@@ -615,10 +664,13 @@ doshow_unif vs u = putStr ((show_unif vs u) ++ "\n")
 class Substitutable t v r where
 	subst :: v -> r -> t -> t
 
--- This allows us to always provide a substitutable instancewhen there is nothing to substitute.
+-- This allows us to always provide a substitutable instance when there is nothing to substitute.
 idsubst :: v -> r -> t -> t
 idsubst _ _ = id
 
-instance Substitutable t v r => Substitutable [t] v r where
-	subst v r = fmap (subst v r)
+
+--instance (Functor f, Substitutable t v r) => Substitutable (f t) v r where
+--	subst v r = fmap (subst v r)
+subst_fmap :: (Functor f, Substitutable t v r) => v -> r -> f t -> f t
+subst_fmap v r = fmap (subst v r)
 

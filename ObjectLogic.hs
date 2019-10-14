@@ -129,6 +129,10 @@ instance Read f => Read (CAtomPd f) where
 instance Bifunctor CAtomPF where
 	bimap f g (APred pd ts) = APred (f pd) (map g ts)
 
+instance SimpleTerm CAtomPF where
+	build_term = APred
+	unbuild_term (APred p ts) = (p,ts)
+
 type GAtom = Predicabilize CAtomPd
 type Atom = GAtom Term
 type GroundAtom = GroundA CAtomPF CTermF OPredicate OFunction
