@@ -43,6 +43,10 @@ checkAS (SingleAS a1) a2 = False
 checkAS (ExplicitAS en) a = or (fmap (\x -> checkAS x a) en)
 checkAS (ImplicitAS s) a = checkImplicit s a
 
+-- Don't use this if you can do things with checkAS: This is necessarily explicit and therefore slower in general
+checkPAS :: (a -> a -> Bool) -> AnswerSet s a -> a -> Bool
+checkPAS p as a = uns_produce_next (eany (\a2 -> return (p a a2)) (enumAS as))
+
 enumAS :: AnswerSet s a -> EnumProc a
 enumAS (SingleAS a) = a --> Empty
 enumAS (ExplicitAS en) = es_econcat (fmap enumAS en)

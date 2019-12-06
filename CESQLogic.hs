@@ -18,6 +18,7 @@
 {-# LANGUAGE LiberalTypeSynonyms #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE DerivingVia #-}
 -- This module defines exclusively the notion of a query. It does *not* implement solvers for queries.
 -- It also does so in as much a polymorphic way as possible, leaving things like first-order, second-order and specific term structures open to the user.
 module CESQLogic where
@@ -44,7 +45,7 @@ import QueryLogic
 --	- Any free second-order variable in a CNF will be considered part of the query result (conceptually existentially quantified). Some of these will be part of the select clause and others won't. The others will simply be discarded.
 --	- Note that if we wish to add first-order variables to the query, we can effectively do so by adding 0-ary second-order query variables.
 
-data Literal t = PosLit t | NegLit t deriving Functor
+data Literal t = PosLit t | NegLit t deriving (Eq, Functor)
 
 instance Read t => Read (Literal t) where
 	readsPrec _ xs =
@@ -60,6 +61,10 @@ instance Read t => Read (Literal t) where
 			Nothing -> error ("Cannot read literal: " ++ xs)
 		}}
 
+instance Foldable Literal where
+	foldr f i (PosLit x) = f x i
+	foldr f i (NegLit x) = f x i
+
 newtype NormalizeLiteral t = NormalizeLiteral {fromNormalizeLiteral :: Literal t}
 instance Normalizable a b => Normalizable (NormalizeLiteral a) (NormalizeLiteral b) where
 	inject_normal (NormalizeLiteral (PosLit x)) = NormalizeLiteral (PosLit (inject_normal x))
@@ -67,17 +72,19 @@ instance Normalizable a b => Normalizable (NormalizeLiteral a) (NormalizeLiteral
 	normalize (NormalizeLiteral (PosLit x)) = NormalizeLiteral (PosLit (normalize x))
 	normalize (NormalizeLiteral (NegLit x)) = NormalizeLiteral (NegLit (normalize x))
 
-type VarLiteral (a :: * -> * -> *) (t :: * -> * -> *) pd fn v pmv fmv = Literal (SOMetawrapA a t pd fn v pmv fmv)
+type VarLiteral (a :: * -> * -> *) (t :: * -> * -> *) mpd pd fn v pmv fmv = Literal (CombSOAtom a t LambdaCNF mpd pd fn v pmv fmv)
 type GroundLiteral (a :: * -> * -> *) (t :: * -> * -> *) pd fn = Literal (GroundA a t pd fn)
 -- type GroundT t fn
 
-type Clause (a :: * -> * -> *) (t :: * -> * -> *) pd fn v pmv fmv = [VarLiteral a t pd fn v pmv fmv]
-type CNF (a :: * -> * -> *) (t :: * -> * -> *) pd fn v pmv fmv = [Clause a t pd fn v pmv fmv]
+-- Should probablymaybe implement permutation invariant equalities for clauses and CNFs, same as LambdaClauses and LambdaCNFs.
+type Clause (a :: * -> * -> *) (t :: * -> * -> *) mpd pd fn v pmv fmv = [VarLiteral a t mpd pd fn v pmv fmv]
+type CNF (a :: * -> * -> *) (t :: * -> * -> *) mpd pd fn v pmv fmv = [Clause a t mpd pd fn v pmv fmv]
 
 newtype CESQVar pmv fmv = CESQVar {fromCESQVar :: Either pmv fmv} deriving (Eq)
-newtype CESQSol pd fn = CESQSol {fromCESQSol :: Either (GroundSOA pd fn) (GroundSOT fn)} deriving (Eq)
-type BaseCESQuery (a :: * -> * -> *) (t :: * -> * -> *) pd fn v pmv fmv = LogicQuery (CNF a t pd fn v pmv fmv)
-type CESQuery (a :: * -> * -> *) (t :: * -> * -> *) pd fn v pmv fmv = Query (BaseCESQuery a t pd fn v pmv fmv) (CESQVar pmv fmv) (CESQSol pd fn)
+newtype CESQSol pd fn = CESQSol {fromCESQSol :: Either (LambdaCNF (GroundSOA pd fn)) (GroundSOT fn)} deriving (Eq)
+newtype ParcCESQSol pd fn pmv fmv = ParcCESQSol {fromParcCESQSol :: Either (LambdaCNF (SOAtom pd fn pmv fmv)) (SOTerm fn fmv)}
+type BaseCESQuery (a :: * -> * -> *) (t :: * -> * -> *) mpd pd fn v pmv fmv = LogicQuery (CNF a t mpd pd fn v pmv fmv) (SOMetawrapA a t pd fn v pmv fmv)
+type CESQuery (a :: * -> * -> *) (t :: * -> * -> *) mpd pd fn v pmv fmv = Query (BaseCESQuery a t mpd pd fn v pmv fmv) (CESQVar pmv fmv) (CESQSol pd fn)
 
 instance Show t => Show (Literal t) where
 	show (PosLit x) = "+" ++ (show x)
@@ -91,6 +98,8 @@ instance (Show pd, Show fn) => Show (CESQSol pd fn) where
 	show (CESQSol (Left x)) = show x
 	show (CESQSol (Right x)) = show x
 
+instance (Show pd, Show fn, Show pmv, Show fmv) => Show (ParcCESQSol pd fn pmv fmv)
+
 instance (Ord pmv, Ord fmv, Eq pmv, Eq fmv) => Ord (CESQVar pmv fmv) where
 	compare (CESQVar a) (CESQVar b) = compare a b
 
@@ -101,26 +110,65 @@ instance Implicit (ImplicitInstantiation pd fn pmv fmv) (CESQVar pmv fmv := CESQ
 	checkImplicit = undefined
 	enumImplicit = undefined
 
-instance Queriable (BaseCESQuery a t pd fn v pmv fmv) (CESQVar pmv fmv) (CNF a t pd fn v pmv fmv) (CESQSol pd fn) (ImplicitInstantiation pd fn pmv fmv) where
+instance Queriable (BaseCESQuery a t mpd pd fn v pmv fmv) (CESQVar pmv fmv) (CNF a t mpd pd fn v pmv fmv) (CESQSol pd fn) (ImplicitInstantiation pd fn pmv fmv) where
 	runBaseQ t sel q = undefined
 
 instance Substitutable (CESQSol pd fn) (CESQVar pmv fmv) (CESQSol pd fn) where
-	subst _ _ = id
+	subst = undefined
+
+instance Substitutable (SOMetawrap t fn v fmv) (CESQVar pmv fmv) (CESQSol pd fn) where
+	subst = undefined
 
 instance Substitutable (SOMetawrapA a t pd fn v pmv fmv) (CESQVar pmv fmv) (CESQSol pd fn) where
 	subst = undefined
 
-instance Substitutable (VarLiteral a t pd fn v pmv fmv) (CESQVar pmv fmv) (CESQSol pd fn) where
+instance Substitutable (FirstSOAAtom a LambdaCNF mpd pd fn pmv fmv) (CESQVar pmv fmv) (CESQSol pd fn) where
+	subst = undefined
+
+instance Substitutable (CombSOAtom a t LambdaCNF mpd pd fn v pmv fmv) (CESQVar pmv fmv) (CESQSol pd fn) where
+	subst = undefined
+
+instance Substitutable (VarLiteral a t mpd pd fn v pmv fmv) (CESQVar pmv fmv) (CESQSol pd fn) where
 	subst = subst_fmap
 
-instance Substitutable (Clause a t pd fn v pmv fmv) (CESQVar pmv fmv) (CESQSol pd fn) where
+instance Substitutable (Clause a t mpd pd fn v pmv fmv) (CESQVar pmv fmv) (CESQSol pd fn) where
 	subst = subst_fmap
 
-instance Substitutable (CNF a t pd fn v pmv fmv) (CESQVar pmv fmv) (CESQSol pd fn) where
+instance Substitutable (CNF a t mpd pd fn v pmv fmv) (CESQVar pmv fmv) (CESQSol pd fn) where
 	subst = subst_fmap
 
-instance Substitutable (BaseCESQuery a t pd fn v pmv fmv) (CESQVar pmv fmv) (CESQSol pd fn) where
+instance Substitutable (BaseCESQuery a t mpd pd fn v pmv fmv) (CESQVar pmv fmv) (CESQSol pd fn) where
+	subst = subst_bimap
+
+
+
+instance Substitutable (ParcCESQSol pd fn pmv fmv) (CESQVar pmv fmv) (CESQVar pmv fmv) where
+	subst = undefined
+
+instance Substitutable (SOMetawrap t fn v fmv) (CESQVar pmv fmv) (CESQVar pmv fmv) where
+	subst = undefined
+
+instance Substitutable (SOMetawrapA a t pd fn v pmv fmv) (CESQVar pmv fmv) (CESQVar pmv fmv) where
+	subst = undefined
+
+instance Substitutable (FirstSOAAtom a LambdaCNF mpd pd fn pmv fmv) (CESQVar pmv fmv) (CESQVar pmv fmv) where
+	subst = undefined
+
+instance Substitutable (CombSOAtom a t LambdaCNF mpd pd fn v pmv fmv) (CESQVar pmv fmv) (CESQVar pmv fmv) where
+	subst = undefined
+
+instance Substitutable (VarLiteral a t mpd pd fn v pmv fmv) (CESQVar pmv fmv) (CESQVar pmv fmv) where
 	subst = subst_fmap
+
+instance Substitutable (Clause a t mpd pd fn v pmv fmv) (CESQVar pmv fmv) (CESQVar pmv fmv) where
+	subst = subst_fmap
+
+instance Substitutable (CNF a t mpd pd fn v pmv fmv) (CESQVar pmv fmv) (CESQVar pmv fmv) where
+	subst = subst_fmap
+
+instance Substitutable (BaseCESQuery a t mpd pd fn v pmv fmv) (CESQVar pmv fmv) (CESQVar pmv fmv) where
+	subst = subst_bimap
+
 
 -- This is actually unlikely to happen, because meta-variables have arity, which means they are not just an Int.
 instance (Variabilizable pmv, Variabilizable fmv) => Variabilizable (CESQVar pmv fmv) where
@@ -129,7 +177,7 @@ instance (Variabilizable pmv, Variabilizable fmv) => Variabilizable (CESQVar pmv
 	get_var (CESQVar (Left i)) = IntVar (2 * (getVarID_gen i))
 	get_var (CESQVar (Right i)) = IntVar (2 * (getVarID_gen i) + 1)
 
-instance (Ord pmv, Ord fmv, Eq pmv, Eq fmv, Implicit (ImplicitInstantiation pd fn pmv fmv) (CESQVar pmv fmv := CESQSol pd fn)) => ImplicitF (ImplicitInstantiation pd fn pmv fmv) (CESQVar pmv fmv := CESQSol pd fn) (ImplicitInstantiation pd fn pmv fmv) (CESQVar pmv fmv := CESQSol pd fn) (BaseQueryInput (BaseCESQuery a t pd fn v pmv fmv) (CESQVar pmv fmv) (CNF a t pd fn v pmv fmv) (CESQSol pd fn)) where
+instance (Ord pmv, Ord fmv, Eq pmv, Eq fmv, Implicit (ImplicitInstantiation pd fn pmv fmv) (CESQVar pmv fmv := CESQSol pd fn)) => ImplicitF (ImplicitInstantiation pd fn pmv fmv) (CESQVar pmv fmv := CESQSol pd fn) (ImplicitInstantiation pd fn pmv fmv) (CESQVar pmv fmv := CESQSol pd fn) (BaseQueryInput (BaseCESQuery a t mpd pd fn v pmv fmv) (CESQVar pmv fmv) (CNF a t mpd pd fn v pmv fmv) (CESQSol pd fn)) where
 	composeImplicit = composeImplicitDefault
 
 instance (Implicit (ImplicitInstantiation pd fn pmv fmv) (CESQVar pmv fmv := CESQSol pd fn)) => ImplicitF (ImplicitInstantiation pd fn pmv fmv) (CESQVar pmv fmv := CESQSol pd fn) (ImplicitInstantiation pd fn pmv fmv) (CESQVar pmv fmv := CESQSol pd fn) (CESQVar pmv fmv :->= CESQSol pd fn) where
@@ -138,7 +186,39 @@ instance (Implicit (ImplicitInstantiation pd fn pmv fmv) (CESQVar pmv fmv := CES
 instance (Eq pmv, Eq pd, Eq fmv, Eq fn, Ord pmv, Ord fmv) => ImplicitF (AnswerSet (ImplicitInstantiation pd fn pmv fmv) (CESQVar pmv fmv := CESQSol pd fn), AnswerSet (ImplicitInstantiation pd fn pmv fmv) (CESQVar pmv fmv := CESQSol pd fn)) (CESQVar pmv fmv := CESQSol pd fn, CESQVar pmv fmv := CESQSol pd fn) (ImplicitInstantiation pd fn pmv fmv) (CESQVar pmv fmv := CESQSol pd fn) ProductQOP where
 	composeImplicit = composeImplicitDefault
 
-testtypes :: (Eq pmv, Eq pd, Eq fmv, Eq fn, Ord pmv, Ord fmv) => CNF a t pd fn v pmv fmv -> Query (BaseCESQuery a t pd fn v pmv fmv) (CESQVar pmv fmv) (CESQSol pd fn) -> AnswerSet (ImplicitInstantiation pd fn pmv fmv) (CESQVar pmv fmv := CESQSol pd fn)
+testtypes :: (Eq pmv, Eq pd, Eq fmv, Eq fn, Ord pmv, Ord fmv) => CNF a t mpd pd fn v pmv fmv -> Query (BaseCESQuery a t mpd pd fn v pmv fmv) (CESQVar pmv fmv) (CESQSol pd fn) -> AnswerSet (ImplicitInstantiation pd fn pmv fmv) (CESQVar pmv fmv := CESQSol pd fn)
 testtypes = runQuery
 
 
+
+-- Lambda CNFs : Predicates (functions from variables to atoms) with conjunctions, disjunctions and negations, but in CNF form. The reason why we force CNF form here is not very strong. It just is possible and it seems a regularity that might be useful in the future. But better reasons might make us change this decision.
+-- Note that this *does not* include second-order atoms within it. We can choose to layer these two things either way we want, but usually they will be two clearly separate layers.
+type LambdaLiteral pd = Literal pd
+
+-- These newtypes are so unnecessary though.
+newtype LambdaClause pd = LambdaClause [LambdaLiteral pd] 
+newtype LambdaCNF pd = LambdaCNF [LambdaClause pd]
+
+-- These equalities should be replaced by permutation-invariant equality.
+deriving instance Eq pd => Eq (LambdaClause pd)
+deriving instance Functor LambdaClause
+deriving instance Eq pd => Eq (LambdaCNF pd)
+deriving instance Functor LambdaCNF
+
+instance Show pd => Show (LambdaClause pd) where
+	show (LambdaClause x) = show x
+
+instance Read pd => Read (LambdaClause pd) where
+	readsPrec i xs = case (readsPrec i xs) of ((x,rst):_) -> [(LambdaClause x,rst)]
+
+instance Show pd => Show (LambdaCNF pd) where
+	show (LambdaCNF x) = show x
+
+instance Read pd => Read (LambdaCNF pd) where
+	readsPrec i xs = case (readsPrec i xs) of ((x,rst):_) -> [(LambdaCNF x,rst)]
+
+deriving via FoldableArity Literal pd instance HasArity pd => HasArity (LambdaLiteral pd)
+deriving via FoldableArity [] (LambdaLiteral pd) instance HasArity pd => HasArity (LambdaClause pd)
+deriving via FoldableArity [] (LambdaClause pd) instance HasArity pd => HasArity (LambdaCNF pd)
+
+-- TODO: Here we will provide functions for, at the very least, evaluating a lambda CNF into a CNF given a set of variables. Other functionalities will likely also be relevant.

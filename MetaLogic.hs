@@ -247,16 +247,66 @@ infix 7 *$
 infix 7 **$
 
 
+
+-- Second-order atoms.
+data SOPredicate = SOPred Int Int deriving (Eq, Ord)
+
+instance Show SOPredicate where
+	show (SOPred x y) = "k" ++ (show x) ++ "[" ++ (show y) ++ "]"
+
+instance Read SOPredicate where 
+	readsPrec _ ('k':xs) = (let r = (head (reads xs))
+				in (let r2 = (read_arity (snd r))
+					in [(SOPred (fst r) (fst r2),(snd r2))]))
+
+instance HasArity SOPredicate where
+	arity (SOPred _ x) = x									
+
+type FirstSOMetaAAtom = FirstSOAAtom CAtomPF LambdaCNF SOPredicate OPredicate OFunction SOAMVariable SOMVariable
+
+instance Read FirstSOMetaAAtom where
+	readsPrec _ xs =
+		case stripPrefix "k" xs of
+		{
+			Just rest -> (let r = (head (reads ('k':rest))::(SOPredicate,String))
+				in (let r2 = read_term_list (snd r)
+					in [(FirstSOAAtom (APred (fst r) (fst r2)),(snd r2))]));
+		}
+
+type CombSOMetaatom = CombSOAtom CAtomPF CTermF LambdaCNF SOPredicate OPredicate OFunction OVariable SOAMVariable SOMVariable
+
+instance Read CombSOMetaatom where
+	readsPrec _ xs =
+		case stripPrefix "k" xs of
+		{
+			Just rest -> (let r = (head (reads ('k':rest))::(FirstSOMetaAAtom,String))
+				in [(FSOAtom (fst r),(snd r))]);
+			Nothing ->
+		case stripPrefix "p" xs of
+		{
+			Just rest -> (let r = (head (reads ('p':rest))::(SOMetaatom,String))
+				in [(NSOAtom (fst r),(snd r))]);
+			Nothing ->
+		case stripPrefix "P" xs of
+		{
+			Just rest -> (let r = (head (reads ('P':rest))::(SOMetaatom,String))
+				in [(NSOAtom (fst r),(snd r))]);
+			Nothing -> error ("Cannot read meta-atom: " ++ xs)
+		}}}
+
+
 -- Queries in this meta-logic.
-type SOMetaliteral = VarLiteral CAtomPF CTermF OPredicate OFunction OVariable SOAMVariable SOMVariable -- = Literal SOMetaatom
+type SOMetaliteral = VarLiteral CAtomPF CTermF SOPredicate OPredicate OFunction OVariable SOAMVariable SOMVariable -- = Literal CombSOMetaatom
 type GroundSOMetaliteral = GroundLiteral CAtomPF CTermF OPredicate OFunction -- = Literal GroundSOMetaatom
-type SOMetaclause = Clause CAtomPF CTermF OPredicate OFunction OVariable SOAMVariable SOMVariable -- = [SOMetaliteral]
-type SOMetaCNF = CNF CAtomPF CTermF OPredicate OFunction OVariable SOAMVariable SOMVariable -- = [SOMetaclause]
+type SOMetaclause = Clause CAtomPF CTermF SOPredicate OPredicate OFunction OVariable SOAMVariable SOMVariable -- = [SOMetaliteral]
+type SOMetaCNF = CNF CAtomPF CTermF SOPredicate OPredicate OFunction OVariable SOAMVariable SOMVariable -- = [SOMetaclause]
 
 type SOMetaQVar = CESQVar SOAMVariable SOMVariable
 type SOMetaQSol = CESQSol OPredicate OFunction
-type SOMetaBaseQ = BaseCESQuery CAtomPF CTermF OPredicate OFunction OVariable SOAMVariable SOMVariable -- = LogicQuery SOMetaCNF
-type SOMetaQuery = CESQuery CAtomPF CTermF OPredicate OFunction OVariable SOAMVariable SOMVariable -- = Query SOMetaBaseQ SOMetaQVar SOMetaQSol
+type SOMetaQParcSol = ParcCESQSol OPredicate OFunction SOAMVariable SOMVariable
+type SOMetaQFullSol = SOMetaQVar := SOMetaQSol
+type SOMetaBaseQ = BaseCESQuery CAtomPF CTermF SOPredicate OPredicate OFunction OVariable SOAMVariable SOMVariable -- = LogicQuery SOMetaCNF SOMetaterm
+type SOMetaQuery = CESQuery CAtomPF CTermF SOPredicate OPredicate OFunction OVariable SOAMVariable SOMVariable -- = Query SOMetaBaseQ SOMetaQVar SOMetaQSol
 
 -- This should be doable this way, but it isn't now:
 --deriving via (NormalizeLiteral SOMetaatom, NormalizeLiteral SOMetaatom) instance Normalizable SOMetaliteral SOMetaliteral
@@ -298,14 +348,33 @@ instance Read SOMetaQSol where
 			Just rest -> (let r = (head (reads ('p':'i':rest))::(GroundSOMetatermF,String))
 				in [(CESQSol (Right (fst r)), (snd r))]);
 			Nothing -> 
-		case stripPrefix "p" xs of
+		case stripPrefix "[" xs of
 		{
-			Just rest -> (let r = (head (reads ('p':rest))::(GroundSOMetaatomP,String))
-				in [(CESQSol (Left (fst r)), (snd r))]);
+			Just rest -> (let r = (head (reads ('[':rest))::(LambdaCNF GroundSOMetaatomP,String))
+				in [(CESQSol (Left (fst r)), (snd r))]);			
+			Nothing -> error ("Cannot read ground term or atom: " ++ xs)
+		}}}
+
+instance Read SOMetaQParcSol where
+	readsPrec _ xs =
+		case stripPrefix "f" xs of
+		{
+     			Just rest -> (let r = (head (reads ('f':rest))::(SOMetatermF,String))
+				in [(ParcCESQSol (Right (fst r)), (snd r))]);
 			Nothing ->
-		case stripPrefix "P" xs of
+		case stripPrefix "pi" xs of
 		{
-			Just rest -> (let r = (head (reads ('P':rest))::(GroundSOMetaatomP,String))
-				in [(CESQSol (Left (fst r)), (snd r))]);
+			Just rest -> (let r = (head (reads ('p':'i':rest))::(SOMetatermF,String))
+				in [(ParcCESQSol (Right (fst r)), (snd r))]);
+			Nothing -> 
+		case stripPrefix "F" xs of
+		{
+			Just rest -> (let r = (head (reads ('p':'i':rest))::(SOMetatermF,String))
+				in [(ParcCESQSol (Right (fst r)), (snd r))]);
+			Nothing ->
+		case stripPrefix "[" xs of
+		{
+			Just rest -> (let r = (head (reads ('[':rest))::(LambdaCNF SOMetaatomP,String))
+				in [(ParcCESQSol (Left (fst r)), (snd r))]);			
 			Nothing -> error ("Cannot read ground term or atom: " ++ xs)
 		}}}}
