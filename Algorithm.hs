@@ -42,7 +42,7 @@ fork = AlgFork
 class ExecOrder t where
 	execorder :: t -> (a -> EnumProc b) -> EnumProc a -> EnumProc b
 
-runorder :: ExecOrder t => t -> (a .-> b) -> a -> EnumProc b
+runorder :: ExecOrder t => t -> (a .-> 	b) -> a -> EnumProc b
 runorder x (AlgDir f) = (\y -> single_enum (f y))
 runorder x (AlgFork f) = f
 runorder x (AlgStep f g) = (\y -> execorder x (runorder x f) (runorder x g y))
@@ -126,7 +126,7 @@ infix 0 |-$
 
 -- Give me a function f that, given n elements of type a and a continuation (an enumeration of a's), returns the enumeration product of applying something to those a's and then (typically, recursively) applying something to the rest of the a's.
 -- I will apply f on the next elements of type a that I find, if I do, with the tail of b's that I should be producing, producing an enumeration of b's.
--- Note that the reason this is not simply done by compressing the first n is that the result of this is an EnumProc that will have Continues corresponding to any Continues that the source EnumProcs may have, meaning that the result will be safe (each step will be finite) even when the EnumProc given does not have n elements.
+-- Note that the reason this is not simply done by compressing the first n is that the result of this is an EnumProc that will have Continues corresponding to any Continues that the source EnumProcs may have, meaning that the result will be safe (each step will be finite) even when the EnumProc given does not have n elements. It may, however, not be complete (fair).
 eager :: Int -> ([a] -> EnumProc a -> EnumProc b) -> EnumProc a -> EnumProc b
 eager _ _ Empty = Empty
 eager _ _ Halt = Halt

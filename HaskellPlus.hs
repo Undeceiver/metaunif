@@ -24,6 +24,10 @@ import Data.Functor.Identity
 import Control.Unification
 import Control.Monad.Except
 import Data.Map.Strict
+import Data.Graph
+import Control.Lens
+import Control.Applicative
+import Control.Monad.State
 
 -- Here I put functions/types that I feel should be part of Haskell but aren't. It is likely that at least half of them ACTUALLY are part of Haskell, but I wasn't smart enough to find them.
 
@@ -89,6 +93,8 @@ instance (Eq v, Eq (t (UTerm t v))) => Eq (UTerm t v) where
 	(UTerm x) == (UTerm y) = x == y
 	_ == _ = False
 
+
+-- Monad utilities
 floatExceptT :: (Show e, Monad m) => (ExceptT e m) a -> m a
 floatExceptT exc = (runExceptT exc) >>= (\x -> case x of {Left e -> error (show e); Right y -> return y})
 
@@ -97,6 +103,22 @@ mb_from_exceptT exc = (runExceptT exc) >>= (\x -> case x of {Left e -> return No
 
 clear_value :: Monad m => m a -> m ()
 clear_value = (>> (return ()))
+
+(>$>=) :: (Functor f, Monad m) => f (m a) -> (a -> m b) -> f (m b)
+x >$>= f = (>>= f) <$> x
+infixl 7 >$>=
+
+(>*>=) :: (Applicative m1, Monad m2) => m1 (m2 a) -> m1 (a -> m2 b) -> m1 (m2 b)
+x >*>= fs = ((\f -> (>>= f)) <$> fs) <*> x
+infixl 7 >*>=
+
+type JState s = State s ()
+jstate :: (s -> s) -> JState s
+jstate f = state (\s -> ((),f s))
+
+runJState :: JState s -> s -> s
+runJState st s = snd (runState st s)
+
 
 
 -- Type lists
@@ -271,3 +293,57 @@ instance (Functor f, Normalizable a b) => Normalizable (NormalizedFunctor f a) (
 
 -- Mapping a set of results to a set of arguments in something that is similar to a functional.
 type (v := r) = Map v r
+
+
+-- Variations of Functor for different arguments and types.
+-- We use the following nomenclature: A "Non" syllable means an argument that does not behave functorially. A "Func" syllable means an argument that behaves functorially, in order.
+-- So, for example, Functor ~ FuncFunctor, Bifunctor ~ FuncFuncFunctor, a type which has two arguments but is only functorial on the first one would be FuncNonFunctor, etc.
+-- We define them as necessary
+-- (VOID)
+
+
+
+
+
+-- Some graph utilities
+
+-- Check if a graph is directedly acyclic
+acyclic :: Graph -> Bool
+acyclic g = length (scc g) == length (vertices g)
+
+
+
+-- Interprets the bool result inside a monad as a fail state (when False), so that if False is returned, then the monadic composition does not happen and instead we simply return False
+mcompose_with_bool :: Monad m => m Bool -> m Bool -> m Bool
+mcompose_with_bool r1 r2 = r1 >>= (\v -> if v then r2 else (return False))
+
+(>>=&) :: Monad m => m Bool -> m Bool -> m Bool
+(>>=&) = mcompose_with_bool
+infixl 1 >>=&
+
+
+
+
+
+-- Lens extensions
+overTraversal :: LensLike (WrappedMonad Identity) s t a b -> (a -> b) -> s -> t
+overTraversal = (\t -> \f -> \s -> runIdentity (mapMOf t (Identity . f) s))
+
+(..~) :: LensLike (WrappedMonad Identity) s t a b -> (a -> b) -> s -> t
+(..~) = overTraversal
+infixr 4 ..~
+
+foldMapBool :: Monad m => Traversal' s a -> (a -> m Bool) -> s -> m Bool
+foldMapBool tr f s = foldMapByOf tr (\s1 -> \s2 -> do {r1 <- s1; r2 <- s2; return (r1 && r2)}) (return True) f s
+
+-- In theory we can use the provided map optics instead of this, but they seem harder to use, at least to me. I prefer to just compose stuff.
+-- This may, however, be inefficient in large maps. I'd have to think about it slowly.
+lens_assocs :: Ord k => Lens' (Map k v) [(k,v)]
+lens_assocs = lens assocs (\prev -> \new -> fromList new)
+
+traversal_assocs :: Ord k => Traversal' (Map k v) (k,v)
+traversal_assocs = lens_assocs . traverse
+
+
+
+

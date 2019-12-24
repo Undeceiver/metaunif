@@ -33,11 +33,16 @@ import Data.Functor.Fixedpoint
 import Data.List
 import QueryLogic
 import CESQLogic
+import ESUnification
 
 -- We may use these so we leave them, but these are the old flat meta-variables approach. Check the new second-order approach instead.
 
 -- Second-order approach to meta-variables
-data SOMVariable = SOMVar Int Int deriving (Eq, Ord)
+data SOMVariable = SOMVar Int Int deriving (Ord)
+
+-- Equality does not check arity, just in case we use the Variabilizable instance in the wrong way.
+instance Eq SOMVariable where
+	(SOMVar i _) == (SOMVar j _) = i == j
 
 instance Show SOMVariable where
 	show (SOMVar x a) = "F" ++ (show x) ++ "[" ++ (show a) ++ "]"
@@ -49,9 +54,13 @@ instance Read SOMVariable where
 instance HasArity SOMVariable where
 	arity (SOMVar _ a) = a
 
---instance Variabilizable SOMVariable where 
---	from_var (IntVar x) = SOMVar x ??
---	get_var (SOMVar x _) = IntVar x
+-- This instance is potentially problematic due to the arity issue. But we need it because the Unification library for some reason requires variable
+instance Variabilizable SOMVariable where 
+	from_var (IntVar x) = SOMVar x 0
+	get_var (SOMVar x _) = IntVar x
+
+instance Variable SOMVariable where
+	getVarID = getVarID_gen
 
 type SOMetatermF = SOTerm OFunction SOMVariable
 type SOMetaterm = SOMetawrap CTermF OFunction OVariable SOMVariable
@@ -300,6 +309,11 @@ type SOMetaliteral = VarLiteral CAtomPF CTermF SOPredicate OPredicate OFunction 
 type GroundSOMetaliteral = GroundLiteral CAtomPF CTermF OPredicate OFunction -- = Literal GroundSOMetaatom
 type SOMetaclause = Clause CAtomPF CTermF SOPredicate OPredicate OFunction OVariable SOAMVariable SOMVariable -- = [SOMetaliteral]
 type SOMetaCNF = CNF CAtomPF CTermF SOPredicate OPredicate OFunction OVariable SOAMVariable SOMVariable -- = [SOMetaclause]
+type SOMetaSignature = SOSignature OPredicate OFunction OVariable SOMVariable
+
+type SOMetaMGU = ESMGU CTermF OPredicate OFunction OVariable SOMVariable
+type SOMetaNMGU = NESMGU CTermF OPredicate OFunction OVariable SOMVariable
+type SOMetaUnifSol = UnifSolution CTermF OFunction OVariable SOMVariable
 
 type SOMetaQVar = CESQVar SOAMVariable SOMVariable
 type SOMetaQSol = CESQSol OPredicate OFunction

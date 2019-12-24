@@ -36,6 +36,7 @@ import Extensionality
 import Data.List
 import Data.Maybe
 import Data.Map.Strict
+import EnumProc
 
 class Variabilizable t where
 	from_var :: IntVar -> t
@@ -90,6 +91,11 @@ read_term_list_gen o c s x = (let r = (head (reads x))
 			in (let r2 = read_term_list_gen o c s (snd r)
 				in ((fst r):(fst r2),(snd r2))))
 
+-- Find all variables present in a term
+find_vars :: (Foldable t, Eq v) => UTerm t v -> [v]
+find_vars (UVar v) = [v]
+find_vars (UTerm t) = nub (foldMap find_vars t)
+
 data Predicabilize (a :: * -> *) f = Atom (a f) | Term f deriving (Eq, Ord, Functor, Foldable, Traversable)
 
 instance (Show (a f), Show f) => Show (Predicabilize a f) where
@@ -123,7 +129,12 @@ uterm_to_flat (UVar v) = Fix (Var v)
 uterm_to_flat (UTerm st) = Fix (FTerm (fmap uterm_to_flat st))
 
 type GroundT t fn = Fix (t fn)
+inject_groundt :: Functor (t fn) => GroundT t fn -> UTerm (t fn) v
+inject_groundt (Fix t) = UTerm (fmap inject_groundt t)
+
 type GroundA a t pd fn = a pd (GroundT t fn)
+inject_grounda :: (Functor (a pd), Functor (t fn)) => GroundA a t pd fn -> a pd (UTerm (t fn) v)
+inject_grounda = fmap inject_groundt
 
 -------------------------------------------------------------------
 -- Big design decision: Meta-variables as second-order variables.
@@ -300,13 +311,13 @@ compose_soterm_checkarity f args r = if (arity f <= length args) then r else (er
 f *.. args = fromFlippedBifunctor ((FlippedBifunctor f) *. (Prelude.map FlippedBifunctor args))
 
 -- A ground second-order term is normal if:
---		- It is a constant function.
+--		- (REMOVED) It is a constant function: Constant functions are left as a composition of a function with projections. Making constant functions different from compositions with projections made for false inequalities between functions.
 --		- It is a projection.
 --		- It is a composition whose head is a constant function and all its sub-functions are normal.
 -- Ideally I would have a separate type for normalized terms, but it's quite a big deal considering how these types are defined with a lot of type parameters.
 instance HasArity fn => Normalizable (GroundSOT fn) (GroundSOT fn) where
 	inject_normal = id
-	normalize (Fix (SOF (ConstF f))) = Fix (SOF (ConstF f))
+	normalize (Fix (SOF (ConstF f))) = Fix (SOF (CompF (Fix (SOF (ConstF f))) (fmap (Fix . SOF . Proj) [0..((arity f) - 1)])))
 	normalize (Fix (SOF (Proj idx))) = Fix (SOF (Proj idx))
 	normalize (Fix (SOF (CompF h args))) = case (normalize h) of
 												{
@@ -320,7 +331,7 @@ instance HasArity fn => Normalizable (GroundSOT fn) (GroundSOT fn) where
 instance (HasArity fn, HasArity sov) => Normalizable (SOTerm fn sov) (SOTerm fn sov) where
 	inject_normal = id
 	normalize (UVar v) = UVar v
-	normalize (UTerm (SOF (ConstF f))) = UTerm (SOF (ConstF f))
+	normalize (UTerm (SOF (ConstF f))) = UTerm (SOF (CompF (UTerm (SOF (ConstF f))) (fmap (UTerm . SOF . Proj) [0..((arity f) - 1)])))
 	normalize (UTerm (SOF (Proj idx))) = UTerm (SOF (Proj idx))
 	normalize (UTerm (SOF (CompF h args))) = case (normalize h) of
 													{
@@ -424,9 +435,38 @@ instance (HasArity pd, HasArity soav, HasArity fn, HasArity sov) => Normalizable
 
 
 
-newtype SOMetawrap (t :: * -> * -> *) fn v mv = SOMetawrap (UTerm (t (SOTerm fn mv)) v)
-fromSOMetawrap :: SOMetawrap t fn v mv -> UTerm (t (SOTerm fn mv)) v
-fromSOMetawrap (SOMetawrap x) = x
+newtype SOMetawrap (t :: * -> * -> *) fn v mv = SOMetawrap {fromSOMetawrap :: UTerm (t (SOTerm fn mv)) v}
+
+-- This type is only briefly used for small things so we don't provide all that we provide for SOMetawrap.
+newtype GSOMetawrap (t :: * -> * -> *) fn v = GSOMetawrap {fromGSOMetawrap :: UTerm (t (GroundSOT fn)) v}
+gsomw :: (HasArity fn, SimpleTerm t) => UTerm (t fn) v -> GSOMetawrap t fn v
+gsomw (UVar v) = GSOMetawrap (UVar v)
+gsomw (UTerm t) = GSOMetawrap (UTerm (build_term (Fix (SOF (ConstF h))) (fromGSOMetawrap . gsomw <$> args))) where (h,args) = unbuild_term t
+
+plain_gsomw :: (HasArity fn, SimpleTerm t) => GSOMetawrap t fn v -> UTerm (t fn) v
+plain_gsomw x = plain_gsomw_norm . fromGSOMetawrap . normalize $ x
+
+plain_gsomw_norm :: (HasArity fn, SimpleTerm t) => UTerm (t (GroundSOT fn)) v -> UTerm (t fn) v
+plain_gsomw_norm (UVar v) = UVar v
+plain_gsomw_norm (UTerm t) = (case h of {Fix (SOF (ConstF fn)) -> UTerm (build_term fn (plain_gsomw_norm <$> args))}) where (h,args) = unbuild_term t
+
+-- Similar situation.
+newtype GGSOMetawrap (t :: * -> * -> *) fn = GGSOMetawrap {fromGGSOMetawrap :: Fix (t (GroundSOT fn))}
+ggsomw :: (HasArity fn, SimpleTerm t) => GroundT t fn -> GGSOMetawrap t fn
+ggsomw (Fix t) = GGSOMetawrap (Fix (build_term (Fix (SOF (ConstF h))) (fromGGSOMetawrap . ggsomw <$> args))) where (h,args) = unbuild_term t
+
+ggsomw_to_gsomw :: Functor (t (GroundSOT fn)) => GGSOMetawrap t fn -> GSOMetawrap t fn v
+ggsomw_to_gsomw (GGSOMetawrap (Fix x)) = GSOMetawrap (UTerm (fromGSOMetawrap . ggsomw_to_gsomw . GGSOMetawrap <$> x))
+
+gsomw_to_ggsomw :: Functor (t (GroundSOT fn)) => GSOMetawrap t fn v -> GGSOMetawrap t fn
+gsomw_to_ggsomw (GSOMetawrap (UVar v)) = error "Variable in doubly ground metawrap!"
+gsomw_to_ggsomw (GSOMetawrap (UTerm x)) = GGSOMetawrap (Fix (fromGGSOMetawrap . gsomw_to_ggsomw . GSOMetawrap <$> x))
+
+plain_ggsomw :: (HasArity fn, SimpleTerm t, Functor (t (GroundSOT fn))) => GGSOMetawrap t fn -> GroundT t fn
+plain_ggsomw x = plain_ggsomw_norm . fromGGSOMetawrap . normalize $ x
+
+plain_ggsomw_norm :: (HasArity fn, SimpleTerm t, Functor (t (GroundSOT fn))) => Fix (t (GroundSOT fn)) -> GroundT t fn
+plain_ggsomw_norm (Fix t) = (case h of {Fix (SOF (ConstF fn)) -> Fix (build_term fn (plain_ggsomw_norm <$> args))}) where (h,args) = unbuild_term t
 
 instance (Show v, Show (t (SOTerm fn mv) (UTerm (t (SOTerm fn mv)) v))) => Show (SOMetawrap t fn v mv) where
 	show (SOMetawrap x) = show x
@@ -456,6 +496,33 @@ normalize_metawrap_build_term :: (HasArity fn, HasArity mv, SimpleTerm t) => (Ma
 normalize_metawrap_build_term (Nothing,[t]) = t
 normalize_metawrap_build_term (Nothing,_) = error "Trying to build a term with no head and multiple arguments. This is multiple terms!"
 normalize_metawrap_build_term (Just h,ts) = FlippedBifunctor (UTerm (build_term h (Prelude.map fromFlippedBifunctor (Prelude.take (arity h) ts))))
+
+-- Equivalent for GroundSOT-based elements. Ideally we would have done this generically for any fixed point operator, but that did not work out very well for various reasons.
+instance (HasArity fn, SimpleTerm t) => Normalizable (GSOMetawrap t fn v) (GSOMetawrap t fn v) where
+	inject_normal = id
+	normalize (GSOMetawrap (UVar v)) = GSOMetawrap (UVar v)
+	normalize (GSOMetawrap (UTerm t)) = GSOMetawrap . fromFlippedBifunctor $ (normalize_groundsotwrap_helper (Just nh) (Prelude.map FlippedBifunctor ts)) where (h,ts) = unbuild_term t; nh = normalize h
+
+instance (HasArity fn, SimpleTerm t, Functor (t (GroundSOT fn))) => Normalizable (GGSOMetawrap t fn) (GGSOMetawrap t fn) where
+	inject_normal = id
+	normalize = gsomw_to_ggsomw . normalize . ggsomw_to_gsomw
+
+normalize_groundsotwrap_helper :: (HasArity fn, SimpleTerm t) => Maybe (GroundSOT fn) -> [FlippedBifunctor UTerm v (t (GroundSOT fn))] -> FlippedBifunctor UTerm v (t (GroundSOT fn))
+normalize_groundsotwrap_helper Nothing [t] = normalize_groundsotwrap_helper2 t
+normalize_groundsotwrap_helper Nothing _ = error "Trying to build a term with no head and multiple arguments. This is multiple terms!"
+normalize_groundsotwrap_helper (Just (Fix (SOF (ConstF f)))) ts = normalize_groundsotwrap_build_term (Just (Fix (SOF (ConstF f))),Prelude.map normalize_groundsotwrap_helper2 ts)
+normalize_groundsotwrap_helper (Just (Fix (SOF (Proj idx)))) ts | idx < length ts = normalize_groundsotwrap_helper2 (ts !! idx)
+normalize_groundsotwrap_helper (Just (Fix (SOF (Proj idx)))) ts = error ("Trying to project on the " ++ (show idx) ++ "th argument, but there are only " ++ (show (length ts)) ++ " arguments.")
+normalize_groundsotwrap_helper (Just (Fix (SOF (CompF (Fix (SOF (ConstF f))) sargs)))) ts = normalize_groundsotwrap_build_term ((Just (Fix (SOF (ConstF f)))),(Prelude.map (\g -> normalize_groundsotwrap_helper (Just g) ts) sargs))
+
+normalize_groundsotwrap_helper2 :: (HasArity fn, SimpleTerm t) => FlippedBifunctor UTerm v (t (GroundSOT fn)) -> FlippedBifunctor UTerm v (t (GroundSOT fn))
+normalize_groundsotwrap_helper2 = FlippedBifunctor . fromGSOMetawrap . normalize . GSOMetawrap . fromFlippedBifunctor
+
+normalize_groundsotwrap_build_term :: (HasArity fn, SimpleTerm t) => (Maybe (GroundSOT fn),[FlippedBifunctor UTerm v (t (GroundSOT fn))]) -> FlippedBifunctor UTerm v (t (GroundSOT fn))
+normalize_groundsotwrap_build_term (Nothing,[t]) = t
+normalize_groundsotwrap_build_term (Nothing,_) = error "Trying to build a term with no head and multgiple arguments. This is multiple terms!"
+normalize_groundsotwrap_build_term (Just h,ts) = FlippedBifunctor (UTerm (build_term h (Prelude.map fromFlippedBifunctor (Prelude.take (arity h) ts))))
+
 
 -- With the metawrap, we can indeed apply variable functions.
 apply_vsoterm :: (HasArity fn, HasArity mv, SimpleTerm t) => SOTerm fn mv -> [SOMetawrap t fn v mv] -> SOMetawrap t fn v mv
@@ -582,6 +649,7 @@ get_u_value u v = runIdentity . evalIntBindingT . fromIntBindingW . floatExceptT
 get_u_value_helper :: BindingMonad t v m => v -> (ExceptT (UFailure t v) m) (UTerm t v)
 get_u_value_helper v = applyBindings (UVar v)
 
+
 -- We use ExceptT directly because it is just simpler to write. We keep the error class open so that we can include other errors at the higher level of unification. But in principle this shouldn't change things very much.
 type MaybeUnifier t v e = (ExceptT e (IntBindingW t v)) ()
 (=::=) :: (Unifiable t, Variabilizable v, Variable v) => UTerm t v -> UTerm t v -> MaybeUnifier t v (UFailure t v)
@@ -593,7 +661,7 @@ get_mu_value u v = get_mu_tvalue u (UVar v)
 get_mu_tvalue :: (Unifiable t, Variabilizable v, Variable v, Fallible t v e) => MaybeUnifier t v e -> UTerm t v -> Maybe (UTerm t v)
 get_mu_tvalue u t = runIdentity . evalIntBindingT . fromIntBindingW . mb_from_exceptT $ (u >> (applyBindings t))
 
--- TypeClass indicating something is unifiable and results in a unifier of a certain term/variable type. That's why it has three type parameters
+-- Type class indicating something is unifiable and results in a unifier of a certain term/variable type. That's why it has three type parameters
 class (Unifiable t, Variabilizable v, Variable v) => DirectlyUnifiable t v s e | s -> t v e where	
 	(=.=) :: s -> s -> MaybeUnifier t v e
 	infix 4 =.=
@@ -603,6 +671,14 @@ class (Unifiable t, Variabilizable v, Variable v) => DirectlyUnifiable t v s e |
 instance (Functor t, Traversable t, Unifiable t, Variabilizable v, Variable v) => DirectlyUnifiable t v (UTerm t v) (UFailure t v) where
 	(=.=) = (=::=)
 	u $= t = get_mu_tvalue u t
+
+-- A utility function to force the occurs check on a unifier. Needs a set of variables to check.
+force_occurs :: (Unifiable t, Variabilizable v, Variable v) => [v] -> MaybeUnifier t v (UFailure t v) -> MaybeUnifier t v (UFailure t v)
+force_occurs vs u = clear_value (u >> (applyBindingsAll vts)) where vts = UVar <$> vs
+
+-- And if we want to get a boolean result. Forcing occurs and then evaluating the variables may seem inefficient, but in fact it is more efficient, as we leverage the efficiency of applyBindingsAll to find the occurs check only once. In theory, verifying just one variable would be enough, but there's not a huge harm in evaluating all after we've already evalutated their bindings.
+check_occurs :: (Unifiable t, Variabilizable v, Variable v) => [v] -> MaybeUnifier t v (UFailure t v) -> (MaybeUnifier t v (UFailure t v),Bool)
+check_occurs vs u = (ru,all isJust ((ru $=) <$> vts)) where vts = UVar <$> vs; ru = force_occurs vs u
 
 -- No occurs checks may happen at higher levels with this approach.
 data DUFailure s e = LowFailure e | HighFailure s s
@@ -686,9 +762,6 @@ instance (Eq fn) => Unifiable (SOTermF fn) where
 
 
 
--- And with unifiers, we need to start considering the concept of a signature (variables that are being considered).
-data Signature v = Signature {getVars :: [v]}
-
 show_unif :: (Show v, Show (UTerm t v), Unifiable t, Variabilizable v, Variable v) => [v] -> MaybeUnifier t v _ -> String
 show_unif vs u = "{" ++ (intercalate "," (Prelude.map show (fromMaybe [] (traverse (\v -> u $= (UVar v)) vs)))) ++ "}"
 
@@ -717,3 +790,54 @@ subst_fmap v r = fmap (subst v r)
 subst_bimap :: (Bifunctor f, Substitutable t v r, Substitutable s v r) => v -> r -> f t s -> f t s
 subst_bimap v r = bimap (subst v r) (subst v r)
 
+instance (Eq v, Functor t) => Substitutable (UTerm t v) v (UTerm t v) where
+	subst v rt (UVar w) | v == w = rt
+	subst v rt (UVar w) = (UVar w)
+	subst v rt (UTerm t) = UTerm ((subst v rt) <$> t)
+
+
+
+
+-- We obtain predicates and functions as a function of their arity (really a list, but the index in the index in the list indicates the arity. imum arity of the signature, if it has one.
+-- So, for example, ((preds sig) !! 3) are all predicates in the signature of arity 3.
+-- Use econcat if you want all predicates or functions together.
+-- We really should not need the variables in the signature, but because first-order unifiers for some (stupid) reason do not allow you to check which variables appear at all in the unifier, we need to keep track of that ourselves. vars will always be a superset of all the variables that may appear in any terms we have built while using this signature, and in many cases it will be a *proper* superset.
+data Signature pd fn v = Signature {preds :: [EnumProc pd], funcs :: [EnumProc fn], vars :: EnumProc v}
+
+-- Enumerate functions (including composites) of a certain arity (this includes lower arities, as they simply ignore the remaining arguments).
+-- Concatenating this function with arbitrarily large arities is highly discouraged since this will include an exponential amount of redundancy.
+-- Note that the values returned by this function are already normal!
+enum_funcs :: HasArity fn => Int -> Signature pd fn v -> EnumProc (GroundSOT fn)
+enum_funcs aty sig = enum_funcs_rec sig (enum_funcs_base aty sig)
+
+enum_funcs_base :: HasArity fn => Int -> Signature pd fn v -> EnumProc (GroundSOT fn)
+--enum_funcs_base aty sig = ((Fix . SOF . ConstF) <$> (econcat (Data.List.take (aty+1) (funcs sig)))) ..+ ((Fix . SOF . Proj) <$> (uns_enum_from_list [0..(aty-1)]))
+-- Base functions really are just projections (choosing which variable)? Even when the arity is zero: then there are no base functions.
+enum_funcs_base aty sig = (Fix . SOF . Proj) <$> (uns_enum_from_list [0..(aty-1)])
+
+enum_funcs_rec :: HasArity fn => Signature pd fn v -> EnumProc (GroundSOT fn) -> EnumProc (GroundSOT fn)
+enum_funcs_rec sig prev = prev ..+ (enum_funcs_rec sig next) where next = enum_funcs_next sig prev
+
+enum_funcs_next :: HasArity fn => Signature pd fn v -> EnumProc (GroundSOT fn) -> EnumProc (GroundSOT fn)
+enum_funcs_next sig prev = all_funcs >>= (\fn -> Fix . SOF . (CompF (Fix . SOF . ConstF $ fn)) <$> (epick (arity fn) prev)) where all_funcs = econcat (funcs sig)
+
+
+-- Perhaps surprisingly, enumerating terms (of a simple term structure with a second-order structure on top) is as simple as enumerating 0-ary functions, converting into first-order simple elements by adding 0 arguments, and then normalizing to dump the second-order structure into first-order.
+enum_terms :: (HasArity fn, SimpleTerm t, Functor (t (GroundSOT fn))) => Signature pd fn v -> EnumProc (GroundT t fn)
+enum_terms sig = plain_ggsomw <$> ggsomws where fs = enum_funcs 0 sig; ggsomws = (\f -> GGSOMetawrap (Fix (build_term f []))) <$> fs
+
+data SOSignature pd fn v sov = SOSignature {fosig :: Signature pd fn v, sovars :: EnumProc sov}
+fopreds :: SOSignature pd fn v sov -> [EnumProc pd]
+fopreds = preds . fosig
+
+fofuncs :: SOSignature pd fn v sov -> [EnumProc fn]
+fofuncs = funcs . fosig
+
+fovars :: SOSignature pd fn v sov -> EnumProc v
+fovars = vars. fosig 
+
+enum_fofuncs :: HasArity fn => Int -> SOSignature pd fn v sov -> EnumProc (GroundSOT fn)
+enum_fofuncs aty = (enum_funcs aty) . fosig
+
+enum_foterms :: (HasArity fn, SimpleTerm t, Functor (t (GroundSOT fn))) => SOSignature pd fn v sov -> EnumProc (GroundT t fn)
+enum_foterms = enum_terms . fosig

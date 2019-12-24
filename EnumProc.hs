@@ -17,6 +17,8 @@ import System.Timeout
 import Data.Semigroup
 import Data.Functor.Compose
 import Data.Functor.Identity
+import Control.Monad.Trans.Class
+import HaskellPlus
 
 -- There are two fundamental assumptions for any instance of the type EnumProc:
 --
@@ -119,7 +121,11 @@ instance Monad EnumProc where
 	return x = single_enum x
 	fail str = Error str
 
--- Halt is the equivalent of []
+-- We may wish to produce monad actions over EnumProcs. This is not the same as a monad transformer, the types do not match. This could be implemented from a monad transformer, but a generic monad transformer cannot be implemented.
+(..>>=) :: Monad m => EnumProc (m a) -> (a -> m b) -> EnumProc (m b)
+(..>>=) = (>$>=)
+infixl 7 ..>>=
+
 
 -- (-->) is the equivalent of (:), it is just an infix alias for Produce
 (-->) :: t -> EnumProc t -> EnumProc t
@@ -625,8 +631,19 @@ eintersectAll (Error str) = Error str
 eintersectAll (Continue x) = Continue (eintersectAll x)
 eintersectAll (Produce en x) = en >>= (\el -> eifelse (eall (\en2 -> eelem el en2) x) (return el) Empty)
 
+-- Make tuples (lists of known length, to be precise, since the length is a parameter and so we cannot use tuple types easily) of elements in an enum.
+-- Picking the same element more than once is allowed.
+-- E.g. (epick 2 (1 --> 2 --> 3 --> Empty)) == ([1,1] --> [1,2] --> [1,3] --> [2,1] --> [2,2] --> [2,3] --> [3,1] --> [3,2] --> [3,3] --> Empty)
+epick :: Int -> EnumProc a -> EnumProc [a]
+epick 0 en = ([] --> Empty)
+epick n en = en >>= (\f -> (f:) <$> (epick (n-1) en))
+
 single_enum :: t -> EnumProc t
 single_enum x = Produce x Empty
+
+mb_single_enum :: Maybe t -> EnumProc t
+mb_single_enum Nothing = Empty
+mb_single_enum (Just x) = single_enum x
 
 -- Surprisingly, bottom is safe. It respects assumption 1 because each step is terminating. It respects assumption 2 because, since it does not produce any results, there is a finite set of steps before each of them.
 bottom :: EnumProc t

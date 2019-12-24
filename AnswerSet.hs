@@ -13,6 +13,7 @@ module AnswerSet where
 
 import HaskellPlus
 import EnumProc
+import Data.Bifunctor
 
 class Implicit (s :: *) (t :: *) | s -> t where
 	checkImplicit :: s -> t -> Bool
@@ -44,8 +45,8 @@ checkAS (ExplicitAS en) a = or (fmap (\x -> checkAS x a) en)
 checkAS (ImplicitAS s) a = checkImplicit s a
 
 -- Don't use this if you can do things with checkAS: This is necessarily explicit and therefore slower in general
-checkPAS :: (a -> a -> Bool) -> AnswerSet s a -> a -> Bool
-checkPAS p as a = uns_produce_next (eany (\a2 -> return (p a a2)) (enumAS as))
+checkPAS :: (a -> Bool) -> AnswerSet s a -> Bool
+checkPAS p as = uns_produce_next (eany (\a -> return (p a)) (enumAS as))
 
 enumAS :: AnswerSet s a -> EnumProc a
 enumAS (SingleAS a) = a --> Empty
@@ -59,6 +60,18 @@ explicitAS en = ExplicitAS (fmap SingleAS en)
 (SingleAS x) ?>>= f = tofun f x
 (ExplicitAS en) ?>>= f = ExplicitAS (fmap (?>>= f) en)
 (ImplicitAS s) ?>>= f = composeImplicit s f
+
+-- Note that the Bifunctor instance is naive in that it considers the effects of the function on implicits and the function on explicits independent.
+-- That is, the function on explicits will never be applied when the elements are expressed implicitly.
+-- In other words, it should be true that, for functions f (on implicits) and g (on explicits), it should be true that ((enumAS (bimap f g as)) == (enumAS (fmap g as)))
+-- It is a much simpler and less flexible version of implicit composition.
+
+-- Also, because Bifunctor cannot include constraints on the functions, we need to use our own version instead of actual Bifunctor.
+--instance Bifunctor AnswerSet where
+bimap_as :: Implicit b d => (a -> b) -> (c -> d) -> AnswerSet a c -> AnswerSet b d
+bimap_as f g (SingleAS x) = SingleAS (g x)
+bimap_as f g (ExplicitAS en) = ExplicitAS ((bimap_as f g) <$> en)
+bimap_as f g (ImplicitAS s) = ImplicitAS (f s)
 
 instance Functor (AnswerSet s) where
 	fmap f (SingleAS x) = SingleAS (f x)
