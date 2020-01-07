@@ -91,6 +91,13 @@ instance SimpleTerm CTermF where
 	build_term = TFun
 	unbuild_term (TFun f ts) = (f,ts)
 
+-- The functions of a term can also be traversed
+instance Foldable (FlippedBifunctor CTermF f) where
+	foldMap g (FlippedBifunctor (TFun f ts)) = g f
+
+instance Traversable (FlippedBifunctor CTermF f) where
+	sequenceA (FlippedBifunctor (TFun f ts)) = (pure (\g -> FlippedBifunctor (TFun g ts))) <*> f
+
 type GTerm = UTerm CTermFn
 type Term = GTerm OVariable
 type GroundTerm = GroundT CTermF OFunction
@@ -132,6 +139,13 @@ instance Bifunctor CAtomPF where
 instance SimpleTerm CAtomPF where
 	build_term = APred
 	unbuild_term (APred p ts) = (p,ts)
+
+instance Foldable (FlippedBifunctor CAtomPF f) where
+	foldMap g (FlippedBifunctor (APred p ts)) = g p
+
+instance Traversable (FlippedBifunctor CAtomPF f) where
+	sequenceA (FlippedBifunctor (APred p ts)) = (pure (\q -> FlippedBifunctor (APred q ts))) <*> p
+
 
 type GAtom = Predicabilize CAtomPd
 type Atom = GAtom Term

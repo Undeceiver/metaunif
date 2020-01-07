@@ -13,6 +13,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE TupleSections #-}
 -- Existential second-order unification (with instantiation set results, performing batch unification (multiple unifiers and equations at once))
 module ESUnification where
 
@@ -40,9 +41,15 @@ import Control.Lens
 import Control.Monad.State
 import Control.Monad.Morph
 import Algorithm
+import Provenance
+import CESQResolutionProvenance
 
 -- Our objectives:
 -- type SOMetaterm = SOMetawrap CTermF OFunction OVariable SOMVariable
+
+-- Heuristics
+esunif_search_heuristic :: Diagonalize
+esunif_search_heuristic = Diagonalize False False 1 1 False
 
 
 data TermDependant t fn v sov uv = TDDirect (SOMetawrap t fn v sov) | TDUnif uv (TermDependant t fn v sov uv)
@@ -128,6 +135,22 @@ nsoinst = soinst . fromNESMGU
 nsig :: NESMGU t pd fn v sov -> SOSignature pd fn v sov
 nsig = sig . fromNESMGU
 
+-- Displaying an ESMGU. First, it depends on the signature. Second, it affects the state of the NESMGU.
+do_show_esmgu :: ESMGUConstraints t pd fn v sov => SOSignature pd fn v sov -> ESMGU t pd fn v sov -> String
+do_show_esmgu sig mgu = fst (runState (show_esmgu sig) mgu)
+
+do_show_nesmgu :: ESMGUConstraints t pd fn v sov => SOSignature pd fn v sov -> NESMGU t pd fn v sov -> String
+do_show_nesmgu sig mgu = do_show_esmgu sig (fromNESMGU mgu)
+
+show_esmgu :: ESMGUConstraints t pd fn v sov => SOSignature pd fn v sov -> State (ESMGU t pd fn v sov) String
+show_esmgu sig = (\rr -> return ("\nFirst-order variables:\n\n" ++ rr)) =<< (Prelude.foldr (\nst -> \pst -> pst >>= (\pt -> nst >>= (\nt -> return (nt++pt)))) ((\rr -> return ("\nSecond-order variables:\n\n" ++ rr)) =<< (Prelude.foldr (\nst -> \pst -> pst >>= (\pt -> nst >>= (\nt -> return (nt++pt)))) (return "") (st_show_sov <$> (sovars sig)))) (st_show_var <$> (fovars sig))) where st_show_var = (\v -> state (show_esmgu_var_f v)); st_show_sov = (\v -> state (show_esmgu_sov_f sig v))
+
+show_esmgu_var_f :: ESMGUConstraints t pd fn v sov => v -> (ESMGU t pd fn v sov -> (String,ESMGU t pd fn v sov))
+show_esmgu_var_f v mgu = if (isNothing mb_r) then ("Occurs check!\n",rst) else (((show v) ++ " -> " ++ (show (fromJust mb_r)) ++ "\n"),rst) where mb_r = ((founif mgu) $= (UVar v)); rst = runJState ((SOMetawrap (UVar v)) >:= (SOMetawrap (fromJust mb_r))) mgu
+
+show_esmgu_sov_f :: ESMGUConstraints t pd fn v sov => SOSignature pd fn v sov -> sov -> (ESMGU t pd fn v sov -> (String,ESMGU t pd fn v sov))
+show_esmgu_sov_f sig sov mgu = if (isNothing mb_r) then ("Occurs check!\n",rst) else (((show sov) ++ " -> " ++ (show (fromJust mb_r)) ++ "\n"),rst) where mb_r = (apply_somvunif sig (soinst mgu) (UVar sov)); rst = runJState ((UVar sov) >::= (fromJust mb_r)) mgu
+
 -- Lenses for ESMGUs and their normal versions
 lens_founif :: Lens' (ESMGU t pd fn v sov) (MaybeUnifier (t (SOTerm fn sov)) v (UFailure (t (SOTerm fn sov)) v))
 lens_founif = lens founif (\prev -> \new -> ESMGU new (soinst prev) (sig prev))
@@ -153,10 +176,21 @@ lens_nsig = lens_fromNESMGU . lens_sig
 -- State transforming specific functions for ESMGU. We work directly on normal ones. While we lose normality in many cases, to be able to use the State monad adequately, we restore normality afterwards in all cases. This may be a potential source of inefficiency, so keep an eye out.
 instance (Bifunctor t, Eq sov) => Substitutable (UTerm (t (SOTerm fn sov)) v) sov (SOTerm fn sov) where
 	subst _ _ (UVar v) = UVar v
-	subst sov sot (UTerm t) = UTerm (bimap (subst sov sot) id t)
+	subst sov sot (UTerm t) = UTerm (bimap (subst sov sot) (subst sov sot) t)
 
 instance (Bifunctor t, Eq sov) => Substitutable (SOMetawrap t fn v sov) sov (SOTerm fn sov) where
 	subst sov sot = SOMetawrap . (subst sov sot) . fromSOMetawrap
+
+instance (Eq sov) => Mappable sov (GroundSOT fn) (SOTerm fn sov) (GroundSOT fn) where
+	anymap f (UVar v) = f v
+	anymap f (UTerm (SOF (ConstF h))) = Fix (SOF (ConstF h))
+	anymap f (UTerm (SOF (Proj idx))) = Fix (SOF (Proj idx))
+	anymap f (UTerm (SOF (CompF h sargs))) = Fix (SOF (CompF (anymap f h) (fmap (anymap f) sargs)))
+
+instance (Bifunctor t, Eq sov) => Mappable sov (GroundSOT fn) (UTerm (t (SOTerm fn sov)) v) (UTerm (t (GroundSOT fn)) v) where
+	anymap f (UVar v) = UVar v
+	anymap f (UTerm t) = UTerm (bimap (anymap f) (anymap f) t)
+
 
 find_sovars :: (SimpleTerm t, Eq sov) => UTerm (t (SOTerm fn sov)) v -> [sov]
 find_sovars (UVar _) = []
@@ -172,7 +206,7 @@ infix 4 >!:=
 infix 4 >!::=
 
 st_match_with_sov_wildcards_fo :: ESMGUConstraints t pd fn v sov => SOMetawrap t fn v sov -> SOMetawrap t fn v sov -> State (NESMGU t pd fn v sov) Bool
-st_match_with_sov_wildcards_fo t1 t2 = state (match_with_sov_wildcards_fo_norm t1 t2)
+st_match_with_sov_wildcards_fo t1 t2 = state (match_with_sov_wildcards_fo t1 t2)
 
 match_with_sov_wildcards_fo :: ESMGUConstraints t pd fn v sov => SOMetawrap t fn v sov -> SOMetawrap t fn v sov -> (NESMGU t pd fn v sov -> (Bool,NESMGU t pd fn v sov))
 match_with_sov_wildcards_fo t1 t2 mgu = match_with_sov_wildcards_fo_norm (normalize t1) (normalize t2) mgu
@@ -184,8 +218,19 @@ st_match_with_sov_wildcards_fo_norm t1 t2 = state (match_with_sov_wildcards_fo_n
 match_with_sov_wildcards_fo_norm :: ESMGUConstraints t pd fn v sov => SOMetawrap t fn v sov -> SOMetawrap t fn v sov -> (NESMGU t pd fn v sov -> (Bool,NESMGU t pd fn v sov))
 match_with_sov_wildcards_fo_norm (SOMetawrap (UVar v)) t2 mgu = if (isNothing nmgu) then (False,mgu) else (True,rnmgu) where u = nfounif mgu; soinst = nsoinst mgu; rfounif = u >> ((UVar v) =.= (fromSOMetawrap t2)); rmgu = ESMGU rfounif soinst (nsig mgu); nmgu = normalize_esmgu rmgu; rnmgu = fromJust nmgu
 match_with_sov_wildcards_fo_norm t1 (SOMetawrap (UVar v)) mgu = match_with_sov_wildcards_fo_norm (SOMetawrap (UVar v)) t1 mgu
-match_with_sov_wildcards_fo_norm (SOMetawrap (UTerm t1)) (SOMetawrap (UTerm t2)) mgu = runState (Data.List.foldr (\pair -> \prev -> prev >>=& (uncurry st_match_with_sov_wildcards_fo_norm pair)) (st_match_with_sov_wildcards_so f1 f2) (zip (SOMetawrap <$> ts1) (SOMetawrap <$> ts2))) mgu where (f1,ts1) = unbuild_term t1; (f2,ts2) = unbuild_term t2
+match_with_sov_wildcards_fo_norm (SOMetawrap (UTerm t1)) (SOMetawrap (UTerm t2)) mgu = if direct_res then (direct_res,direct_st) else (match_with_sov_wildcards_fo_norm_proj f1 f2 mws1 mws2 mgu) where (f1,ts1) = unbuild_term t1; (f2,ts2) = unbuild_term t2; mws1 = SOMetawrap <$> ts1; mws2 = SOMetawrap <$> ts2; (direct_res,direct_st) = runState (Data.List.foldr (\pair -> \prev -> prev >>=& (uncurry st_match_with_sov_wildcards_fo_norm pair)) (st_match_with_sov_wildcards_so f1 f2) (zip mws1 mws2)) mgu
 match_with_sov_wildcards_fo_norm _ _ mgu = (False,mgu)
+
+match_with_sov_wildcards_fo_norm_proj :: ESMGUConstraints t pd fn v sov => SOTerm fn sov -> SOTerm fn sov -> [SOMetawrap t fn v sov] -> [SOMetawrap t fn v sov] -> (NESMGU t pd fn v sov -> (Bool,NESMGU t pd fn v sov))
+match_with_sov_wildcards_fo_norm_proj (UVar v) t2 mws1 mws2 mgu = match_with_sov_wildcards_fo_norm_doproj v mws1 (SOMetawrap (UTerm (build_term t2 (fromSOMetawrap <$> mws2)))) (arity v) mgu
+match_with_sov_wildcards_fo_norm_proj t1 (UVar v) mws1 mws2 mgu = match_with_sov_wildcards_fo_norm_proj (UVar v) t1 mws2 mws1 mgu
+-- This is only for matching variables with projections, so unless it is composites, they won't match through this path. But because the SOMetawrap's were normalized, the head may not be composites.
+-- We specifically match against constant heads so that we get flagged up the non-exhaustive pattern matching if there is something wrong.
+match_with_sov_wildcards_fo_norm_proj (UTerm (SOF (ConstF f1))) (UTerm (SOF (ConstF f2))) mws1 mws2 mgu = (False,mgu)
+
+match_with_sov_wildcards_fo_norm_doproj :: forall t pd fn v sov. ESMGUConstraints t pd fn v sov => sov -> [SOMetawrap t fn v sov] -> SOMetawrap t fn v sov -> Int -> (NESMGU t pd fn v sov -> (Bool,NESMGU t pd fn v sov))
+match_with_sov_wildcards_fo_norm_doproj v mws1 rmw 0 mgu = (False,mgu)
+match_with_sov_wildcards_fo_norm_doproj v mws1 rmw idx mgu = if ((isNothing nmgu) || (not rec_res)) then (match_with_sov_wildcards_fo_norm_doproj v mws1 rmw (idx - 1) mgu) else (rec_res,rec_st) where u = nfounif mgu; soinst = nsoinst mgu; rsoinst = soinst >> ((UVar v) =.= (UTerm (SOF (Proj (idx - 1))))); rmgu = ESMGU u rsoinst (nsig mgu); nmgu = normalize_esmgu rmgu; rnmgu = fromJust nmgu; (rec_res,rec_st) = match_with_sov_wildcards_fo_norm (mws1 !! (idx - 1)) rmw rnmgu
 
 st_match_with_sov_wildcards_so :: ESMGUConstraints t pd fn v sov => SOTerm fn sov -> SOTerm fn sov -> State (NESMGU t pd fn v sov) Bool
 st_match_with_sov_wildcards_so t1 t2 = state (match_with_sov_wildcards_so t1 t2)
@@ -206,7 +251,8 @@ match_with_sov_wildcards_so_norm _ _ mgu = (False,mgu)
 
 
 
-type ESMGUConstraints t pd fn v sov = (Ord sov, SimpleTerm t, Eq fn, HasArity fn, HasArity sov, Functor (t (SOTerm fn sov)), Functor (t fn), Bifunctor t, Unifiable (t (SOTerm fn sov)), Variabilizable v, Variable v, Variabilizable sov, Variable sov, Ord v, Functor (t (GroundSOT fn)), Eq (t fn (Fix (t fn))))
+
+type ESMGUConstraints t pd fn v sov = (Ord sov, SimpleTerm t, Eq fn, HasArity fn, HasArity sov, ChangeArity sov, Functor (t (SOTerm fn sov)), Functor (t fn), Bifunctor t, Traversable (t (GroundSOT fn)), Unifiable (t (SOTerm fn sov)), Variabilizable v, Variable v, Variabilizable sov, Variable sov, Ord v, Functor (t (GroundSOT fn)), Eq (t fn (Fix (t fn))), Show sov, Show fn, Show v, Show (t (SOTerm fn sov) (UTerm (t (SOTerm fn sov)) v)), Show (t (GroundSOT fn) (UTerm (t (GroundSOT fn)) v)))
 type SOFESMGUConstraints fn sov = (Ord sov, Eq fn, HasArity fn, HasArity sov)
 
 -- NOTE: Should change the exception to DUFailure when I add atoms. It should be fairly simple by using with_lowfailure.
@@ -243,12 +289,15 @@ normalize_soinst sig soinst = if r then (Just ru) else Nothing where (ru,r) = ch
 --rebuild_soinst_rec _ [] rsoinst = rsoinst
 --rebuild_soinst_rec osoinst (sov:sovs) rsoinst = rebuild_soinst_rec osoinst sovs (Data.Map.Strict.insert sov final_value rsoinst) where value = findWithDefault (UVar sov) sov osoinst; final_value = --dump_soinst rsoinst (find_vars value) value
 
-dump_soinst :: (Eq fn, Variabilizable sov, Variable sov, Substitutable t sov (SOTerm fn sov)) => MaybeUnifier (SOTermF fn) sov (UFailure (SOTermF fn) sov) -> [sov] -> t -> Maybe t
-dump_soinst soinst vars value = Data.List.foldr (\osov -> \cval -> cval >>= (\rcval -> (\sovval -> subst osov sovval rcval) <$> (soinst $= (UVar osov)))) (Just value) vars
+dump_soinst :: (Eq fn, ChangeArity sov, Variabilizable sov, Variable sov, Substitutable t sov (SOTerm fn sov)) => SOSignature pd fn v sov -> MaybeUnifier (SOTermF fn) sov (UFailure (SOTermF fn) sov) -> [sov] -> t -> Maybe t
+dump_soinst sig soinst vars value = Data.List.foldr (\osov -> \cval -> cval >>= (\rcval -> (\sovval -> subst osov sovval rcval) <$> (apply_somvunif sig soinst (UVar osov)))) (Just value) vars
 
 instance ESMGUConstraints t pd fn v sov => Implicit (NESMGU t pd fn v sov) (UnifSolution t fn v sov) where
-	checkImplicit mgu sol = fst (runState (rsosol >>=& rfosol) mgu) where rsosol = st_checkESMGUsosol_norm (sosol sol); rfosol = st_checkESMGUfosol_norm (fosol sol)
-	enumImplicit mgu = fst <$> (runStateT (rsosol >>= (\sosol -> rfosol >>= (\fosol -> return (UnifSolution fosol sosol)))) mgu) where rsosol = st_enumESMGUsosol_norm (nsig mgu); rfosol = st_enumESMGUfosol_norm (nsig mgu)
+	checkImplicit mgu sol = fst (runState (rsosol >>=& rfosol) mgu) where rsosol = st_checkESMGUsosol_norm (nsig mgu) (sosol sol); rfosol = st_checkESMGUfosol_norm (nsig mgu) (fosol sol)
+	enumImplicit mgu = raw <$> (fromProvenanceT (nesmgu_enumImplicit mgu))
+
+nesmgu_enumImplicit :: ESMGUConstraints t pd fn v sov => NESMGU t pd fn v sov -> ProvenanceT CQRP EnumProc (UnifSolution t fn v sov)
+nesmgu_enumImplicit mgu = ProvenanceT ((fst <$>) <$> (runcompprov esunif_search_heuristic (runStateT rfullsol mgu))) where rsosol = st_enumESMGUsosol_norm (nsig mgu); rfosol = st_enumESMGUfosol_norm (nsig mgu); rfullsol = rsosol >>= (\sosol -> rfosol >>= (\fosol -> return (UnifSolution fosol sosol)))
 
 instance ESMGUConstraints t pd fn v sov => Implicit (ESMGU t pd fn v sov) (UnifSolution t fn v sov) where
 	checkImplicit mgu sol = checkAS nmgu sol where nmgu = normalize (ImplicitAS mgu)
@@ -258,75 +307,100 @@ instance ESMGUConstraints t pd fn v sov => Implicit (ESMGU t pd fn v sov) (UnifS
 
 
 
-st_checkESMGUfosol_norm :: ESMGUConstraints t pd fn v sov => Map v (GroundT t fn) -> State (NESMGU t pd fn v sov) Bool
-st_checkESMGUfosol_norm m = foldMapBool traversal_assocs (uncurry st_checkESMGUfovar_norm) m
+st_checkESMGUfosol_norm :: ESMGUConstraints t pd fn v sov => SOSignature pd fn v sov -> Map v (GroundT t fn) -> State (NESMGU t pd fn v sov) Bool
+st_checkESMGUfosol_norm sig m = foldMapBool traversal_assocs (uncurry (st_checkESMGUfovar_norm sig)) m
 
-st_checkESMGUfovar_norm :: ESMGUConstraints t pd fn v sov => v -> GroundT t fn -> State (NESMGU t pd fn v sov) Bool
-st_checkESMGUfovar_norm v t = state (checkESMGUfovar_norm v t)
+st_checkESMGUfovar_norm :: ESMGUConstraints t pd fn v sov => SOSignature pd fn v sov -> v -> GroundT t fn -> State (NESMGU t pd fn v sov) Bool
+st_checkESMGUfovar_norm sig v t = state (checkESMGUfovar_norm sig v t)
 
-checkESMGUfovar_norm :: ESMGUConstraints t pd fn v sov => v -> GroundT t fn -> (NESMGU t pd fn v sov -> (Bool,NESMGU t pd fn v sov))
-checkESMGUfovar_norm v t mgu = runState ((return (isJust rtv)) >>=& (st_match_with_sov_wildcards_fo (SOMetawrap (fromJust rtv)) tt)) mgu where u = nfounif mgu; soinst = nsoinst mgu; tt = somw (inject_groundt t); tv = u $= (UVar v); rtv = tv >>= (\ptv -> dump_soinst soinst (find_sovars ptv) ptv)
+checkESMGUfovar_norm :: ESMGUConstraints t pd fn v sov => SOSignature pd fn v sov -> v -> GroundT t fn -> (NESMGU t pd fn v sov -> (Bool,NESMGU t pd fn v sov))
+checkESMGUfovar_norm sig v t mgu = runState ((return (isJust rtv)) >>=& (st_match_with_sov_wildcards_fo (SOMetawrap (fromJust rtv)) tt)) mgu where u = nfounif mgu; soinst = nsoinst mgu; tt = somw (inject_groundt t); tv = u $= (UVar v); rtv = tv >>= (\ptv -> dump_soinst sig soinst (find_sovars ptv) ptv)
 
-st_checkESMGUsosol_norm :: ESMGUConstraints t pd fn v sov => Map sov (GroundSOT fn) -> State (NESMGU t pd fn v sov) Bool
-st_checkESMGUsosol_norm m = foldMapBool traversal_assocs (uncurry st_checkESMGUsovar_norm) m
+st_checkESMGUsosol_norm :: ESMGUConstraints t pd fn v sov => SOSignature pd fn v sov -> Map sov (GroundSOT fn) -> State (NESMGU t pd fn v sov) Bool
+st_checkESMGUsosol_norm sig m = foldMapBool traversal_assocs (uncurry (st_checkESMGUsovar_norm sig)) m
 
-st_checkESMGUsovar_norm :: ESMGUConstraints t pd fn v sov => sov -> GroundSOT fn -> State (NESMGU t pd fn v sov) Bool
-st_checkESMGUsovar_norm sov sot = state (checkESMGUsovar_norm sov sot)
+st_checkESMGUsovar_norm :: ESMGUConstraints t pd fn v sov => SOSignature pd fn v sov -> sov -> GroundSOT fn -> State (NESMGU t pd fn v sov) Bool
+st_checkESMGUsovar_norm sig sov sot = state (checkESMGUsovar_norm sig sov sot)
 
-checkESMGUsovar_norm :: ESMGUConstraints t pd fn v sov => sov -> GroundSOT fn -> (NESMGU t pd fn v sov -> (Bool,NESMGU t pd fn v sov))
-checkESMGUsovar_norm sov sot mgu = runState ((return (isJust mb_sotv)) >>=& (st_match_with_sov_wildcards_so sott (fromJust mb_sotv))) mgu where soinst = nsoinst mgu; sott = inject_groundsot sot; mb_sotv = soinst $= (UVar sov)
+checkESMGUsovar_norm :: ESMGUConstraints t pd fn v sov => SOSignature pd fn v sov -> sov -> GroundSOT fn -> (NESMGU t pd fn v sov -> (Bool,NESMGU t pd fn v sov))
+checkESMGUsovar_norm sig sov sot mgu = runState ((return (isJust mb_sotv)) >>=& (st_match_with_sov_wildcards_so sott (fromJust mb_sotv))) mgu where soinst = nsoinst mgu; sott = inject_groundsot sot; mb_sotv = apply_somvunif sig soinst (UVar sov)
 
 
+st_doenumESMGUsosol_norm :: ESMGUConstraints t pd fn v sov => SOSignature pd fn v sov -> StateT (NESMGU t pd fn v sov) (ProvenanceT CQRP EnumProc) (Map sov (GroundSOT fn))
+st_doenumESMGUsosol_norm sig = hoist (ProvenanceT . (runcompprov esunif_search_heuristic)) (st_enumESMGUsosol_norm sig)
 
-st_enumESMGUsosol_norm :: ESMGUConstraints t pd fn v sov => SOSignature pd fn v sov -> StateT (NESMGU t pd fn v sov) EnumProc (Map sov (GroundSOT fn))
+st_enumESMGUsosol_norm :: ESMGUConstraints t pd fn v sov => SOSignature pd fn v sov -> StateT (NESMGU t pd fn v sov) (ProvComputation CQRP) (Map sov (GroundSOT fn))
 st_enumESMGUsosol_norm sig = st_enumESMGUsosol_norm_sovars sig (sovars sig)
 
-st_enumESMGUsosol_norm_sovars :: ESMGUConstraints t pd fn v sov => SOSignature pd fn v sov -> EnumProc sov -> StateT (NESMGU t pd fn v sov) EnumProc (Map sov (GroundSOT fn))
+st_enumESMGUsosol_norm_sovars :: ESMGUConstraints t pd fn v sov => SOSignature pd fn v sov -> EnumProc sov -> StateT (NESMGU t pd fn v sov) (ProvComputation CQRP) (Map sov (GroundSOT fn))
 -- We use a single entry with an empty map as base case. It semantically makes more sense, but more importantly, it helps recursion work better.
-st_enumESMGUsosol_norm_sovars sig EnumProc.Empty = lift (Data.Map.Strict.empty --> EnumProc.Empty)
-st_enumESMGUsosol_norm_sovars sig Halt = lift Halt
-st_enumESMGUsosol_norm_sovars sig (Error str) = lift (Error str)
-st_enumESMGUsosol_norm_sovars sig (Continue x) = hoist Continue (st_enumESMGUsosol_norm_sovars sig x)
-st_enumESMGUsosol_norm_sovars sig (Produce sov sovs) = firstvar >>= (\gsot -> Data.Map.Strict.insert sov gsot <$> rest) where firstvar = st_enumESMGUsosol_norm_sov sig sov; rest = st_enumESMGUsosol_norm_sovars sig sovs
+st_enumESMGUsosol_norm_sovars sig EnumProc.Empty = lift (compprov (CQRPText "Enumerating second-order variables. Base case.") Data.Map.Strict.empty)
+st_enumESMGUsosol_norm_sovars sig Halt = lift (algprov_halt (CQRPText "Halting enumeration of second-order variables."))
+st_enumESMGUsosol_norm_sovars sig (Error str) = lift (algprov_error (CQRPText "Error found in the source enumeration of second-order variables.") str)
+st_enumESMGUsosol_norm_sovars sig (Continue x) = hoist (algprov_continue (CQRPText "Step in enumeration of second-order variables.")) (st_enumESMGUsosol_norm_sovars sig x)
+st_enumESMGUsosol_norm_sovars sig (Produce sov sovs) = firstvar >>= (\gsot -> Data.Map.Strict.insert sov gsot <$> rest) where firstvar = (st_enumESMGUsosol_norm_sov sig) .:&. (lift (compprov (CQRPText ("Next second-order variable in the enumeration is " ++ (show sov))) sov)); rest = st_enumESMGUsosol_norm_sovars sig sovs
 
-st_enumESMGUsosol_norm_sov :: ESMGUConstraints t pd fn v sov => SOSignature pd fn v sov -> sov -> StateT (NESMGU t pd fn v sov) EnumProc (GroundSOT fn)
-st_enumESMGUsosol_norm_sov sig sov = StateT (enumESMGUsosol_norm_sov sig sov)
+st_enumESMGUsosol_norm_sov :: forall t pd fn v sov. ESMGUConstraints t pd fn v sov => SOSignature pd fn v sov -> StateT (NESMGU t pd fn v sov) (ProvAlgorithm CQRP sov) (GroundSOT fn)
+st_enumESMGUsosol_norm_sov sig = ts .:&. posunif
+	where
+		posunif = StateT (\mgu -> algfilterprov_prov (\sov -> filter_enumESMGUsosol_norm_sov sig sov mgu $>: (CQRPText ("Applying unifier to second-order variable " ++ (show sov))))) :: StateT (NESMGU t pd fn v sov) (ProvAlgorithm CQRP sov) (SOTerm fn sov);
+		ts = StateT (\mgu -> forkprov_prov (\t -> fork_enumESMGUsosol_norm_sotv sig t mgu $>: (CQRPText ("Enumerating wildcard instantiations for second-order term " ++ (show t))))) :: StateT (NESMGU t pd fn v sov) (ProvAlgorithm CQRP (SOTerm fn sov)) (GroundSOT fn)
 
-enumESMGUsosol_norm_sov :: ESMGUConstraints t pd fn v sov => SOSignature pd fn v sov -> sov -> (NESMGU t pd fn v sov -> EnumProc (GroundSOT fn,NESMGU t pd fn v sov))
-enumESMGUsosol_norm_sov sig sov mgu = if (isNothing mb_sotv) then EnumProc.Empty else (enumESMGUsosol_norm_sotv sig (fromJust mb_sotv) mgu) where soinst = nsoinst mgu; mb_sotv = soinst $= (UVar sov)
+filter_enumESMGUsosol_norm_sov :: ESMGUConstraints t pd fn v sov => SOSignature pd fn v sov -> sov -> (NESMGU t pd fn v sov -> Maybe (SOTerm fn sov,NESMGU t pd fn v sov))
+filter_enumESMGUsosol_norm_sov sig sov mgu = if (isNothing mb_sotv) then Nothing else Just (fromJust mb_sotv,mgu) where soinst = nsoinst mgu; mb_sotv = apply_somvunif sig soinst (UVar sov)
 
-st_enumESMGUsosol_norm_sotv :: ESMGUConstraints t pd fn v sov => SOSignature pd fn v sov -> SOTerm fn sov -> StateT (NESMGU t pd fn v sov) EnumProc (GroundSOT fn)
-st_enumESMGUsosol_norm_sotv sig sotv = StateT (enumESMGUsosol_norm_sotv sig sotv)
-
-enumESMGUsosol_norm_sotv :: ESMGUConstraints t pd fn v sov => SOSignature pd fn v sov -> SOTerm fn sov -> (NESMGU t pd fn v sov -> EnumProc (GroundSOT fn,NESMGU t pd fn v sov))
-enumESMGUsosol_norm_sotv sig (UVar sov) mgu = (enum_fofuncs (arity sov) sig) >>= (\gsot -> mb_single_enum (enumESMGUsosol_norm_sotv_match sov gsot mgu))
-enumESMGUsosol_norm_sotv sig (UTerm t) mgu = runStateT (Fix <$> (traverse (st_enumESMGUsosol_norm_sotv sig) t)) mgu
+fork_enumESMGUsosol_norm_sotv :: ESMGUConstraints t pd fn v sov => SOSignature pd fn v sov -> SOTerm fn sov -> (NESMGU t pd fn v sov -> EnumProc (GroundSOT fn,NESMGU t pd fn v sov))
+fork_enumESMGUsosol_norm_sotv sig (UVar sov) mgu = efilter_mb ((\gsot -> enumESMGUsosol_norm_sotv_match sov gsot mgu) <$> (enum_fofuncs (arity sov) sig))
+fork_enumESMGUsosol_norm_sotv sig (UTerm t) mgu = runStateT (Fix <$> (traverse (StateT . (fork_enumESMGUsosol_norm_sotv sig)) t)) mgu
 
 enumESMGUsosol_norm_sotv_match :: ESMGUConstraints t pd fn v sov => sov -> GroundSOT fn -> (NESMGU t pd fn v sov -> Maybe (GroundSOT fn,NESMGU t pd fn v sov))
 enumESMGUsosol_norm_sotv_match sov gsot mgu = if rchk then (Just (gsot,rmgu)) else Nothing where (rchk,rmgu) = match_with_sov_wildcards_so (UVar sov) (inject_groundsot gsot) mgu
 
-st_enumESMGUfosol_norm :: ESMGUConstraints t pd fn v sov => SOSignature pd fn v sov -> StateT (NESMGU t pd fn v sov) EnumProc (Map v (GroundT t fn))
+st_doenumESMGUfosol_norm :: ESMGUConstraints t pd fn v sov => SOSignature pd fn v sov -> StateT (NESMGU t pd fn v sov) (ProvenanceT CQRP EnumProc) (Map v (GroundT t fn))
+st_doenumESMGUfosol_norm sig = hoist (ProvenanceT . (runcompprov esunif_search_heuristic)) (st_enumESMGUfosol_norm sig)
+
+st_enumESMGUfosol_norm :: ESMGUConstraints t pd fn v sov => SOSignature pd fn v sov -> StateT (NESMGU t pd fn v sov) (ProvComputation CQRP) (Map v (GroundT t fn))
 st_enumESMGUfosol_norm sig = st_enumESMGUfosol_norm_vars sig (fovars sig)
 
-st_enumESMGUfosol_norm_vars :: ESMGUConstraints t pd fn v sov => SOSignature pd fn v sov -> EnumProc v -> StateT (NESMGU t pd fn v sov) EnumProc (Map v (GroundT t fn))
-st_enumESMGUfosol_norm_vars sig EnumProc.Empty = lift (Data.Map.Strict.empty --> EnumProc.Empty)
-st_enumESMGUfosol_norm_vars sig Halt = lift Halt
-st_enumESMGUfosol_norm_vars sig (Error str) = lift (Error str)
-st_enumESMGUfosol_norm_vars sig (Continue x) = hoist Continue (st_enumESMGUfosol_norm_vars sig x)
-st_enumESMGUfosol_norm_vars sig (Produce v vs) = firstvar >>= (\gt -> Data.Map.Strict.insert v gt <$> rest) where firstvar = st_enumESMGUfosol_norm_var sig v; rest = st_enumESMGUfosol_norm_vars sig vs
+st_enumESMGUfosol_norm_vars :: ESMGUConstraints t pd fn v sov => SOSignature pd fn v sov -> EnumProc v -> StateT (NESMGU t pd fn v sov) (ProvComputation CQRP) (Map v (GroundT t fn))
+st_enumESMGUfosol_norm_vars sig EnumProc.Empty = lift (compprov (CQRPText "Enumerating first-order variables. Base case.") Data.Map.Strict.empty)
+st_enumESMGUfosol_norm_vars sig Halt = lift (algprov_halt (CQRPText "Halting enumeration of first-order variables."))
+st_enumESMGUfosol_norm_vars sig (Error str) = lift (algprov_error (CQRPText "Error found in the source enumeration of first-order variables.") str)
+st_enumESMGUfosol_norm_vars sig (Continue x) = hoist (algprov_continue (CQRPText "Step in enumeration of first-order variables.")) (st_enumESMGUfosol_norm_vars sig x)
+st_enumESMGUfosol_norm_vars sig (Produce v vs) = firstvar >>= (\gsot -> Data.Map.Strict.insert v gsot <$> rest) where firstvar = (st_enumESMGUfosol_norm_var sig) .:&. (lift (compprov (CQRPText ("Next first-order variable in the enumeration is " ++ (show v))) v)); rest = st_enumESMGUfosol_norm_vars sig vs
 
-st_enumESMGUfosol_norm_var :: ESMGUConstraints t pd fn v sov => SOSignature pd fn v sov -> v -> StateT (NESMGU t pd fn v sov) EnumProc (GroundT t fn)
-st_enumESMGUfosol_norm_var sig v = StateT (enumESMGUfosol_norm_var sig v)
+st_enumESMGUfosol_norm_var :: forall t pd fn v sov. ESMGUConstraints t pd fn v sov => SOSignature pd fn v sov -> StateT (NESMGU t pd fn v sov) (ProvAlgorithm CQRP v) (GroundT t fn)
+st_enumESMGUfosol_norm_var sig = tvarenum .:&. sovarsenum .:&. soinstdump .:&. posunif
+	where
+		posunif = StateT (\mgu -> algfilterprov_prov (\v -> filter_enumESMGUfosol_norm_var sig v mgu $>: (CQRPText ("Applying unifier to first-order variable " ++ (show v))))) :: StateT (NESMGU t pd fn v sov) (ProvAlgorithm CQRP v) (UTerm (t (SOTerm fn sov)) v);
+		soinstdump = StateT (\mgu -> algfilterprov_prov (\tv -> filter_enumESMGUfosol_norm_tvar_dumpsoinst sig tv mgu $>: (CQRPText ("Dumping the second-order instantiation on the term " ++ (show tv))))) :: StateT (NESMGU t pd fn v sov) (ProvAlgorithm CQRP (UTerm (t (SOTerm fn sov)) v)) (UTerm (t (SOTerm fn sov)) v);
+		sovarsenum = enumESMGUfosol_norm_tvar_sovars sig :: StateT (NESMGU t pd fn v sov) (ProvAlgorithm CQRP (UTerm (t (SOTerm fn sov)) v)) (UTerm (t (GroundSOT fn)) v);
+		tvarenum = StateT (\mgu -> withorderprov_prov mempty (\x -> \tv -> order_enumESMGUfosol_norm_tvar sig x tv mgu $>: (CQRPText ("Enumerating first-order variables in term " ++ (show tv))))) :: StateT (NESMGU t pd fn v sov) (ProvAlgorithm CQRP (UTerm (t (GroundSOT fn)) v)) (GroundT t fn)
 
-enumESMGUfosol_norm_var :: ESMGUConstraints t pd fn v sov => SOSignature pd fn v sov -> v -> (NESMGU t pd fn v sov -> EnumProc (GroundT t fn,NESMGU t pd fn v sov))
-enumESMGUfosol_norm_var sig v mgu = if (isNothing mb_rtv) then EnumProc.Empty else (enumESMGUfosol_norm_tvar sig (fromJust mb_rtv) mgu) where founif = nfounif mgu; soinst = nsoinst mgu; mb_tv = founif $= (UVar v); mb_rtv = mb_tv >>= (\tv -> dump_soinst soinst (find_sovars tv) tv)
+filter_enumESMGUfosol_norm_var :: ESMGUConstraints t pd fn v sov => SOSignature pd fn v sov -> v -> (NESMGU t pd fn v sov -> Maybe (UTerm (t (SOTerm fn sov)) v,NESMGU t pd fn v sov))
+filter_enumESMGUfosol_norm_var sig v mgu = if (isNothing mb_tv) then Nothing else Just (fromJust mb_tv,mgu) where founif = nfounif mgu; mb_tv = founif $= (UVar v)
 
-st_enumESMGUfosol_norm_tvar :: ESMGUConstraints t pd fn v sov => SOSignature pd fn v sov -> UTerm (t (SOTerm fn sov)) v -> StateT (NESMGU t pd fn v sov) EnumProc (GroundT t fn)
-st_enumESMGUfosol_norm_tvar sig tv = StateT (enumESMGUfosol_norm_tvar sig tv)
+filter_enumESMGUfosol_norm_tvar_dumpsoinst :: ESMGUConstraints t pd fn v sov => SOSignature pd fn v sov -> UTerm (t (SOTerm fn sov)) v -> (NESMGU t pd fn v sov -> Maybe (UTerm (t (SOTerm fn sov)) v,NESMGU t pd fn v sov))
+filter_enumESMGUfosol_norm_tvar_dumpsoinst sig tv mgu = (,mgu) <$> (dump_soinst sig (nsoinst mgu) (find_sovars tv) tv)
 
-enumESMGUfosol_norm_tvar :: ESMGUConstraints t pd fn v sov => SOSignature pd fn v sov -> UTerm (t (SOTerm fn sov)) v -> (NESMGU t pd fn v sov -> EnumProc (GroundT t fn,NESMGU t pd fn v sov))
-enumESMGUfosol_norm_tvar sig (UVar v) mgu = (enum_foterms sig) >>= (\gt -> mb_single_enum (enumESMGUfosol_norm_tvar_match v gt mgu))
-enumESMGUfosol_norm_tvar sig (UTerm t) mgu = runStateT (plain_ggsomw <$> rts) mgu where (h,args) = unbuild_term t; rhs = st_enumESMGUsosol_norm_sotv sig h; rargs = sequence (st_enumESMGUfosol_norm_tvar sig <$> args); rrargs = fmap (fmap ggsomw) rargs; rts = rhs >>= (\rh -> (GGSOMetawrap . Fix . (build_term rh) . (fmap fromGGSOMetawrap) <$> rrargs))
+enumESMGUfosol_norm_tvar_sovars :: forall t pd fn v sov. ESMGUConstraints t pd fn v sov => SOSignature pd fn v sov -> StateT (NESMGU t pd fn v sov) (ProvAlgorithm CQRP (UTerm (t (SOTerm fn sov)) v)) (UTerm (t (GroundSOT fn)) v)
+enumESMGUfosol_norm_tvar_sovars sig = replace_all_vars
+	where
+		replace_var = StateT (\mgu -> forkprov_prov (\t -> fork_enumESMGUsosol_norm_sotv sig t mgu $>: (CQRPText ("Enumerating wildcard instantiations for second-order term " ++ (show t))))) :: StateT (NESMGU t pd fn v sov) (ProvAlgorithm CQRP (SOTerm fn sov)) (GroundSOT fn);
+		replace_all_vars = st_algprov_traversal fntraversal replace_var :: StateT (NESMGU t pd fn v sov) (ProvAlgorithm CQRP (UTerm (t (SOTerm fn sov)) v)) (UTerm (t (GroundSOT fn)) v)
+		
+
+
+order_enumESMGUfosol_norm_tvar :: forall t pd fn v sov x. (ESMGUConstraints t pd fn v sov, ExecOrder x) => SOSignature pd fn v sov -> x -> UTerm (t (GroundSOT fn)) v -> (NESMGU t pd fn v sov -> EnumProc (GroundT t fn,NESMGU t pd fn v sov))
+order_enumESMGUfosol_norm_tvar sig _ (UVar v) mgu = efilter_mb ((\gt -> enumESMGUfosol_norm_tvar_match v gt mgu) <$> (enum_foterms sig))
+order_enumESMGUfosol_norm_tvar sig x (UTerm t) mgu = fixd
+	where
+		recalg = StateT (\mgu -> withorderprov mempty (\x -> \a -> order_enumESMGUfosol_norm_tvar sig x a mgu)) :: StateT (NESMGU t pd fn v sov) (ProvAlgorithm CQRP (UTerm (t (GroundSOT fn)) v)) (GroundT t fn);
+		traversed = st_algprov_traverse recalg :: StateT (NESMGU t pd fn v sov) (ProvAlgorithm CQRP (t (GroundSOT fn) (UTerm (t (GroundSOT fn)) v))) (t (GroundSOT fn) (GroundT t fn));
+		unstated = runStateT traversed mgu :: ProvAlgorithm CQRP (t (GroundSOT fn) (UTerm (t (GroundSOT fn)) v)) (t (GroundSOT fn) (GroundT t fn),NESMGU t pd fn v sov);
+		run = runorderprov x unstated t :: EnumProc ((t (GroundSOT fn) (GroundT t fn),NESMGU t pd fn v sov) :- CQRP);
+		unprovd = raw <$> run :: EnumProc (t (GroundSOT fn) (GroundT t fn),NESMGU t pd fn v sov);
+		fixd = (\(r,s) -> (Fix (absorb_groundsot_into_groundt r),s)) <$> unprovd
 
 enumESMGUfosol_norm_tvar_match :: ESMGUConstraints t pd fn v sov => v -> GroundT t fn -> (NESMGU t pd fn v sov -> Maybe (GroundT t fn,NESMGU t pd fn v sov))
 enumESMGUfosol_norm_tvar_match v gt mgu = if rchk then (Just (gt,rmgu)) else Nothing where (rchk,rmgu) = match_with_sov_wildcards_fo (SOMetawrap (UVar v)) (somw . inject_groundt $ gt) mgu

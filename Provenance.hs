@@ -8,7 +8,8 @@ module Provenance where
 
 import Control.Exception
 import Data.Semigroup
-import EnumProc
+import Control.Monad.Trans
+import Control.Monad.Morph
 
 -- Provenance information for enumeration procedures
 -- It is implemented as a wrapper to offer useful functions for seamless use without having to worry too much about the provenance and its handling.
@@ -23,7 +24,7 @@ instance (Show t, Show p) => Show (Provenance p t) where
 instance Eq t => Eq (Provenance p t) where
 	(Provenance x1 _) == (Provenance x2 _) = x1 == x2
 
-instance {-# OVERLAPPING #-} Functor (Provenance p) where
+instance Functor (Provenance p) where
 	fmap f (Provenance x p) = Provenance (f x) p
 
 raw :: Provenance p t -> t
@@ -32,6 +33,11 @@ raw (Provenance x _) = x
 (>:) :: t -> p -> Provenance p t
 x >: p = Provenance x p
 infixl 6 >:
+
+-- Short-hand operator for inserting provenance through functors.
+($>:) :: Functor f => f a -> p -> f (a :- p)
+x $>: p = (>: p) <$> x
+infixl 6 $>:
 
 (>>:) :: Semigroup p => Provenance p t -> p -> Provenance p t
 (Provenance x p1) >>: p2 = Provenance x (p1 <> p2)
@@ -44,37 +50,45 @@ infixr 6 >:>
 flatten_provenance :: Semigroup p => Provenance p (Provenance p t) -> Provenance p t
 flatten_provenance (Provenance x p1) = p1 >:> x
 
-type ProvEnumProc p t = EnumProc (Provenance p t)
 
-fflatten_provenance :: (Semigroup p,Functor f) => Provenance p (f (Provenance p t)) -> f (Provenance p t)
-fflatten_provenance (Provenance c p) = fmap ((>:>) p) c
+instance Monoid p => Applicative (Provenance p) where
+	pure x = x >: mempty
+	(Provenance f p1) <*> (Provenance x p2) = (f x) >: (p1 <> p2)
 
-diagonalize_with_prov :: Semigroup p => ProvEnumProc p (ProvEnumProc p t) -> ProvEnumProc p t
-diagonalize_with_prov = diagonalize_enumproc . (fmap fflatten_provenance)
+instance Monoid p => Monad (Provenance p) where
+	return = pure
+	(Provenance x p1) >>= f = p1 >:> (f x)
 
-econcat_with_prov :: Semigroup p => ProvEnumProc p (ProvEnumProc p t) -> ProvEnumProc p t
-econcat_with_prov = es_econcat . (fmap fflatten_provenance)
+instance Foldable (Provenance p) where
+	foldr f z (Provenance x p1) = f x z
+
+instance Traversable (Provenance p) where
+	sequenceA (Provenance x p1) = (pure (>: p1)) <*> x
 
 
--- Apply a function and append to the provenance indicating something
-apply_with_prov :: Semigroup p => (a -> b) -> (a -> p) -> Provenance p a -> Provenance p b
-apply_with_prov f prov (Provenance ax px) = (f ax) >: px >>: (prov ax)
+-- Transformer
+newtype ProvenanceT p m t = ProvenanceT {fromProvenanceT :: m (Provenance p t)}
 
-($:) :: Semigroup p => (a -> Provenance p b) -> Provenance p a -> Provenance p b
-f $: x = flatten_provenance (fmap f x)
-infixl 0 $:
+instance Monoid p => MonadTrans (ProvenanceT p) where
+	lift x = ProvenanceT (x >>= (return . return))
 
--- The standard way to use the above is on functors
-fmap_with_prov :: (Functor f, Semigroup p) => (a -> b) -> (a -> p) -> f (Provenance p a) -> f (Provenance p b)
-fmap_with_prov f prov = fmap (apply_with_prov f prov)
+instance Functor m => Functor (ProvenanceT p m) where
+	fmap f (ProvenanceT x) = ProvenanceT (fmap (fmap f) x)
 
--- Put everything together. Apply the function on all elements in the first enumeration, and introduce provenance information for this operation
-diagonalize_apply_with_prov :: Semigroup p => (a -> ProvEnumProc p b) -> (a -> p) -> ProvEnumProc p a -> ProvEnumProc p b
-diagonalize_apply_with_prov f prov en = econcat_with_prov (fmap_with_prov f prov en)
+instance (Applicative m, Monoid p) => Applicative (ProvenanceT p m) where
+	pure x = ProvenanceT (pure (pure x))
+	(ProvenanceT fs) <*> (ProvenanceT xs) = ProvenanceT (((<*>) <$> fs) <*> xs)
 
-(->:) :: (a -> ProvEnumProc p b) -> (a -> p) -> ((a -> ProvEnumProc p b),(a -> p))
-(->:) = (,)
+instance (Monad m, Monoid p) => Monad (ProvenanceT p m) where
+	return = pure
+	(ProvenanceT a) >>= f = ProvenanceT (a >>= (\(Provenance aa p) -> ((fromProvenanceT . f) aa) >>= (\bp -> return (p >:> bp))))
 
-(>>=:) :: Semigroup p => ProvEnumProc p a -> ((a -> ProvEnumProc p b),(a -> p)) -> ProvEnumProc p b
-e1 >>=: (f,fp) = diagonalize_apply_with_prov f fp e1
-infixl 7 >>=:
+instance Monoid p => MFunctor (ProvenanceT p) where
+	hoist f (ProvenanceT x) = ProvenanceT (f x)
+
+
+
+
+
+
+

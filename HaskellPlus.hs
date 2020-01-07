@@ -58,6 +58,9 @@ fromFlippedBifunctor (FlippedBifunctor x) = x
 instance Bifunctor b => Bifunctor (FlippedBifunctor b) where
 	bimap f g (FlippedBifunctor x) = FlippedBifunctor (bimap g f x)
 
+instance Bifunctor b => Functor (FlippedBifunctor b a) where
+	fmap = bimap id
+
 --instance Bifunctor f => Functor (f t) where
 --	fmap = bimap id
 
@@ -112,13 +115,16 @@ infixl 7 >$>=
 x >*>= fs = ((\f -> (>>= f)) <$> fs) <*> x
 infixl 7 >*>=
 
+-- Warning: This is not general, when the inner function should modify the external monad itself, this won't work. It's only for running monadic computations inside a monad.
+(>>>=) :: (Monad m1, Monad m2) => m1 (m2 a) -> (a -> m2 b) -> m1 (m2 b)
+x >>>= f = x >>= (\st -> return (st >>= f))
+
 type JState s = State s ()
 jstate :: (s -> s) -> JState s
 jstate f = state (\s -> ((),f s))
 
 runJState :: JState s -> s -> s
 runJState st s = snd (runState st s)
-
 
 
 -- Type lists
@@ -300,6 +306,18 @@ type (v := r) = Map v r
 -- So, for example, Functor ~ FuncFunctor, Bifunctor ~ FuncFuncFunctor, a type which has two arguments but is only functorial on the first one would be FuncNonFunctor, etc.
 -- We define them as necessary
 -- (VOID)
+
+
+
+
+-- Careful with this class, it is extremely prone to overlapping instances. Define the ones you specifically want each time, maybe using reusable functions but not instances.
+class Mappable a b ta tb where
+	anymap :: (a -> b) -> ta -> tb
+	-- Known instances:
+	-- Functor f => anymap = fmap	
+
+(<$$>) :: Mappable a b ta tb => (a -> b) -> ta -> tb
+(<$$>) = anymap
 
 
 

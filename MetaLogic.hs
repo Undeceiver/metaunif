@@ -34,6 +34,7 @@ import Data.List
 import QueryLogic
 import CESQLogic
 import ESUnification
+import EnumProc
 
 -- We may use these so we leave them, but these are the old flat meta-variables approach. Check the new second-order approach instead.
 
@@ -54,13 +55,18 @@ instance Read SOMVariable where
 instance HasArity SOMVariable where
 	arity (SOMVar _ a) = a
 
+instance ChangeArity SOMVariable where
+	change_arity (SOMVar idx a) b = SOMVar idx b
+
 -- This instance is potentially problematic due to the arity issue. But we need it because the Unification library for some reason requires variable
+-- Just remember that whenever a second-order variable is extracted from a unifier, we need to re-adjust the arity with respect to the signature.
 instance Variabilizable SOMVariable where 
 	from_var (IntVar x) = SOMVar x 0
 	get_var (SOMVar x _) = IntVar x
 
 instance Variable SOMVariable where
 	getVarID = getVarID_gen
+
 
 type SOMetatermF = SOTerm OFunction SOMVariable
 type SOMetaterm = SOMetawrap CTermF OFunction OVariable SOMVariable

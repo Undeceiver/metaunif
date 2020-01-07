@@ -19,6 +19,7 @@ import Data.Functor.Compose
 import Data.Functor.Identity
 import Control.Monad.Trans.Class
 import HaskellPlus
+import Data.Maybe
 
 -- There are two fundamental assumptions for any instance of the type EnumProc:
 --
@@ -121,7 +122,7 @@ instance Monad EnumProc where
 	return x = single_enum x
 	fail str = Error str
 
--- We may wish to produce monad actions over EnumProcs. This is not the same as a monad transformer, the types do not match. This could be implemented from a monad transformer, but a generic monad transformer cannot be implemented.
+-- We may wish to produce monad actions over EnumProcs. This is not the same as a monad transformer, the types do not match. This could be implemented from a monad transformer, but a generic monad transformer cannot be implemented from this.
 (..>>=) :: Monad m => EnumProc (m a) -> (a -> m b) -> EnumProc (m b)
 (..>>=) = (>$>=)
 infixl 7 ..>>=
@@ -181,6 +182,10 @@ es_efilter f en = en >>= (\x -> (f x) >>= (\y -> if y then (return x) else Empty
 --es_efilter f (Error x) = Error x
 --es_efilter f (Continue x) = Continue (es_efilter f x)
 --es_efilter f (Produce v x) = do {r <- f v; if r then (v --> (es_efilter f x)) else (Continue (es_efilter f x))}
+
+-- A useful case of efilter with Maybe types.
+efilter_mb :: EnumProc (Maybe t) -> EnumProc t
+efilter_mb = (fromJust <$>) . (efilter isJust)
 
 -- This is INTERLEAVING appending, NOT the same as list appending. List appending-kind of computation is provided as an unsafe function uns_append
 (..+) :: EnumProc t -> EnumProc t -> EnumProc t
@@ -831,9 +836,10 @@ apply_each f x = take_each (fmap f x)
 apply_each_constf :: ConstF a (EnumProc b) -> ConstF (EnumProc a) (EnumProc b)
 apply_each_constf f = (Right take_each) .? (constfmap f)
 
+
 -- Wrapper for function type designed to enable lifting constant functions to functors without needing to have the structure of the functor.
 -- Not all instances of ConstF are constant, it just explicitly distinguishes between constant and non-constant behaviour in the type, so that it can be pattern matched against.
-type ConstF a b = Either b  (a -> b)
+type ConstF a b = Either b (a -> b)
 type a ->? b = ConstF a b
 infixr 7 ->?
 
