@@ -43,16 +43,25 @@ import Control.Monad.Morph
 import Algorithm
 import Provenance
 import CESQResolutionProvenance
-
--- Our objectives:
--- type SOMetaterm = SOMetawrap CTermF OFunction OVariable SOMVariable
+import DependencyGraph
 
 -- Heuristics
 esunif_search_heuristic :: Diagonalize
 esunif_search_heuristic = Diagonalize False False 1 1 False
 
 
-data TermDependant t fn v sov uv = TDDirect (SOMetawrap t fn v sov) | TDUnif uv (TermDependant t fn v sov uv)
+data TermDependant t fn v sov uv = TDDirect (SOMetawrap t fn v sov) | TDUnif uv (TermDependant t fn v sov uv) -- deriving (Eq, Ord)
+data SOTermDependant fn sov uv = SOTDDirect (SOTerm fn sov) | SOTDUnif uv (SOTermDependant fn sov uv) -- deriving (Eq, Ord)
+
+instance (Show (t (SOTerm fn sov) (UTerm (t (SOTerm fn sov)) v)), Show uv, Show v, Show fn, Show sov) => Show (TermDependant t fn v sov uv) where
+	show (TDDirect somw) = show somw
+	show (TDUnif uv td) = (show uv) ++ " " ++ (show td)
+
+instance (Show uv, Show fn, Show sov) => Show (SOTermDependant fn sov uv) where
+	show (SOTDDirect sot) = show sot
+	show (SOTDUnif uv td) = (show uv) ++ " " ++ (show td)
+
+
 data UnifEquation t fn v sov uv = TermUnif (TermDependant t fn v sov uv) (TermDependant t fn v sov uv) -- Pending adding atom unification here when we are ready.
 
 type UnifSystem t fn v sov uv = [UnifEquation t fn v sov uv]
@@ -242,7 +251,7 @@ st_match_with_sov_wildcards_so_norm :: ESMGUConstraints t pd fn v sov => SOTerm 
 st_match_with_sov_wildcards_so_norm t1 t2 = state (match_with_sov_wildcards_so_norm t1 t2)
 
 match_with_sov_wildcards_so_norm :: ESMGUConstraints t pd fn v sov => SOTerm fn sov -> SOTerm fn sov -> (NESMGU t pd fn v sov -> (Bool,NESMGU t pd fn v sov))
-match_with_sov_wildcards_so_norm (UVar v) t2 mgu = if (isNothing nmgu) then (False,mgu) else (True,rnmgu) where u = nfounif mgu; soinst = nsoinst mgu; rsoinst = soinst >> ((UVar v) =.= t2); rmgu = ESMGU u rsoinst (nsig mgu); nmgu = normalize_esmgu rmgu; rnmgu = fromJust nmgu
+match_with_sov_wildcards_so_norm (UVar v) t2 mgu = if ((arity v) < (arity t2)) || (isNothing nmgu) then (False,mgu) else (True,rnmgu) where u = nfounif mgu; soinst = nsoinst mgu; rsoinst = soinst >> ((UVar v) =.= t2); rmgu = ESMGU u rsoinst (nsig mgu); nmgu = normalize_esmgu rmgu; rnmgu = fromJust nmgu
 match_with_sov_wildcards_so_norm t1 (UVar v) mgu = match_with_sov_wildcards_so_norm (UVar v) t1 mgu
 match_with_sov_wildcards_so_norm (UTerm (SOF (ConstF f1))) (UTerm (SOF (ConstF f2))) mgu | f1 == f2 = (True,mgu)
 match_with_sov_wildcards_so_norm (UTerm (SOF (Proj i))) (UTerm (SOF (Proj j))) mgu | i == j = (True,mgu)
@@ -416,8 +425,5 @@ solve_single_unif_equation = undefined
 -- A dependency graph is another implicit solution to a system of unification equations (an intermediate one)
 -- instance Implicit **DEPENDENCY GRAPH** (UnifSysSolution t fn v sov uv) where
 
--- Finally, a most general unifier is an almost explicit solution to a system of unification equations.
--- instance Implicit **MOST GENERAL UNIFIERS** (UnifSysSolution t fn v sov uv) where
 
--- Wildcard (as opposed to variable, but we represent them with variables) representation of most general unifiers.
 

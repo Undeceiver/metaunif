@@ -28,6 +28,8 @@ import Data.Graph
 import Control.Lens
 import Control.Applicative
 import Control.Monad.State
+import Control.Monad.ST
+import Data.Functor.Compose
 
 -- Here I put functions/types that I feel should be part of Haskell but aren't. It is likely that at least half of them ACTUALLY are part of Haskell, but I wasn't smart enough to find them.
 
@@ -46,6 +48,40 @@ unshow str = (\_ -> str)
 
 instance Show Preshow where
 	show f = f ()
+
+-- Amazingly, some list utilities.
+-- I've seen this implemented in similar libraries to this one.
+(!!?) :: [a] -> Int -> Maybe a
+[] !!? _ = Nothing
+(x:xs) !!? 0 = Just x
+(x:xs) !!? n = xs !!? (n-1)
+
+-- Why is this not a thing?
+insertAt :: Int -> a -> [a] -> [a]
+insertAt 0 x xs = x:xs
+insertAt n x [] = error "No such position in the list"
+insertAt n x (y:ys) = y:(insertAt (n-1) x ys)
+
+replaceAt :: Int -> a -> [a] -> [a]
+replaceAt 0 x (y:ys) = x:ys
+replaceAt n x [] = error "No such position in the list"
+replaceAt n x (y:ys) = y:(replaceAt (n-1) x ys)
+
+applyBy :: Functor f => (a -> Bool) -> (a -> a) -> f a -> f a
+applyBy p f = fmap (\a -> if (p a) then (f a) else a)
+
+applyAll :: (Eq a, Functor f) => a -> (a -> a) -> f a -> f a
+applyAll a = applyBy (== a)
+
+replaceAll :: (Eq a, Functor f) => a -> a -> f a -> f a
+replaceAll a1 a2 = applyAll a1 (\_ -> a2)
+
+replaceIf :: Eq a => a -> a -> a -> a
+replaceIf a1 a2 = runIdentity . (replaceAll a1 a2) . Identity
+
+-- foldMap with semigroups, with an initial element
+foldMapSG :: (Foldable f, Functor f, Semigroup m) => (a -> m) -> m -> f a -> m
+foldMapSG f i ts = Prelude.foldr (<>) i (f <$> ts)
 
 newtype FlippedFunctor (t :: k) (f :: k -> *) = FlippedFunctor (f t)
 fromFlippedFunctor :: FlippedFunctor t f -> f t
@@ -95,6 +131,7 @@ instance (Eq v, Eq (t (UTerm t v))) => Eq (UTerm t v) where
 	(UVar x) == (UVar y) = x == y
 	(UTerm x) == (UTerm y) = x == y
 	_ == _ = False
+
 
 
 -- Monad utilities
@@ -362,6 +399,93 @@ lens_assocs = lens assocs (\prev -> \new -> fromList new)
 traversal_assocs :: Ord k => Traversal' (Map k v) (k,v)
 traversal_assocs = lens_assocs . traverse
 
+lens_idx :: Int -> Lens' [a] a
+lens_idx _ f [] = error "No such index in the list"
+lens_idx 0 f (x:xs) = fmap (\rx -> rx:xs) (f x)
+lens_idx n f (x:xs) = fmap (\rxs -> x:rxs) (lens_idx (n-1) f xs)
+
+-- Monadic traversals: Traversals that only work with monads, but they allow other things that rely on the fact they only need to work with monads, like sum.
+type MTraversal s t a b = forall m. Monad m => (a -> m b) -> s -> m t
+type MTraversal' s a = MTraversal s s a a
+
+newtype ReifiedMTraversal s t a b = MTraversal {runMTraversal :: MTraversal s t a b}
+type ReifiedMTraversal' s a = ReifiedMTraversal s s a a
+
+-- Adding mtraversals
+add_mtraversals :: Semigroup t => MTraversal r t a b -> MTraversal s r a b -> MTraversal s t a b
+add_mtraversals t1 t2 f s = (t2 f s) >>= (t1 f)
+
+instance Semigroup s => Semigroup (ReifiedMTraversal' s a) where
+	a1 <> a2 = MTraversal (add_mtraversals (runMTraversal a1) (runMTraversal a2))
+
+instance Semigroup s => Monoid (ReifiedMTraversal' s a) where
+	mempty = MTraversal (\_ -> return . id)
+
+newtype MZooming m c a = MZooming { munZooming :: m (c, a) }
+
+instance Monad m => Functor (MZooming m c) where
+  fmap f (MZooming m) = MZooming (liftM (fmap f) m)
+
+instance (Monoid c, Monad m) => Applicative (MZooming m c) where
+  pure a = MZooming (return (mempty, a))
+  MZooming f <*> MZooming x = MZooming $ do
+    (a, f') <- f
+    (b, x') <- x
+    return (a <> b, f' x')
+
+instance (Monoid c, Monad m) => Monad (MZooming m c) where
+	return = pure
+	(MZooming x) >>= f = MZooming $ do
+		(c, a) <- x
+		(d, a') <- munZooming (f a)
+		return (c <> d, a')
+	
+mzoom :: Monad m => LensLike' (MZooming m c) s a -> StateT a m c -> StateT s m c
+mzoom l m = StateT $ munZooming . l (MZooming . (runStateT m))
 
 
 
+-- An order based on creation order.
+-- A pretty naive implementation, that relies on being provided the previous element. In some sense it is a stateful monad, but we do not go as far as treating it that way.
+data CreationOrder t = CO t Int
+fromCO :: CreationOrder t -> t
+fromCO (CO x _) = x
+
+firstCO :: t -> CreationOrder t
+firstCO x = CO x 0
+
+nextCO :: CreationOrder t -> t -> CreationOrder t
+nextCO (CO _ i) x = CO x (i+1)
+
+instance Eq t => Eq (CreationOrder t) where
+	(CO _ x) == (CO _ y) = (x == y)
+
+-- The purpose of this type.
+instance Eq t => Ord (CreationOrder t) where
+	(CO _ i) <= (CO _ j) = (i <= j)
+
+
+
+
+-- My version of ListT, pivoting around traverse
+data TravListT m a = TravListT {runTravListT :: m [a]}
+
+instance Functor m => Functor (TravListT m) where
+	fmap f (TravListT m) = TravListT (fmap (fmap f) m)
+
+instance Applicative m => Applicative (TravListT m) where
+	pure x = TravListT (pure (pure x))
+	(TravListT fs) <*> (TravListT xs) = TravListT (getCompose ((Compose fs) <*> Compose xs))
+
+instance Monad m => Monad (TravListT m) where
+	return = pure
+	(TravListT ma) >>= f = TravListT (ma >>= (\l -> (concat <$> (traverse (runTravListT . f) l))))
+
+instance MonadTrans TravListT where
+	lift m = TravListT (return <$> m)
+
+
+-- Proof of lawfulness of the transformation.
+--lift (m >>= f) = TravListT (return <$> (m >>= f)) = TravListT (fmap (\a -> [a]) (m >>= f)) = TravListT (onsingleton (m >>= f))
+
+--lift m >>= (lift . f) = (TravListT (return <$> m)) >>= (\m2 -> TravListT (return <$> (f m2))) = TravListT ((return <$> m) >>= (\l -> (concat <$> (traverse (runTravListT . (\m2 -> TravListT (return <$> (f m2)))) l)))) = TravListT ((return <$> m) >>= (\l -> (concat <$> (traverse (\m2 -> return <$> (f m2)) l)))) = TravListT ((onsingleton m) >>= (\l -> (concat <$> (traverse (\m2 -> onsingleton (f m2)) l)))) = TravListT ((onsingleton m) >>= (\[a] -> (concat <$> (traverse (\m2 -> onsingleton (f m2)) [a])))) = TravListT ((onsingleton m) >>= (\[a] -> (concat <$> (onsingleton (onsingleton (f a)))))) = TravListT ((onsingleton m) >>= (\[a] -> onsingleton (f a))) = TravListT (onsingleton (m >>= f))

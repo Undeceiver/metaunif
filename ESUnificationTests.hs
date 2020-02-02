@@ -664,6 +664,68 @@ implicit_tests7 :: String
 implicit_tests7 = combine_test_results [implicit7_t1,implicit7_t2,implicit7_t3,implicit7_t4,implicit7_t5,implicit7_t6,implicit7_t7,implicit7_t8,implicit7_t9,implicit7_t10,implicit7_t11,implicit7_t12,implicit7_t17,implicit7_t18]
 
 
+implicit_eq8_1 :: JState SOMetaMGU
+implicit_eq8_1 = (read "x0") >:= (read "F2[1](f1[0]())")
+
+implicit_mgu8 :: SOMetaMGU
+implicit_mgu8 = runESMGU implicit_sig1 (implicit_eq8_1)
+
+implicit_nmgu8 :: SOMetaNMGU
+implicit_nmgu8 = fromJust (normalize_esmgu implicit_mgu8)
+
+implicit_sols8 :: EnumProc (SOMetaUnifSol :- CQRP)
+implicit_sols8 = fromProvenanceT (nesmgu_enumImplicit implicit_nmgu8)
+
+implicit_lsols8 :: EnumProc (SOMetaUnifSol :- CQRP)
+implicit_lsols8 = etake implicit_scale3 implicit_sols8
+
+implicit_rsols8 :: EnumProc SOMetaUnifSol
+implicit_rsols8 = raw <$> implicit_lsols8
+
+-- We only check implicitly for this one, as it is quite complex instantiations that explicitly would take long to appear.
+implicit8_t1 :: AutomatedTest
+implicit8_t1 = check_sol_implicit "Verifying the implicit representation of {x0 -> f3[2](f1[0](),f1[0]()), F2[1] -> f3[2]{pi0,pi0}}"
+		(UnifSolution (fromList [(read "x0",read "f3[2](f1[0](),f1[0]())")]) (fromList [(read "F2[1]",read "f3[2]{pi0,pi0}")]))
+		implicit_nmgu8
+
+implicit8_t2 :: AutomatedTest
+implicit8_t2 = check_sol_implicit "Verifying the implicit representation of {x0 -> f3[2](f1[0](),f1[0]()), F2[1] -> f3[2]{pi0,f1[0]}}"
+		(UnifSolution (fromList [(read "x0",read "f3[2](f1[0](),f1[0]())")]) (fromList [(read "F2[1]",read "f3[2]{pi0,f1[0]}")]))
+		implicit_nmgu8
+
+implicit8_t3 :: AutomatedTest
+implicit8_t3 = check_sol_implicit "Verifying the implicit representation of {x0 -> f3[2](f2[1](f1[0]()),f2[1](f1[0]())), F2[1] -> f3[2]{f2[1]{pi0},f2[1]{pi0}}}"
+		(UnifSolution (fromList [(read "x0",read "f3[2](f2[1](f1[0]()),f2[1](f1[0]()))")]) (fromList [(read "F2[1]",read "f3[2]{f2[1]{pi0},f2[1]{pi0}}")]))
+		implicit_nmgu8
+
+implicit8_t4 :: AutomatedTest
+implicit8_t4 = check_sol_implicit "Verifying the implicit representation of {x0 -> f3[2](f2[1](f1[0]()),f1[0]()), F2[1] -> f3[2]{f2[1]{f1[0]},pi0}}"
+		(UnifSolution (fromList [(read "x0",read "f3[2](f2[1](f1[0]()),f1[0]())")]) (fromList [(read "F2[1]",read "f3[2]{f2[1]{f1[0]},pi0}")]))
+		implicit_nmgu8
+
+implicit8_t5 :: AutomatedTest
+implicit8_t5 = check_not_sol_implicit "Verifying the implicit non-representation of {x0 -> f3[2](f2[1](f1[0]()),f1[0]()), F2[1] -> f3[2]{pi0,pi0}}"
+		(UnifSolution (fromList [(read "x0",read "f3[2](f2[1](f1[0]()),f1[0]())")]) (fromList [(read "F2[1]",read "f3[2]{pi0,pi0}")]))
+		implicit_nmgu8
+
+-- What if we don't give it the hint of what the second-order instantiation might look like, so that it needs to infer composite instantiations for them. This will fail in not-so-naive implementations.
+implicit8_t6 :: AutomatedTest
+implicit8_t6 = check_sol_implicit "Verifying the implicit representation of {x0 -> f3[2](f1[0](),f1[0]())}"
+		(UnifSolution (fromList [(read "x0",read "f3[2](f1[0](),f1[0]())")]) (fromList []))
+		implicit_nmgu8
+
+implicit8_t7 :: AutomatedTest
+implicit8_t7 = check_sol_implicit "Verifying the implicit representation of {x0 -> f3[2](f2[1](f1[0]()),f1[0]())}"
+		(UnifSolution (fromList [(read "x0",read "f3[2](f2[1](f1[0]()),f1[0]())")]) (fromList []))
+		implicit_nmgu8
+
+
+
+implicit_tests8 :: String
+implicit_tests8 = combine_test_results [implicit8_t1,implicit8_t2,implicit8_t3,implicit8_t4,implicit8_t5,implicit8_t6,implicit8_t7]
+
+
+
 
 implicit_test :: IO ()
 implicit_test = putStr "EXAMPLE 1\n\n" >> putStr implicit_tests1 >>
@@ -672,4 +734,5 @@ implicit_test = putStr "EXAMPLE 1\n\n" >> putStr implicit_tests1 >>
 		putStr "EXAMPLE 4\n\n" >> putStr implicit_tests4 >>
 		putStr "EXAMPLE 5\n\n" >> putStr implicit_tests5 >>
 		putStr "EXAMPLE 6\n\n" >> putStr implicit_tests6 >>
-		putStr "EXAMPLE 7\n\n" >> putStr implicit_tests7
+		putStr "EXAMPLE 7\n\n" >> putStr implicit_tests7 >>
+		putStr "EXAMPLE 8\n\n" >> putStr implicit_tests8

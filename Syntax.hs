@@ -508,6 +508,9 @@ instance (Show v, Show (t (SOTerm fn mv) (UTerm (t (SOTerm fn mv)) v))) => Show 
 	show (SOMetawrap x) = show x
 
 deriving instance Eq (UTerm (t (SOTerm fn mv)) v) => Eq (SOMetawrap t fn v mv)
+
+instance (Eq v, Eq (t fn (UTerm (t fn) v)), Ord fn, Ord v, SimpleTerm t) => Ord (UTerm (t fn) v)
+	
 	
 -- Remove all second-order structure and dump it into the first-order structure.
 instance (HasArity fn, HasArity mv, SimpleTerm t) => Normalizable (SOMetawrap t fn v mv) (SOMetawrap t fn v mv) where
