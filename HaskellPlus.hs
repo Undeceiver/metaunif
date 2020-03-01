@@ -79,6 +79,18 @@ replaceAll a1 a2 = applyAll a1 (\_ -> a2)
 replaceIf :: Eq a => a -> a -> a -> a
 replaceIf a1 a2 = runIdentity . (replaceAll a1 a2) . Identity
 
+deleteAllBy :: (a -> Bool) -> [a] -> [a]
+deleteAllBy p [] = []
+deleteAllBy p (x:xs) | p x = deleteAllBy p xs
+deleteAllBy p (x:xs) = x:(deleteAllBy p xs)
+
+deleteAll :: Eq a => a -> [a] -> [a]
+deleteAll a = deleteAllBy (== a)
+
+append_to_mblist :: Maybe [a] -> [a] -> [a]
+append_to_mblist Nothing x = x
+append_to_mblist (Just x) y = x ++ y
+
 -- foldMap with semigroups, with an initial element
 foldMapSG :: (Foldable f, Functor f, Semigroup m) => (a -> m) -> m -> f a -> m
 foldMapSG f i ts = Prelude.foldr (<>) i (f <$> ts)
@@ -376,6 +388,11 @@ mcompose_with_bool r1 r2 = r1 >>= (\v -> if v then r2 else (return False))
 (>>=&) = mcompose_with_bool
 infixl 1 >>=&
 
+-- An or version, and also one which always runs monadic elements. It composes monadically, and returns the or of both bools.
+(|>>=) :: Monad m => m Bool -> m Bool -> m Bool
+m1 |>>= m2 = do {r1 <- m1; r2 <- m2; return (r1 || r2)}
+infixl 1 |>>=
+
 
 
 
@@ -489,3 +506,10 @@ instance MonadTrans TravListT where
 --lift (m >>= f) = TravListT (return <$> (m >>= f)) = TravListT (fmap (\a -> [a]) (m >>= f)) = TravListT (onsingleton (m >>= f))
 
 --lift m >>= (lift . f) = (TravListT (return <$> m)) >>= (\m2 -> TravListT (return <$> (f m2))) = TravListT ((return <$> m) >>= (\l -> (concat <$> (traverse (runTravListT . (\m2 -> TravListT (return <$> (f m2)))) l)))) = TravListT ((return <$> m) >>= (\l -> (concat <$> (traverse (\m2 -> return <$> (f m2)) l)))) = TravListT ((onsingleton m) >>= (\l -> (concat <$> (traverse (\m2 -> onsingleton (f m2)) l)))) = TravListT ((onsingleton m) >>= (\[a] -> (concat <$> (traverse (\m2 -> onsingleton (f m2)) [a])))) = TravListT ((onsingleton m) >>= (\[a] -> (concat <$> (onsingleton (onsingleton (f a)))))) = TravListT ((onsingleton m) >>= (\[a] -> onsingleton (f a))) = TravListT (onsingleton (m >>= f))
+
+
+
+
+
+
+

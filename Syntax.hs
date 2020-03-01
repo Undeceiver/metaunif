@@ -223,8 +223,8 @@ fntraversal :: SimpleTerm t => Control.Lens.Traversal (UTerm (t fn) v) (UTerm (t
 fntraversal = fntraverse
 
 -- ConstF indicates a function corresponding to a constant SYMBOL of second order (but the function is not constant in any way).
-data SOTermPF fn p f = ConstF fn | Proj Int | CompF p [f] deriving Eq
-newtype SOTermF fn f = SOF (SOTermPF fn f f) deriving Eq
+data SOTermPF fn p f = ConstF fn | Proj Int | CompF p [f] deriving (Eq, Ord)
+newtype SOTermF fn f = SOF (SOTermPF fn f f) deriving (Eq, Ord)
 
 instance Bifunctor (SOTermPF fn) where
 	bimap f g (ConstF fn) = ConstF fn
@@ -507,9 +507,11 @@ absorb_groundsot_into_groundt_norm (SOMetawrap (UTerm t)) = build_term rh rargs	
 instance (Show v, Show (t (SOTerm fn mv) (UTerm (t (SOTerm fn mv)) v))) => Show (SOMetawrap t fn v mv) where
 	show (SOMetawrap x) = show x
 
-deriving instance Eq (UTerm (t (SOTerm fn mv)) v) => Eq (SOMetawrap t fn v mv)
+deriving instance (Eq v, Eq (t (SOTerm fn mv) (UTerm (t (SOTerm fn mv)) v))) => Eq (SOMetawrap t fn v mv)
 
-instance (Eq v, Eq (t fn (UTerm (t fn) v)), Ord fn, Ord v, SimpleTerm t) => Ord (UTerm (t fn) v)
+deriving instance (Eq v, Eq (t fn (UTerm (t fn) v)), Ord fn, Ord v, Ord (t fn (UTerm (t fn) v))) => Ord (UTerm (t fn) v)
+
+deriving instance (Eq v, Eq (t (SOTerm fn mv) (UTerm (t (SOTerm fn mv)) v)), Ord fn, Ord v, Ord mv, Ord (t (SOTerm fn mv) (UTerm (t (SOTerm fn mv)) v))) => Ord (SOMetawrap t fn v mv)
 	
 	
 -- Remove all second-order structure and dump it into the first-order structure.

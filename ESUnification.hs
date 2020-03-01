@@ -14,6 +14,8 @@
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE PolyKinds #-}
 -- Existential second-order unification (with instantiation set results, performing batch unification (multiple unifiers and equations at once))
 module ESUnification where
 
@@ -44,22 +46,34 @@ import Algorithm
 import Provenance
 import CESQResolutionProvenance
 import DependencyGraph
+import Identifier
+import Control.Monad.ST
+import Operable
+import Data.Tuple
+
 
 -- Heuristics
 esunif_search_heuristic :: Diagonalize
 esunif_search_heuristic = Diagonalize False False 1 1 False
 
 
-data TermDependant t fn v sov uv = TDDirect (SOMetawrap t fn v sov) | TDUnif uv (TermDependant t fn v sov uv) -- deriving (Eq, Ord)
-data SOTermDependant fn sov uv = SOTDDirect (SOTerm fn sov) | SOTDUnif uv (SOTermDependant fn sov uv) -- deriving (Eq, Ord)
+data TermDependant t fn v sov uv = TDDirect (SOMetawrap t fn v sov) | TDUnif uv (TermDependant t fn v sov uv)
+-- This one makes no sense. Second order terms always appear free of unifiers, since they do not affect them directly.
+--data SOTermDependant fn sov uv = SOTDDirect (SOTerm fn sov) | SOTDUnif uv (SOTermDependant fn sov uv)
 
 instance (Show (t (SOTerm fn sov) (UTerm (t (SOTerm fn sov)) v)), Show uv, Show v, Show fn, Show sov) => Show (TermDependant t fn v sov uv) where
 	show (TDDirect somw) = show somw
 	show (TDUnif uv td) = (show uv) ++ " " ++ (show td)
 
-instance (Show uv, Show fn, Show sov) => Show (SOTermDependant fn sov uv) where
-	show (SOTDDirect sot) = show sot
-	show (SOTDUnif uv td) = (show uv) ++ " " ++ (show td)
+--instance (Show uv, Show fn, Show sov) => Show (SOTermDependant fn sov uv) where
+--	show (SOTDDirect sot) = show sot
+--	show (SOTDUnif uv td) = (show uv) ++ " " ++ (show td)
+
+deriving instance (Eq v, Eq (t (SOTerm fn sov) (UTerm (t (SOTerm fn sov)) v)), Eq sov, Eq uv) => Eq (TermDependant t fn v sov uv)
+deriving instance (Ord v, Ord (t (SOTerm fn sov) (UTerm (t (SOTerm fn sov)) v)), Ord fn, Ord sov, Ord uv) => Ord (TermDependant t fn v sov uv)
+
+--deriving instance (Eq sov, Eq uv, Eq fn) => Eq (SOTermDependant fn sov uv)
+deriving instance (Ord fn, Ord sov, Ord uv) => Ord (SOTermDependant fn sov uv)
 
 
 data UnifEquation t fn v sov uv = TermUnif (TermDependant t fn v sov uv) (TermDependant t fn v sov uv) -- Pending adding atom unification here when we are ready.
@@ -261,8 +275,9 @@ match_with_sov_wildcards_so_norm _ _ mgu = (False,mgu)
 
 
 
-type ESMGUConstraints t pd fn v sov = (Ord sov, SimpleTerm t, Eq fn, HasArity fn, HasArity sov, ChangeArity sov, Functor (t (SOTerm fn sov)), Functor (t fn), Bifunctor t, Traversable (t (GroundSOT fn)), Unifiable (t (SOTerm fn sov)), Variabilizable v, Variable v, Variabilizable sov, Variable sov, Ord v, Functor (t (GroundSOT fn)), Eq (t fn (Fix (t fn))), Show sov, Show fn, Show v, Show (t (SOTerm fn sov) (UTerm (t (SOTerm fn sov)) v)), Show (t (GroundSOT fn) (UTerm (t (GroundSOT fn)) v)))
+type ESMGUConstraints t pd fn v sov = (Ord sov, SimpleTerm t, Eq fn, HasArity fn, HasArity sov, ChangeArity sov, Functor (t (SOTerm fn sov)), Functor (t fn), Bifunctor t, Traversable (t (GroundSOT fn)), Unifiable (t (SOTerm fn sov)), Variabilizable v, Variable v, Variabilizable sov, Variable sov, Ord v, Functor (t (GroundSOT fn)), Eq (t fn (Fix (t fn))), Show sov, Show fn, Show v, Show (t (SOTerm fn sov) (UTerm (t (SOTerm fn sov)) v)), Show (t (GroundSOT fn) (UTerm (t (GroundSOT fn)) v)), Ord fn, Ord (t (SOTerm fn sov) (UTerm (t (SOTerm fn sov)) v)))
 type SOFESMGUConstraints fn sov = (Ord sov, Eq fn, HasArity fn, HasArity sov)
+
 
 -- NOTE: Should change the exception to DUFailure when I add atoms. It should be fairly simple by using with_lowfailure.
 instance ESMGUConstraints t pd fn v sov => Normalizable (AnswerSet (ESMGU t pd fn v sov) (UnifSolution t fn v sov)) (AnswerSet (NESMGU t pd fn v sov) (UnifSolution t fn v sov)) where
@@ -425,5 +440,159 @@ solve_single_unif_equation = undefined
 -- A dependency graph is another implicit solution to a system of unification equations (an intermediate one)
 -- instance Implicit **DEPENDENCY GRAPH** (UnifSysSolution t fn v sov uv) where
 
+-- We work with a clear mapping between levels and unifier variables. This makes things a lot easier.
+class LevelledUnifierVariables uv where
+	uvlevel :: uv -> Int
+	getuv :: Int -> uv
 
+type ESMGUConstraintsU t pd fn v sov uv = (ESMGUConstraints t pd fn v sov, Ord uv, LevelledUnifierVariables uv)
+
+type ESUnifDGraph s t fn v sov uv = EqDGraph s (TermDependant t fn v sov uv) (SOTerm fn sov)
+type ESUnifRelFoId s t fn v sov uv = EqDGRelFoId s (TermDependant t fn v sov uv) (SOTerm fn sov)
+type ESUnifRelSoId s t fn v sov uv = EqDGRelSoId s (TermDependant t fn v sov uv) (SOTerm fn sov)
+data ESUnifVFoEdge s t fn v sov uv = ESUnifVFoEdge {esunifvfoedge_source :: ESUnifRelFoId s t fn v sov uv, esunifvfoedge_target :: ESUnifRelFoId s t fn v sov uv}
+
+eqUnifVFoEdge :: ESUnifVFoEdge s t fn v sov uv -> ESUnifVFoEdge s t fn v sov uv -> StateT (ESUnifDGraph s t fn v sov uv) (ST s) Bool
+eqUnifVFoEdge e1 e2 = (eqSTRelativeIds s1 s2) >>= (\v1 -> if v1 then (eqSTRelativeIds t1 t2)) else (return False)) where s1 = esunifvfoedge_source e1; t1 = esunifvfoedge_target e1; s2 = esunifvfoedge_source e2; t2 = esunifvfoedge_target e2
+
+-- Dealing with vertical edges
+-- We could check here that the levels match. We do not do it for now it would imply an overhead that is probably not worth it.
+-- The edge is added anyway. If it already existed, this is a mistake, but it should be dealt with at a higher level.
+addVFoEdge :: ESUnifLRelFoId s t fn v sov uv -> ESUnifLRelFoId s t fn v sov uv -> StateT (ESUnifDGraph s t fn v sov uv) (ST s) ()
+addVFoEdge s t = StateT (f_addVFoEdge s t)
+
+f_addVFoEdge :: ESUnifLRelFoId s t fn v sov uv -> ESUnifLRelFoId s t fn v sov uv -> (ESUnifDGraph s t fn v sov uv -> ST s ((), ESUnifDGraph s t fn v sov uv))
+f_addVFoEdge s t esudg = return ((), lens_esunifdgraph_vfoedges ..~ ((ESUnifVFoEdge s t):) $ esudg)
+
+addVSoEdge :: ESUnifLRelSoId s t fn v sov uv -> ESUnifLRelSoId s t fn v sov uv -> StateT (ESUnifDGraph s t fn v sov uv) (ST s) ()
+addVSoEdge s t = StateT (f_addVSoEdge s t)
+
+f_addVSoEdge :: ESUnifLRelSoId s t fn v sov uv -> ESUnifLRelSoId s t fn v sov uv -> (ESUnifDGraph s t fn v sov uv -> ST s ((), ESUnifDGraph s t fn v sov uv))
+f_addVSoEdge s t esudg = return ((), lens_esunifdgraph_vsoedges ..~ ((ESUnifVSoEdge s t):) $ esudg)
+
+-- When we delete, we delete all copies of that edge. There should only really be one, but you can never be safe enough.
+deleteVFoEdge :: ESUnifLRelFoId s t fn v sov uv -> ESUnifLRelFoId s t fn v sov uv -> StateT (ESUnifDGraph s t fn v sov uv) (ST s) ()
+deleteVFoEdge s t = StateT (f_deleteVFoEdge s t)
+
+f_deleteVFoEdge :: ESUnifLRelFoId s t fn v sov uv -> ESUnifLRelFoId s t fn v sov uv -> (ESUnifDGraph s t fn v sov uv -> ST s ((),ESUnifDGraph s t fn v sov uv))
+f_deleteVFoEdge s t esudg = tocombine <$> (runStateT st_res esudg) where fe = ESUnifVFoEdge s t; es = esunifdgraph_vfoedges esudg; tofold = (\e -> \rstes -> rstes >>= (\res -> (\rb -> if rb then res else (e:res)) <$> (eqUnifVFoEdge e fe))); st_res = Prelude.foldr tofold (return []) es; tocombine = (\(rres,resudg) -> ((),lens_esunifdgraph_vfoedges .~ rres $ resudg))
+
+deleteVSoEdge :: ESUnifLRelSoId s t fn v sov uv -> ESUnifLRelSoId s t fn v sov uv -> StateT (ESUnifDGraph s t fn v sov uv) (ST s) ()
+deleteVSoEdge s t = StateT (f_deleteVSoEdge s t)
+
+f_deleteVSoEdge :: ESUnifLRelSoId s t fn v sov uv -> ESUnifLRelSoId s t fn v sov uv -> (ESUnifDGraph s t fn v sov uv -> ST s ((),ESUnifDGraph s t fn v sov uv))
+f_deleteVSoEdge s t esudg = tocombine <$> (runStateT st_res esudg) where fe = ESUnifVSoEdge s t; es = esunifdgraph_vsoedges esudg; tofold = (\e -> \rstes -> rstes >>= (\res -> (\rb -> if rb then res else (e:res)) <$> (eqUnifVSoEdge e fe))); st_res = Prelude.foldr tofold (return []) es; tocombine = (\(rres,resudg) -> ((),lens_esunifdgraph_vsoedges .~ rres $ resudg))
+
+
+-- Check if a vertical edge exists.
+checkVFoEdge :: ESUnifLRelFoId s t fn v sov uv -> ESUnifLRelFoId s t fn v sov uv -> StateT (ESUnifDGraph s t fn v sov uv) (ST s) Bool
+checkVFoEdge s t = StateT (f_checkVFoEdge s t)
+
+f_checkVFoEdge :: ESUnifLRelFoId s t fn v sov uv -> ESUnifLRelFoId s t fn v sov uv -> (ESUnifDGraph s t fn v sov uv -> ST s (Bool,ESUnifDGraph s t fn v sov uv))
+f_checkVFoEdge s t esudg = runStateT st_rb esudg where fe = ESUnifVFoEdge s t; es = esunifdgraph_vfoedges esudg; tofold = (\e -> \rstb -> rstb >>= (\rb -> if rb then (return True) else (eqUnifVFoEdge e fe))); st_rb = Prelude.foldr tofold (return False) es
+
+checkVSoEdge :: ESUnifLRelSoId s t fn v sov uv -> ESUnifLRelSoId s t fn v sov uv -> StateT (ESUnifDGraph s t fn v sov uv) (ST s) Bool
+checkVSoEdge s t = StateT (f_checkVSoEdge s t)
+
+f_checkVSoEdge :: ESUnifLRelSoId s t fn v sov uv -> ESUnifLRelSoId s t fn v sov uv -> (ESUnifDGraph s t fn v sov uv -> ST s (Bool,ESUnifDGraph s t fn v sov uv))
+f_checkVSoEdge s t esudg = runStateT st_rb esudg where fe = ESUnifVSoEdge s t; es = esunifdgraph_vsoedges esudg; tofold = (\e -> \rstb -> rstb >>= (\rb -> if rb then (return True) else (eqUnifVSoEdge e fe))); st_rb = Prelude.foldr tofold (return False) es
+
+
+-- We assume and ensure that a vertical edge is always between two dependants only one unifier variable in difference, and use the mapping of uvs to levels to work with it
+factorizeVFoEdge :: ESMGUConstraintsU t pd fn v sov uv => ESUnifVFoEdge s t fn v sov uv -> uv
+factorizeVFoEdge e = getuv (esuniflrelfoid_level (esunifvfoedge_target e))
+
+factorizeVSoEdge :: ESMGUConstraintsU t pd fn v sov uv => ESUnifVSoEdge s t fn v sov uv -> uv
+factorizeVSoEdge e = getuv (esuniflrelsoid_level (esunifvsoedge_target e))
+
+divideOverVFoEdge :: ESMGUConstraintsU t pd fn v sov uv => ESUnifVFoEdge s t fn v sov uv -> ESUnifRelFoId s t fn v sov uv -> StateT (ESUnifDGraph s t fn v sov uv) (ST s) (ESUnifRelFoId s t fn v sov uv)
+divideOverVFoEdge e sid = do {std <- mzoom (lens_esunifdgraph_levels . (lens_idx slevel)) (getSTRelativeCoId sid); return (relbwEqDGFoId (TDUnif uv std))} where uv = factorizeVFoEdge e; tlevel = uvlevel uv; slevel = esuniflrelfoid_level (esunifvfoedge_source e)
+
+divideOverVSoEdge :: ESMGUConstraintsU t pd fn v sov uv => ESUnifVSoEdge s t fn v sov uv -> ESUnifRelSoId s t fn v sov uv -> StateT (ESUnifDGraph s t fn v sov uv) (ST s) (ESUnifRelSoId s t fn v sov uv)
+divideOverVSoEdge e sid = do {std <- mzoom (lens_esunifdgraph_levels . (lens_idx slevel)) (getSTRelativeCoId sid); return (relbwEqDGSoId (SOTDUnif uv std))} where uv = factorizeVSoEdge e; tlevel = uvlevel uv; slevel = esuniflrelsoid_level (esunifvsoedge_source e)
+
+
+-- Normalization levels for unification dependency graphs
+-- We do these through constant values and dynamic checks instead of types because then we can do an operation type for all of them and simply dynamically check that it all works adequately. It is a layer of safety during runtime to detect bugs, not really a static guarantee. This is a conscious choice that I make.
+data ESUnifDGNormLevel = ESUNone | ESUParallel | ESUSimple | ESUSemiNormal | ESUQuasiNormal | ESUNormal deriving (Eq, Show)
+
+instance Ord ESUnifDGNormLevel where
+	n1 <= n2 = (esudgnorm_prio n1 <= esudgnorm_prio n2)
+
+esudgnorm_prio :: ESUnifDGNormLevel -> Int
+esudgnorm_prio ESUNone = 0
+esudgnorm_prio ESUParallel = 1
+esudgnorm_prio ESUSimple = 2
+esudgnorm_prio ESUSemiNormal = 3
+esudgnorm_prio ESUQuasiNormal = 4
+esudgnorm_prio ESUNormal = 5
+
+data ESUnifNDGraph s t fn v sov uv = ESUnifNDGraph {norm_level :: ESUnifDGNormLevel, fromESUnifNDGraph :: ESUnifDGraph s t fn v sov uv}
+
+-- The function on the actual graph, with an added result indicating the normal type produced, then the normal type that it needs to have.
+-- Throws a runtime error when the normal type is not present.
+--normcheck_op :: (ESUnifDGNormLevel -> ESUnifDGraph s t fn v sov uv -> (ESUnifDGraph s t fn v sov uv, ESUnifDGNormLevel)) -> ESUnifDGNormLevel -> ESUnifNDGraph s t fn v sov uv -> ESUnifNDGraph s t fn v sov uv
+normcheck_op :: (ESUnifDGNormLevel -> StateT (ESUnifDGraph s t fn v sov uv) (ST s) ESUnifDGNormLevel) -> ESUnifDGNormLevel -> StateT (ESUnifNDGraph s t fn v sov uv) (ST s) ()
+normcheck_op f min = StateT (f_normcheck_op f min)
+
+f_normcheck_op :: (ESUnifDGNormLevel -> StateT (ESUnifDGraph s t fn v sov uv) (ST s) ESUnifDGNormLevel) -> ESUnifDGNormLevel -> (ESUnifNDGraph s t fn v sov uv -> ST s ((),ESUnifNDGraph s t fn v sov uv))
+f_normcheck_op f min esundg | norm_level esundg < min = error ("Trying to apply an operation with minimum normal level " ++ (show min) ++ " on a graph with normal level only " ++ (show (norm_level esundg)) ++ ".\n\n")
+f_normcheck_op f min esundg = do {(resn,resudg) <- runStateT (f (norm_level esundg)) (fromESUnifNDGraph esundg); return ((),ESUnifNDGraph resn resudg)}
+
+-- Operation types for unification dependency graphs
+-- We have two levels of operations.
+-- The low level ones work directly on the graph itself and are for propagating changes until everything that needs to be done is done, in a relatively efficient manner. These are formalized with the Operable types.
+-- The high level ones work on a graph with a normalization level and are for expressing things that we do when working with a dependency graph representation of a unification system. These are not formalized with the Operable types, and simply are a set of functions that can be used to navigate these normal types in different ways.
+
+data ESUnifDGOp (s :: *) (t :: * -> * -> *) (fn :: *) (v :: *) (sov :: *) (uv :: *) = ESUVCommuteFo (ESUnifVFoEdge s t fn v sov uv) | ESUVCommuteSo (ESUnifVSoEdge s t fn v sov uv)
+
+instance Eq (ESUnifDGOp s t fn v sov uv) where
+	op1 == op2 = esunifdg_prio op1 == esunifdg_prio op2
+
+instance Ord (ESUnifDGOp s t fn v sov uv) where
+	op1 <= op2 | esunifdg_prio op1 < esunifdg_prio op2 = True
+	op1 <= op2 | esunifdg_prio op2 < esunifdg_prio op1 = False
+	-- Default case for operations with no further comparisons.
+	op1 <= op2 = True
+
+esunifdg_prio :: (ESUnifDGOp s t fn v sov uv) -> Int
+esunifdg_prio (ESUVCommuteFo _) = 100
+esunifdg_prio (ESUVCommuteSo _) = 0
+
+instance ESMGUConstraintsU t pd fn v sov uv => StateTOperation (ST s) (ESUnifDGOp s t fn v sov uv) (ESUnifDGraph s t fn v sov uv) where
+	runStateTOp (ESUVCommuteFo foe) = undefined
+	runStateTOp (ESUVCommuteSo soe) = esu_vertical_commute_so_edge soe
+
+do_esu_vertical_commute :: ESMGUConstraintsU t pd fn v sov uv => StateT (ESUnifNDGraph s t fn v sov uv) (ST s) ()
+do_esu_vertical_commute = normcheck_op esu_vertical_commute ESUNone
+
+esu_vertical_commute :: ESMGUConstraintsU t pd fn v sov uv => ESUnifDGNormLevel -> StateT (ESUnifDGraph s t fn v sov uv) (ST s) ESUnifDGNormLevel
+esu_vertical_commute nl = StateT (f_esu_vertical_commute nl)
+
+f_esu_vertical_commute :: ESMGUConstraintsU t pd fn v sov uv => ESUnifDGNormLevel -> (ESUnifDGraph s t fn v sov uv -> ST s (ESUnifDGNormLevel,ESUnifDGraph s t fn v sov uv))
+f_esu_vertical_commute nl esundg = do {((),esundg1) <- runStateT esu_vertical_commute_so esundg; ((),esundg2) <- runStateT esu_vertical_commute_fo esundg1; let {resnl = if (nl > ESUParallel) then nl else ESUParallel}; return (resnl,esundg2)} 
+
+esu_vertical_commute_so :: ESMGUConstraintsU t pd fn v sov uv => StateT (ESUnifDGraph s t fn v sov uv) (ST s) ()
+esu_vertical_commute_so = (StateT (\esudg -> runStateT (runStateTOps (Prelude.map ESUVCommuteSo (esunifdgraph_vsoedges esudg))) esudg)) >> (return ())
+
+esu_vertical_commute_so_edge :: ESMGUConstraintsU t pd fn v sov uv => ESUnifVSoEdge s t fn v sov uv -> StateT (ESUnifDGraph s t fn v sov uv) (ST s) [ESUnifDGOp s t fn v sov uv]
+esu_vertical_commute_so_edge e = do
+	{
+		let {s = esunifvsoedge_source e; t = esunifvsoedge_target e};
+		let {sl = esuniflrelsoid_level s; tl = esuniflrelsoid_level t};
+		let {sid = esuniflrelsoid_id s; tid = esuniflrelsoid_id t};
+		sines <- mzoom (lens_esunifdgraph_levels . (lens_idx sl)) (st_searchInEqDGSOEdges [] [] sid);
+		tines <- mzoom (lens_esunifdgraph_levels . (lens_idx tl)) (st_searchInEqDGSOEdges [] [] tid);
+		undefined
+	}
+
+-- Check if a specific horizontal edge that has the source node of the vertical edge as a target has a corresponding one with the target of the vertical edge as a target, and if it does not, then create it.
+-- Arguments: Level of the source (of the v. edge), source of the edge at the source, target of the edge at the source, level of the target, target of the edge at the target, list of potential edges at the target (incoming to the target at the target)
+esu_vertical_commute_so_edge_hedge :: ESMGUConstraintsU t pd fn v sov uv => Int -> ESUnifRelSoId s t fn v sov uv -> ESUnifRelSoId s t fn v sov uv -> Int -> ESUnifRelSoId s t fn v sov uv -> [Int] -> StateT (ESUnifDGraph s t fn v sov uv) (ST s) [ESUnifDGOp s t fn v sov uv]
+esu_vertical_commute_so_edge_hedge sl ss st tl tt [] = do {ts <- divideOverVSoEdge e ss; let {lts = ESUnifLRelSoId (tl ts)}; addVSoEdge lss lts;  where lss = ESUnifLRelSoId (sl ss); lst = ESUnifLRelSoId (sl st); ltt = ESUnifLRelSoId (tl tt); e = ESUnifVSoEdge lst ltt
+
+
+
+esu_vertical_commute_fo :: ESMGUConstraintsU t pd fn v sov uv => StateT (ESUnifDGraph s t fn v sov uv) (ST s) ()
+esu_vertical_commute_fo = undefined
 
