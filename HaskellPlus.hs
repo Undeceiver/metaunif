@@ -388,7 +388,12 @@ mcompose_with_bool r1 r2 = r1 >>= (\v -> if v then r2 else (return False))
 (>>=&) = mcompose_with_bool
 infixl 1 >>=&
 
--- An or version, and also one which always runs monadic elements. It composes monadically, and returns the or of both bools.
+-- An lazy or version (only runs the monadic elements until it finds a True).
+(>>=|) :: Monad m => m Bool -> m Bool -> m Bool
+m1 >>=| m2 = m1 >>= (\v -> if v then (return True) else m2)
+infixl 1 >>=|
+
+-- An or version, and also one which always runs monadic elements (strict). It composes monadically, and returns the or of both bools.
 (|>>=) :: Monad m => m Bool -> m Bool -> m Bool
 m1 |>>= m2 = do {r1 <- m1; r2 <- m2; return (r1 || r2)}
 infixl 1 |>>=
@@ -510,6 +515,12 @@ instance MonadTrans TravListT where
 
 
 
+-- May be a bit too precise, but here are some utilities to extract values from a StateT _ (ST s)
+-- The dependency of the state type with s (on the value case) is not super generic, but it is enough for our purposes. If need be, you can always wrap it with newtypes.
+getStateTSTState :: (forall s. StateT a (ST s) b) -> a -> a
+getStateTSTState stst x = snd (runST (runStateT stst x))
 
+getStateTSTValue :: (forall s. StateT (a s) (ST s) b) -> (forall s. a s) -> b
+getStateTSTValue stst x = runST (fst <$> (runStateT stst x))
 
 

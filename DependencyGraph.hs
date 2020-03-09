@@ -35,6 +35,8 @@ import Control.Monad.ST
 import Data.UnionFind.ST
 import Safe (headMay)
 import Identifier
+--import DebugTricks
+--import Debug.Trace
 
 -- These graphs have:
 --	* Two types of nodes:
@@ -708,6 +710,12 @@ st_searchHEqDGFOEdges ss ts h = do {rss <- traverse getSTRelativeEqDGFoId ss; rt
 f_searchHEqDGFOEdges :: (Ord fot, Ord sot) => [Int] -> [Int] -> Int -> (EqDGraph s fot sot -> ST s ([Int], EqDGraph s fot sot))
 f_searchHEqDGFOEdges ss ts h eqdg = (,eqdg) <$> stmb_int where stmb_int = return (searchHEqDGFOEdges ss ts eqdg h)
 
+st_checkEqDGFOEdge :: (Ord fot, Ord sot) => EqDGRelSoId s fot sot -> [EqDGRelFoId s fot sot] -> EqDGRelFoId s fot sot -> StateT (EqDGraph s fot sot) (ST s) Bool
+st_checkEqDGFOEdge h ss t = do {es <- st_searchHEqDGFOEdges ss [t] h; let {ecs = Prelude.map (st_checkEqDGFOSingleEdge h ss t) es}; Prelude.foldr (>>=|) (return False) ecs}
+
+st_checkEqDGFOSingleEdge :: (Ord fot, Ord sot) => EqDGRelSoId s fot sot -> [EqDGRelFoId s fot sot] -> EqDGRelFoId s fot sot -> Int -> StateT (EqDGraph s fot sot) (ST s) Bool
+st_checkEqDGFOSingleEdge h ss t e = do {eh <- eqDGFOEdge_head e; ess <- eqDGFOEdge_sources e; et <- eqDGFOEdge_target e; let {sscs = Prelude.map (uncurry eqSTRelativeIds) (zip ess ss)}; ssb <- Prelude.foldr (>>=&) (return True) sscs; if ((length ss) == (length ess)) then ((return ssb) >>=& (eqSTRelativeIds eh h) >>=& (eqSTRelativeIds et t)) else (return False)}
+
 searchOutEqDGSOEdges :: Ord sot => [Int] -> [Int] -> EqDGraph s fot sot -> Int -> [Int]
 searchOutEqDGSOEdges hs ts eqdg s = if (isNothing mb_node) then [] else (in_filterIdEqDGSOEdges hs [] ts eqdg out) where mb_node = getDGSONode (eqdg ^. lens_eqdgraph) s; (DGSONode _ out _ _ _) = fromJust mb_node;
 
@@ -743,6 +751,13 @@ st_searchHEqDGSOEdges ss ts h = do {rss <- traverse getSTRelativeEqDGSoId ss; rt
 
 f_searchHEqDGSOEdges :: Ord sot => [Int] -> [Int] -> Int -> (EqDGraph s fot sot -> ST s ([Int], EqDGraph s fot sot))
 f_searchHEqDGSOEdges ss ts h eqdg = (,eqdg) <$> stmb_int where stmb_int = return (searchHEqDGSOEdges ss ts eqdg h)
+
+st_checkEqDGSOEdge :: Ord sot => EqDGRelSoId s fot sot -> [EqDGRelSoId s fot sot] -> EqDGRelSoId s fot sot -> StateT (EqDGraph s fot sot) (ST s) Bool
+st_checkEqDGSOEdge h ss t = do {es <- st_searchHEqDGSOEdges ss [t] h; let {ecs = Prelude.map (st_checkEqDGSOSingleEdge h ss t) es}; Prelude.foldr (>>=|) (return False) ecs}
+
+st_checkEqDGSOSingleEdge :: Ord sot => EqDGRelSoId s fot sot -> [EqDGRelSoId s fot sot] -> EqDGRelSoId s fot sot -> Int -> StateT (EqDGraph s fot sot) (ST s) Bool
+st_checkEqDGSOSingleEdge h ss t e = do {eh <- eqDGSOEdge_head e; ess <- eqDGSOEdge_sources e; et <- eqDGSOEdge_target e; let {sscs = Prelude.map (uncurry eqSTRelativeIds) (zip ess ss)}; ssb <- Prelude.foldr (>>=&) (return True) sscs; if ((length ss) == (length ess)) then ((return ssb) >>=& (eqSTRelativeIds eh h) >>=& (eqSTRelativeIds et t)) else (return False)}
+
 
 raw_getEquivDGFONodes :: Ord fot => EqDGraph s fot sot -> fot -> ST s [fot]
 raw_getEquivDGFONodes eqdg fot = do {(nid,eqdg1) <- runStateT (doGetEqDGFONode fot) eqdg; return (fromMaybe [] (eqdg1 ^. lens_eqdg_foelements . (at nid)))}

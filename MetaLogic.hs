@@ -35,6 +35,8 @@ import QueryLogic
 import CESQLogic
 import ESUnification
 import EnumProc
+import Control.Monad.ST
+import Control.Monad.State
 
 -- We may use these so we leave them, but these are the old flat meta-variables approach. Check the new second-order approach instead.
 
@@ -308,6 +310,55 @@ instance Read CombSOMetaatom where
 				in [(NSOAtom (fst r),(snd r))]);
 			Nothing -> error ("Cannot read meta-atom: " ++ xs)
 		}}}
+
+
+-- Dependency graphs in this meta-logic.
+data UnifVariable = UnifVar Int deriving (Ord)
+
+-- Equality does not check arity, just in case we use the Variabilizable instance in the wrong way.
+instance Eq UnifVariable where
+	(UnifVar i) == (UnifVar j) = i == j
+
+instance Show UnifVariable where
+	show (UnifVar x) = "u" ++ (show x)
+instance Read UnifVariable where 
+	readsPrec _ ('u':xs) = (let r = (head (reads xs))
+				in [(UnifVar (fst r),(snd r))])
+
+instance Variabilizable UnifVariable where 
+	from_var (IntVar x) = UnifVar x
+	get_var (UnifVar x) = IntVar x
+
+instance Variable UnifVariable where
+	getVarID = getVarID_gen
+
+
+type SOMetaTermDependant = TermDependant CTermF OFunction OVariable SOMVariable UnifVariable
+instance Read SOMetaTermDependant where
+	readsPrec _ xs = 
+		case stripPrefix "u" xs of
+		{
+			Just rest -> (let r = (head (reads ('u':rest))::(UnifVariable,String))
+				-- We expect exactly one space between the unifier and the inner dependant.
+				in (let r2 = (head (reads (tail (snd r)))::(SOMetaTermDependant,String))
+					in [(TDUnif (fst r) (fst r2),(snd r2))]));
+			Nothing -> (let r = (head (reads xs))::(SOMetaterm,String) in
+				[(TDDirect (fst r),(snd r))])
+		}
+
+type SOMetaUnifDGraph s = ESUnifNDGraph s CTermF OFunction OVariable SOMVariable UnifVariable
+type SOMetaUnifRelFoId s = ESUnifRelFoId s CTermF OFunction OVariable SOMVariable UnifVariable
+type SOMetaUnifRelSoId s = ESUnifRelSoId s CTermF OFunction OVariable SOMVariable UnifVariable
+
+metaunif_vertical_commute :: StateT (SOMetaUnifDGraph s) (ST s) ()
+metaunif_vertical_commute = do_esu_vertical_commute
+
+metaunif_vertical_align :: StateT (SOMetaUnifDGraph s) (ST s) ()
+metaunif_vertical_align = do_esu_vertical_align
+
+metaunif_sozip :: StateT (SOMetaUnifDGraph s) (ST s) ()
+metaunif_sozip = do_esu_sozip
+
 
 
 -- Queries in this meta-logic.
