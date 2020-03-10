@@ -147,6 +147,9 @@ instance (Eq v, Eq (t (UTerm t v))) => Eq (UTerm t v) where
 
 
 -- Monad utilities
+pass :: Monad m => m ()
+pass = return ()
+
 floatExceptT :: (Show e, Monad m) => (ExceptT e m) a -> m a
 floatExceptT exc = (runExceptT exc) >>= (\x -> case x of {Left e -> error (show e); Right y -> return y})
 
@@ -379,6 +382,9 @@ acyclic :: Graph -> Bool
 acyclic g = length (scc g) == length (vertices g)
 
 
+monadop :: Monad m => (a -> b -> c) -> m a -> m b -> m c
+monadop f m1 m2 = do {r1 <- m1; r2 <- m2; return (f r1 r2)}
+
 
 -- Interprets the bool result inside a monad as a fail state (when False), so that if False is returned, then the monadic composition does not happen and instead we simply return False
 mcompose_with_bool :: Monad m => m Bool -> m Bool -> m Bool
@@ -397,6 +403,20 @@ infixl 1 >>=|
 (|>>=) :: Monad m => m Bool -> m Bool -> m Bool
 m1 |>>= m2 = do {r1 <- m1; r2 <- m2; return (r1 || r2)}
 infixl 1 |>>=
+
+
+
+-- Concatenate within a monad.
+(>>=++) :: Monad m => m [a] -> m [a] -> m [a]
+(>>=++) = monadop (++)
+infixl 1 >>=++
+
+monadconcat :: (Monad m, Foldable t) => m (t (m [a])) -> m [a]
+monadconcat m = join (Prelude.foldr (>>=++) (return []) <$> m)
+
+monadfilter :: Monad m => (a -> m Bool) -> [a] -> m [a]
+monadfilter f [] = return []
+monadfilter f (x:xs) = (f x) >>= (\r -> if r then ((x:) <$> rest) else rest) where rest = monadfilter f xs
 
 
 
@@ -522,5 +542,7 @@ getStateTSTState stst x = snd (runST (runStateT stst x))
 
 getStateTSTValue :: (forall s. StateT (a s) (ST s) b) -> (forall s. a s) -> b
 getStateTSTValue stst x = runST (fst <$> (runStateT stst x))
+
+
 
 

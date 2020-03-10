@@ -498,6 +498,19 @@ checkVFoEdge s t = StateT (f_checkVFoEdge s t)
 f_checkVFoEdge :: ESUnifRelFoId s t fn v sov uv -> ESUnifRelFoId s t fn v sov uv -> (ESUnifVDGraph s t fn v sov uv -> ST s (Bool,ESUnifVDGraph s t fn v sov uv))
 f_checkVFoEdge s t esudg = runStateT st_rb esudg where fe = ESUnifVFoEdge s t; es = esunifdgraph_vfoedges esudg; tofold = (\e -> \rstb -> rstb >>= (\rb -> if rb then (return True) else (eqUnifVFoEdge e fe))); st_rb = Prelude.foldr tofold (return False) es
 
+outVFoEdges :: ESUnifRelFoId s t fn v sov uv -> StateT (ESUnifVDGraph s t fn v sov uv) (ST s) [ESUnifVFoEdge s t fn v sov uv]
+outVFoEdges s = StateT (f_outVFoEdges s)
+
+f_outVFoEdges :: ESUnifRelFoId s t fn v sov uv -> (ESUnifVDGraph s t fn v sov uv -> ST s ([ESUnifVFoEdge s t fn v sov uv],ESUnifVDGraph s t fn v sov uv))
+f_outVFoEdges s esudg = runStateT (monadfilter tofilter es) esudg where es = esunifdgraph_vfoedges esudg; tofilter = (\e -> mzoom lens_esunifdgraph_dgraph (eqSTRelativeIds (esunifvfoedge_source e) s))
+
+inVFoEdges :: ESUnifRelFoId s t fn v sov uv -> StateT (ESUnifVDGraph s t fn v sov uv) (ST s) [ESUnifVFoEdge s t fn v sov uv]
+inVFoEdges t = StateT (f_inVFoEdges t)
+
+f_inVFoEdges :: ESUnifRelFoId s t fn v sov uv -> (ESUnifVDGraph s t fn v sov uv -> ST s ([ESUnifVFoEdge s t fn v sov uv],ESUnifVDGraph s t fn v sov uv))
+f_inVFoEdges t esudg = runStateT (monadfilter tofilter es) esudg where es = esunifdgraph_vfoedges esudg; tofilter = (\e -> mzoom lens_esunifdgraph_dgraph (eqSTRelativeIds (esunifvfoedge_target e) t))
+
+
 -- We assume and ensure that a vertical edge is always between two dependants only one unifier variable in difference
 factorizeVFoEdge :: ESMGUConstraintsU t pd fn v sov uv => ESUnifVFoEdge s t fn v sov uv -> StateT (ESUnifVDGraph s t fn v sov uv) (ST s) uv
 factorizeVFoEdge e = (mzoom lens_esunifdgraph_dgraph (getSTRelativeEqDGFoCoId (esunifvfoedge_target e))) >>= (\(TDUnif uv _) -> return uv)
@@ -564,6 +577,66 @@ instance ESMGUConstraintsU t pd fn v sov uv => StateTOperation (ST s) (ESUnifDGO
 	runStateTOp (ESUVAlign fot) = esu_vertical_align_fot fot
 	runStateTOp (ESUSOZip soe) = esu_sozip_soe soe
 
+-- Actions on the ESUnifVDGraph, enhanced with their propagation operations.
+-- These include checking what has actually changed on the graph and what has not, to prevent excessive operations but more importantly to prevent looping.
+prop_newEqDGFOEdge :: ESMGUConstraintsU t pd fn v sov uv => ESUnifRelSoId s t fn v sov uv -> [ESUnifRelFoId s t fn v sov uv] -> ESUnifRelFoId s t fn v sov uv -> StateT (ESUnifVDGraph s t fn v sov uv) (ST s) [ESUnifDGOp s t fn v sov uv]
+prop_newEqDGFOEdge h ss t = do
+	{
+		let {result = []};
+		-- This may create the head, source and target nodes!
+		-- In particular, checking if nodes exist is whiffy because they are created on the go as part of the monadic operations. Instead, *and only for this particular operation*, whenever a node that previously did not exist may be created, we perform cascade operations from it anyway.
+		result2 <- ((return result) >>=++ (justprop_newEqDGFONode t));
+
+		result3 <- ((return result2) >>=++ (justprop_newEqDGSONode h));
+
+		result4 <- ((return result3) >>=++ (concat <$> traverse justprop_newEqDGFONode ss));
+
+		-- Check that the edge does not already exist.
+		exist <- mzoom lens_esunifdgraph_dgraph (st_checkEqDGFOEdge h ss t);
+		result5 <- if exist then (return []) else (do
+		{			
+			eid <- mzoom lens_esunifdgraph_dgraph (newEqDGFOEdge h ss t);
+			(return result4) >>=++ (justprop_newEqDGFOEdge eid)
+		});
+		return result5
+	}
+
+prop_addVFoEdge :: ESMGUConstraintsU t pd fn v sov uv => ESUnifRelFoId s t fn v sov uv -> ESUnifRelFoId s t fn v sov uv -> StateT (ESUnifVDGraph s t fn v sov uv) (ST s) [ESUnifDGOp s t fn v sov uv]
+prop_addVFoEdge s t = do
+	{
+		let {result = []};
+
+		-- This may create the source and target nodes!
+		result2 <- ((return result) >>=++ (justprop_newEqDGFONode s));
+
+		result3 <- ((return result2) >>=++ (justprop_newEqDGFONode t));
+
+		exist <- checkVFoEdge s t;
+		if exist then (return []) else (do
+		{
+			addVFoEdge s t;
+			(return result3) >>=++ (justprop_addVFoEdge s t);
+		})
+	}
+
+justprop_addVFoEdge :: ESMGUConstraintsU t pd fn v sov uv => ESUnifRelFoId s t fn v sov uv -> ESUnifRelFoId s t fn v sov uv -> StateT (ESUnifVDGraph s t fn v sov uv) (ST s) [ESUnifDGOp s t fn v sov uv]
+justprop_addVFoEdge s t = return [ESUVCommuteFo (ESUnifVFoEdge s t)]
+
+justprop_newEqDGFONode :: ESMGUConstraintsU t pd fn v sov uv => ESUnifRelFoId s t fn v sov uv -> StateT (ESUnifVDGraph s t fn v sov uv) (ST s) [ESUnifDGOp s t fn v sov uv]
+justprop_newEqDGFONode foid = return [ESUVAlign foid]
+
+justprop_newEqDGSONode :: ESMGUConstraintsU t pd fn v sov uv => ESUnifRelSoId s t fn v sov uv -> StateT (ESUnifVDGraph s t fn v sov uv) (ST s) [ESUnifDGOp s t fn v sov uv]
+justprop_newEqDGSONode soid = return []
+
+justprop_newEqDGFOEdge :: ESMGUConstraintsU t pd fn v sov uv => Int -> StateT (ESUnifVDGraph s t fn v sov uv) (ST s) [ESUnifDGOp s t fn v sov uv]
+justprop_newEqDGFOEdge eid = do
+	{
+		-- For any outgoing vertical edges of the target of the edge, create a vertical commute instance.
+		t <- mzoom lens_esunifdgraph_dgraph (eqDGFOEdge_target eid);
+		ves <- outVFoEdges t;
+		return (Prelude.map ESUVCommuteFo ves)
+	}
+
 do_esu_vertical_commute :: ESMGUConstraintsU t pd fn v sov uv => StateT (ESUnifNDGraph s t fn v sov uv) (ST s) ()
 do_esu_vertical_commute = normcheck_op esu_vertical_commute ESUNone
 
@@ -592,10 +665,13 @@ esu_vertical_commute_fo_edge_hedge ve he = do
 		if ex then (return [])
 		else do
 		{
-			mzoom lens_esunifdgraph_dgraph (newEqDGFOEdge h tss tt);
+			--mzoom lens_esunifdgraph_dgraph (newEqDGFOEdge h tss tt);
+			result <- prop_newEqDGFOEdge h tss tt;
 			let {zipped = zip sss tss};
-			traverse (uncurry addVFoEdge) zipped;
-			return (Prelude.map (ESUVCommuteFo . (uncurry ESUnifVFoEdge)) zipped)
+			--traverse (uncurry addVFoEdge) zipped;
+			--return (Prelude.map (ESUVCommuteFo . (uncurry ESUnifVFoEdge)) zipped)
+			result2 <- (return result) >>=++ (concat <$> traverse (uncurry prop_addVFoEdge) zipped);
+			return result2
 		}
 	}
 
@@ -618,8 +694,9 @@ esu_vertical_align_fot fot = do
 			if exist then (return [])
 			else do
 			{
-				addVFoEdge intd_id fot;
-				return [ESUVAlign intd_id, ESUVCommuteFo (ESUnifVFoEdge intd_id fot)]
+				--addVFoEdge intd_id fot;
+				--return [ESUVAlign intd_id, ESUVCommuteFo (ESUnifVFoEdge intd_id fot)]
+				prop_addVFoEdge intd_id fot
 			}
 		}	
 	}
