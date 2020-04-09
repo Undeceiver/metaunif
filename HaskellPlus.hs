@@ -87,9 +87,18 @@ deleteAllBy p (x:xs) = x:(deleteAllBy p xs)
 deleteAll :: Eq a => a -> [a] -> [a]
 deleteAll a = deleteAllBy (== a)
 
+allEq :: Eq a => [a] -> Bool
+allEq [] = True
+allEq (x:xs) = all (== x) xs
+
 append_to_mblist :: Maybe [a] -> [a] -> [a]
 append_to_mblist Nothing x = x
 append_to_mblist (Just x) y = x ++ y
+
+mb_concat :: [Maybe [a]] -> Maybe [a]
+mb_concat [] = Just []
+mb_concat (Nothing:xs) = Nothing
+mb_concat ((Just x):xs) = (mb_concat xs) >>= (Just . (x++))
 
 -- foldMap with semigroups, with an initial element
 foldMapSG :: (Foldable f, Functor f, Semigroup m) => (a -> m) -> m -> f a -> m
@@ -145,10 +154,15 @@ instance (Eq v, Eq (t (UTerm t v))) => Eq (UTerm t v) where
 	_ == _ = False
 
 
+-- From Just with custom error message
+fromJustErr :: String -> Maybe a -> a
+fromJustErr str Nothing = error str
+fromJustErr str (Just x) = x
+
 
 -- Monad utilities
-pass :: Monad m => m ()
-pass = return ()
+pass :: Monad m => m a
+pass = return undefined
 
 floatExceptT :: (Show e, Monad m) => (ExceptT e m) a -> m a
 floatExceptT exc = (runExceptT exc) >>= (\x -> case x of {Left e -> error (show e); Right y -> return y})
@@ -170,6 +184,18 @@ infixl 7 >*>=
 -- Warning: This is not general, when the inner function should modify the external monad itself, this won't work. It's only for running monadic computations inside a monad.
 (>>>=) :: (Monad m1, Monad m2) => m1 (m2 a) -> (a -> m2 b) -> m1 (m2 b)
 x >>>= f = x >>= (\st -> return (st >>= f))
+
+traverse_collect :: (Applicative m, Traversable t) => (t b -> c) -> (a -> m b) -> t a -> m c
+traverse_collect f g m = f <$> traverse g m
+
+m_any :: (Applicative m, Traversable t) => (a -> m Bool) -> t a -> m Bool
+m_any = traverse_collect (any id)
+
+m_all :: (Applicative m, Traversable t) => (a -> m Bool) -> t a -> m Bool
+m_all = traverse_collect (all id)
+
+m_concat :: (Applicative m, Traversable t) => (a -> m [b]) -> t a -> m [b]
+m_concat = traverse_collect concat
 
 type JState s = State s ()
 jstate :: (s -> s) -> JState s

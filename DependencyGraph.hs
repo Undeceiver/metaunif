@@ -36,7 +36,7 @@ import Data.UnionFind.ST
 import Safe (headMay)
 import Identifier
 --import DebugTricks
---import Debug.Trace
+import Debug.Trace
 
 -- These graphs have:
 --	* Two types of nodes:
@@ -380,40 +380,58 @@ deleteDGSOEdge x = state (\dg -> ((),runOps ((emptyOp dg) <+ (DGDeleteSOEdge x))
 -- As shown in the functions below, this datatype is meant to be used with ST on top of it, and with the s parameter forall quantified. Just use runST when you're done with it.
 -- The nodes maps are only guaranteed to be defined for the representative elements of each equivalence class. More importantly, the information in the Map is only guaranteed to be correct if applied to the representative elements. This allows us to merge equivalence classes while only updating the Map's entry for the representative element.
 -- Use the getEqDGFONode and getEqDGSONode to get correct information without having to manually do this yourself.
-data EqDGraph s fot sot = EqDGraph {eqdgraph :: DGraph, eqdg_fopoints :: Map fot (Point s fot), eqdg_fonodes :: Map fot Int, eqdg_foelements :: Map Int [fot], eqdg_sopoints :: Map sot (Point s sot), eqdg_sonodes :: Map sot Int, eqdg_soelements :: Map Int [sot]}
+-- The edges maps are to keep an updated map when edges are re-added so that old identifiers are still usable after updating the graph.
+data EqDGraph s fot sot = EqDGraph {eqdgraph :: DGraph, eqdg_fopoints :: Map fot (Point s fot), eqdg_fonodes :: Map fot Int, eqdg_foelements :: Map Int [fot], eqdg_sopoints :: Map sot (Point s sot), eqdg_sonodes :: Map sot Int, eqdg_soelements :: Map Int [sot], eqdg_foedges :: Map Int Int, eqdg_soedges :: Map Int Int, eqdg_fomerges :: Map Int Int, eqdg_somerges :: Map Int Int}
 -- The thing below seems to not be supported by GHCi for now.
 --type UseEqDGraph fot sot = forall s. ST s (EqDGraph s fot sot)
 
 lens_eqdgraph :: Lens' (EqDGraph s fot sot) DGraph
-lens_eqdgraph f (EqDGraph dgraph fopoints fonodes foelements sopoints sonodes soelements) = fmap (\rdgraph -> EqDGraph rdgraph fopoints fonodes foelements sopoints sonodes soelements) (f dgraph)
+lens_eqdgraph f (EqDGraph dgraph fopoints fonodes foelements sopoints sonodes soelements foedges soedges fomerges somerges) = fmap (\rdgraph -> EqDGraph rdgraph fopoints fonodes foelements sopoints sonodes soelements foedges soedges fomerges somerges) (f dgraph)
 
 lens_eqdg_fopoints :: Lens' (EqDGraph s fot sot) (Map fot (Point s fot))
-lens_eqdg_fopoints f (EqDGraph dgraph fopoints fonodes foelements sopoints sonodes soelements) = fmap (\rfopoints -> EqDGraph dgraph rfopoints fonodes foelements sopoints sonodes soelements) (f fopoints)
+lens_eqdg_fopoints f (EqDGraph dgraph fopoints fonodes foelements sopoints sonodes soelements foedges soedges fomerges somerges) = fmap (\rfopoints -> EqDGraph dgraph rfopoints fonodes foelements sopoints sonodes soelements foedges soedges fomerges somerges) (f fopoints)
 
 lens_eqdg_fonodes :: Lens' (EqDGraph s fot sot) (Map fot Int)
-lens_eqdg_fonodes f (EqDGraph dgraph fopoints fonodes foelements sopoints sonodes soelements) = fmap (\rfonodes -> EqDGraph dgraph fopoints rfonodes foelements sopoints sonodes soelements) (f fonodes)
+lens_eqdg_fonodes f (EqDGraph dgraph fopoints fonodes foelements sopoints sonodes soelements foedges soedges fomerges somerges) = fmap (\rfonodes -> EqDGraph dgraph fopoints rfonodes foelements sopoints sonodes soelements foedges soedges fomerges somerges) (f fonodes)
 
 lens_eqdg_foelements :: Lens' (EqDGraph s fot sot) (Map Int [fot])
-lens_eqdg_foelements f (EqDGraph dgraph fopoints fonodes foelements sopoints sonodes soelements) = fmap (\rfoelements -> EqDGraph dgraph fopoints fonodes rfoelements sopoints sonodes soelements) (f foelements)
+lens_eqdg_foelements f (EqDGraph dgraph fopoints fonodes foelements sopoints sonodes soelements foedges soedges fomerges somerges) = fmap (\rfoelements -> EqDGraph dgraph fopoints fonodes rfoelements sopoints sonodes soelements foedges soedges fomerges somerges) (f foelements)
 
 lens_eqdg_sopoints :: Lens' (EqDGraph s fot sot) (Map sot (Point s sot))
-lens_eqdg_sopoints f (EqDGraph dgraph fopoints fonodes foelements sopoints sonodes soelements) = fmap (\rsopoints -> EqDGraph dgraph fopoints fonodes foelements rsopoints sonodes soelements) (f sopoints)
+lens_eqdg_sopoints f (EqDGraph dgraph fopoints fonodes foelements sopoints sonodes soelements foedges soedges fomerges somerges) = fmap (\rsopoints -> EqDGraph dgraph fopoints fonodes foelements rsopoints sonodes soelements foedges soedges fomerges somerges) (f sopoints)
 
 lens_eqdg_sonodes :: Lens' (EqDGraph s fot sot) (Map sot Int)
-lens_eqdg_sonodes f (EqDGraph dgraph fopoints fonodes foelements sopoints sonodes soelements) = fmap (\rsonodes -> EqDGraph dgraph fopoints fonodes foelements sopoints rsonodes soelements) (f sonodes)
+lens_eqdg_sonodes f (EqDGraph dgraph fopoints fonodes foelements sopoints sonodes soelements foedges soedges fomerges somerges) = fmap (\rsonodes -> EqDGraph dgraph fopoints fonodes foelements sopoints rsonodes soelements foedges soedges fomerges somerges) (f sonodes)
 
 lens_eqdg_soelements :: Lens' (EqDGraph s fot sot) (Map Int [sot])
-lens_eqdg_soelements f (EqDGraph dgraph fopoints fonodes foelements sopoints sonodes soelements) = fmap (\rsoelements -> EqDGraph dgraph fopoints fonodes foelements sopoints sonodes rsoelements) (f soelements)
+lens_eqdg_soelements f (EqDGraph dgraph fopoints fonodes foelements sopoints sonodes soelements foedges soedges fomerges somerges) = fmap (\rsoelements -> EqDGraph dgraph fopoints fonodes foelements sopoints sonodes rsoelements foedges soedges fomerges somerges) (f soelements)
 
+lens_eqdg_foedges :: Lens' (EqDGraph s fot sot) (Map Int Int)
+lens_eqdg_foedges f (EqDGraph dgraph fopoints fonodes foelements sopoints sonodes soelements foedges soedges fomerges somerges) = fmap (\rfoedges -> EqDGraph dgraph fopoints fonodes foelements sopoints sonodes soelements rfoedges soedges fomerges somerges) (f foedges)
+
+lens_eqdg_soedges :: Lens' (EqDGraph s fot sot) (Map Int Int)
+lens_eqdg_soedges f (EqDGraph dgraph fopoints fonodes foelements sopoints sonodes soelements foedges soedges fomerges somerges) = fmap (\rsoedges -> EqDGraph dgraph fopoints fonodes foelements sopoints sonodes soelements foedges rsoedges fomerges somerges) (f soedges)
+
+lens_eqdg_fomerges :: Lens' (EqDGraph s fot sot) (Map Int Int)
+lens_eqdg_fomerges f (EqDGraph dgraph fopoints fonodes foelements sopoints sonodes soelements foedges soedges fomerges somerges) = fmap (\rfomerges -> EqDGraph dgraph fopoints fonodes foelements sopoints sonodes soelements foedges soedges rfomerges somerges) (f fomerges)
+
+lens_eqdg_somerges :: Lens' (EqDGraph s fot sot) (Map Int Int)
+lens_eqdg_somerges f (EqDGraph dgraph fopoints fonodes foelements sopoints sonodes soelements foedges soedges fomerges somerges) = fmap (\rsomerges -> EqDGraph dgraph fopoints fonodes foelements sopoints sonodes soelements foedges soedges fomerges rsomerges) (f somerges)
 
 
 show_eqdgraph :: (Show fot, Show sot) => EqDGraph s fot sot -> String
-show_eqdgraph eqdg = show_dgraph foshow soshow (eqdgraph eqdg) where foshow = (\foi -> show (findWithDefault [] foi (eqdg_foelements eqdg))); soshow = (\soi -> show (findWithDefault [] soi (eqdg_soelements eqdg)))
+show_eqdgraph eqdg = show_dgraph foshow soshow (eqdgraph eqdg) where foshow = (\foi -> (show foi) ++ "(FO):: " ++ (show (findWithDefault [] foi (eqdg_foelements eqdg)))); soshow = (\soi -> (show soi) ++ "(SO):: " ++ (show (findWithDefault [] soi (eqdg_soelements eqdg))))
 
 
 -- All of the functions dealing with EqDGraphs are stateful, so that we can optimize the equivalence class handling. They are going to be used in a stateful way anyway.
 emptyEqDG :: EqDGraph s fot sot
-emptyEqDG = EqDGraph emptyDG Data.Map.Strict.empty Data.Map.Strict.empty Data.Map.Strict.empty Data.Map.Strict.empty Data.Map.Strict.empty Data.Map.Strict.empty
+emptyEqDG = EqDGraph emptyDG Data.Map.Strict.empty Data.Map.Strict.empty Data.Map.Strict.empty Data.Map.Strict.empty Data.Map.Strict.empty Data.Map.Strict.empty Data.Map.Strict.empty Data.Map.Strict.empty Data.Map.Strict.empty Data.Map.Strict.empty
+
+getEqDGFORId :: EqDGraph s fot sot -> Int -> Int
+getEqDGFORId eqdg id = if (rid == id) then rid else (getEqDGFORId eqdg rid) where rid = findWithDefault id id (eqdg_fomerges eqdg)
+
+getEqDGSORId :: EqDGraph s fot sot -> Int -> Int
+getEqDGSORId eqdg id = if (rid == id) then rid else (getEqDGSORId eqdg rid) where rid = findWithDefault id id (eqdg_somerges eqdg)
 
 getEqDGFONode :: Ord fot => EqDGraph s fot sot -> fot -> ST s (Maybe Int)
 getEqDGFONode eqdg fot = node where mb_pt = (eqdg_fopoints eqdg) !? fot; desc = traverse descriptor mb_pt; node = desc >>= (\mb_desc -> return (((eqdg_fonodes eqdg) !?) =<< mb_desc))
@@ -434,7 +452,7 @@ f_getEqDGSONode :: Ord sot => sot -> (EqDGraph s fot sot -> ST s (Maybe Int, EqD
 f_getEqDGSONode sot eqdg = (,eqdg) <$> stmb_int where stmb_int = getEqDGSONode eqdg sot
 
 getEqDGFORep :: Ord fot => EqDGraph s fot sot -> Int -> ST s (Maybe fot)
-getEqDGFORep eqdg id = desc where mb_els = (eqdg_foelements eqdg) !? id; mb_el = mb_els >>= headMay; mb_pt = mb_el >>= ((eqdg_fopoints eqdg) !?); desc = traverse descriptor mb_pt
+getEqDGFORep eqdg id = desc where rid = getEqDGFORId eqdg id; mb_els = (eqdg_foelements eqdg) !? rid; mb_el = mb_els >>= headMay; mb_pt = mb_el >>= ((eqdg_fopoints eqdg) !?); desc = traverse descriptor mb_pt
 
 st_getEqDGFORep :: Ord fot => Int -> StateT (EqDGraph s fot sot) (ST s) (Maybe fot)
 st_getEqDGFORep id = StateT (f_getEqDGFORep id)
@@ -443,7 +461,7 @@ f_getEqDGFORep :: Ord fot => Int -> (EqDGraph s fot sot -> ST s (Maybe fot, EqDG
 f_getEqDGFORep id eqdg = (,eqdg) <$> stmb_int where stmb_int = getEqDGFORep eqdg id
 
 getEqDGSORep :: Ord sot => EqDGraph s fot sot -> Int -> ST s (Maybe sot)
-getEqDGSORep eqdg id = desc where mb_els = (eqdg_soelements eqdg) !? id; mb_el = mb_els >>= headMay; mb_pt = mb_el >>= ((eqdg_sopoints eqdg) !?); desc = traverse descriptor mb_pt
+getEqDGSORep eqdg id = desc where rid = getEqDGSORId eqdg id; mb_els = (eqdg_soelements eqdg) !? rid; mb_el = mb_els >>= headMay; mb_pt = mb_el >>= ((eqdg_sopoints eqdg) !?); desc = traverse descriptor mb_pt
 
 st_getEqDGSORep :: Ord sot => Int -> StateT (EqDGraph s fot sot) (ST s) (Maybe sot)
 st_getEqDGSORep id = StateT (f_getEqDGSORep id)
@@ -459,23 +477,23 @@ add_to_maplist k a m = case (m !? k) of {Nothing -> Data.Map.Strict.insert k [a]
 -- This means that anywhere that we can use Int, we can use fot; but there may be places where we can use fot and we need to be careful to use fot, because if the node is empty then it will raise an exception. For example, when merging equivalence classes.
 
 -- We unfortunately need to wrap stuff with newtypes to prevent instance overlaps.
-newtype EqDGFoId = EqDGFoId {fromEqDGFoId :: Int} deriving Eq
-newtype EqDGSoId = EqDGSoId {fromEqDGSoId :: Int} deriving Eq
+newtype EqDGFoId = EqDGFoId {fromEqDGFoId :: Int} deriving (Eq,Show)
+newtype EqDGSoId = EqDGSoId {fromEqDGSoId :: Int} deriving (Eq,Show)
 
 instance Ord fot => STRelativeIso (ST s) (EqDGraph s fot sot) EqDGFoId fot where
-	strelfw nid = fromJust <$> (st_getEqDGFORep (fromEqDGFoId nid))
+	strelfw = st_getEqDGFORep . fromEqDGFoId
 	strelbw = (EqDGFoId <$>) . doGetEqDGFONode
 
 instance Ord fot => RelativeIso (StateT (EqDGraph s fot sot) (ST s)) (EqDGraph s fot sot) EqDGFoId fot where
-	relfw c = (fromSTRII <$>) . (relfw c) . STRII
+	relfw c = ((fromSTRII <$>) <$>) . (relfw c) . STRII
 	relbw c = (fromSTRII <$>) . (relbw c) . STRII
 
 instance Ord sot => STRelativeIso (ST s) (EqDGraph s fot sot) EqDGSoId sot where
-	strelfw nid = fromJust <$> (st_getEqDGSORep (fromEqDGSoId nid))
+	strelfw = st_getEqDGSORep . fromEqDGSoId
 	strelbw = (EqDGSoId <$>) . doGetEqDGSONode
 
 instance Ord sot => RelativeIso (StateT (EqDGraph s fot sot) (ST s)) (EqDGraph s fot sot) EqDGSoId sot where
-	relfw c = (fromSTRII <$>) . (relfw c) . STRII
+	relfw c = ((fromSTRII <$>) <$>) . (relfw c) . STRII
 	relbw c = (fromSTRII <$>) . (relbw c) . STRII
 
 
@@ -488,11 +506,23 @@ getSTRelativeEqDGFoId relid = fromEqDGFoId <$> (getSTRelativeId relid)
 getSTRelativeEqDGSoId :: Ord sot => EqDGRelSoId s fot sot -> StateT (EqDGraph s fot sot) (ST s) Int
 getSTRelativeEqDGSoId relid = fromEqDGSoId <$> (getSTRelativeId relid)
 
-getSTRelativeEqDGFoCoId :: Ord fot => EqDGRelFoId s fot sot -> StateT (EqDGraph s fot sot) (ST s) fot
+getSTRelativeEqDGFoCoId :: Ord fot => EqDGRelFoId s fot sot -> StateT (EqDGraph s fot sot) (ST s) (Maybe fot)
 getSTRelativeEqDGFoCoId = getSTRelativeCoId
 
-getSTRelativeEqDGSoCoId :: Ord sot => EqDGRelSoId s fot sot -> StateT (EqDGraph s fot sot) (ST s) sot
+getSTRelativeEqDGSoCoId :: Ord sot => EqDGRelSoId s fot sot -> StateT (EqDGraph s fot sot) (ST s) (Maybe sot)
 getSTRelativeEqDGSoCoId = getSTRelativeCoId
+
+compareEqDGFoId :: Ord fot => EqDGraph s fot sot -> EqDGFoId -> EqDGFoId -> Bool
+compareEqDGFoId eqdg a b = (getEqDGFORId eqdg (fromEqDGFoId a)) == (getEqDGFORId eqdg (fromEqDGFoId b))
+
+compareEqDGSoId :: Ord fot => EqDGraph s fot sot -> EqDGSoId -> EqDGSoId -> Bool
+compareEqDGSoId eqdg a b = (getEqDGSORId eqdg (fromEqDGSoId a)) == (getEqDGSORId eqdg (fromEqDGSoId b))
+
+eqSTRelativeEqDGFoIds :: Ord fot => EqDGRelFoId s fot sot -> EqDGRelFoId s fot sot -> StateT (EqDGraph s fot sot) (ST s) Bool
+eqSTRelativeEqDGFoIds a b = StateT (\eqdg -> runStateT (compareSTRelativeIds (compareEqDGFoId eqdg) a b) eqdg)
+
+eqSTRelativeEqDGSoIds :: (Ord fot, Ord sot) => EqDGRelSoId s fot sot -> EqDGRelSoId s fot sot -> StateT (EqDGraph s fot sot) (ST s) Bool
+eqSTRelativeEqDGSoIds a b = StateT (\eqdg -> runStateT (compareSTRelativeIds (compareEqDGSoId eqdg) a b) eqdg)
 
 directEqDGFoId :: Int -> EqDGRelFoId s fot sot
 directEqDGFoId = DirectId . EqDGFoId
@@ -506,42 +536,73 @@ relbwEqDGFoId = RelBwId
 relbwEqDGSoId :: Ord sot => sot -> EqDGRelSoId s fot sot
 relbwEqDGSoId = RelBwId
 
+getCurEqDGFOEdge :: Ord fot => EqDGraph s fot sot -> Int -> Int
+getCurEqDGFOEdge eqdg eid = if (m == eid) then eid else (getCurEqDGFOEdge eqdg m) where m = findWithDefault eid eid (eqdg_foedges eqdg)
+
+st_getCurEqDGFOEdge :: Ord fot => Int -> StateT (EqDGraph s fot sot) (ST s) Int
+st_getCurEqDGFOEdge eid = StateT (\eqdg -> return (getCurEqDGFOEdge eqdg eid,eqdg))
+
+--f_getCurEqDGFOEdge :: Ord fot => Int -> (EqDGraph s fot sot -> ST s (Int,EqDGraph s fot sot))
+--f_getCurEqDGFOEdge eid eqdg = if (m == eid) then (return (eid,eqdg)) else (f_getCurEqDGFOEdge m eqdg) where m = findWithDefault eid eid (eqdg_foedges eqdg)
+
+getCurEqDGSOEdge :: Ord sot => EqDGraph s fot sot -> Int -> Int
+getCurEqDGSOEdge eqdg eid = if (m == eid) then eid else (getCurEqDGSOEdge eqdg m) where m = findWithDefault eid eid (eqdg_soedges eqdg)
+
+st_getCurEqDGSOEdge :: Ord sot => Int -> StateT (EqDGraph s fot sot) (ST s) Int
+st_getCurEqDGSOEdge eid = StateT (\eqdg -> return (getCurEqDGSOEdge eqdg eid,eqdg))
+
+--f_getCurEqDGSOEdge :: Ord fot => Int -> (EqDGraph s fot sot -> ST s (Int,EqDGraph s fot sot))
+--f_getCurEqDGSOEdge eid eqdg = if (m == eid) then (return (eid,eqdg)) else (f_getCurEqDGSOEdge m eqdg) where m = findWithDefault eid eid (eqdg_soedges eqdg)
+
+
 -- Using the functions for navigating the graph nodes and edges with relative ids
+checkEqDGFOEdge :: Ord fot => Int -> StateT (EqDGraph s fot sot) (ST s) Bool
+checkEqDGFOEdge eid = StateT (\eqdg -> return (f_checkEqDGFOEdge eid eqdg))
+
+f_checkEqDGFOEdge :: Ord fot => Int -> (EqDGraph s fot sot -> (Bool,EqDGraph s fot sot))
+f_checkEqDGFOEdge eid eqdg = (isJust mb_edge,eqdg) where reid = getCurEqDGFOEdge eqdg eid; mb_edge = getDGFOEdge (eqdgraph eqdg) reid
+
 eqDGFOEdge_head :: Ord fot => Int -> StateT (EqDGraph s fot sot) (ST s) (EqDGRelSoId s fot sot)
 eqDGFOEdge_head eid = StateT (\eqdg -> return (f_eqDGFOEdge_head eid eqdg))
 
 f_eqDGFOEdge_head :: Ord fot => Int -> (EqDGraph s fot sot -> (EqDGRelSoId s fot sot, EqDGraph s fot sot))
-f_eqDGFOEdge_head eid eqdg = (directEqDGSoId headid, eqdg) where edge = fromJust (getDGFOEdge (eqdgraph eqdg) eid); headid = edge ^. lens_dgfoedge_head
+f_eqDGFOEdge_head eid eqdg = (directEqDGSoId headid, eqdg) where reid = getCurEqDGFOEdge eqdg eid; edge = fromJustErr ("Edge with id " ++ (show eid) ++ " could not be found.") (getDGFOEdge (eqdgraph eqdg) reid); headid = edge ^. lens_dgfoedge_head
 
 eqDGFOEdge_sources :: Ord fot => Int -> StateT (EqDGraph s fot sot) (ST s) [EqDGRelFoId s fot sot]
 eqDGFOEdge_sources eid = StateT (\eqdg -> return (f_eqDGFOEdge_sources eid eqdg))
 
 f_eqDGFOEdge_sources :: Ord fot => Int -> (EqDGraph s fot sot -> ([EqDGRelFoId s fot sot], EqDGraph s fot sot))
-f_eqDGFOEdge_sources eid eqdg = (directEqDGFoId <$> sids, eqdg) where edge = fromJust (getDGFOEdge (eqdgraph eqdg) eid); sids = edge ^. lens_dgfoedge_sources
+f_eqDGFOEdge_sources eid eqdg = (directEqDGFoId <$> sids, eqdg) where reid = getCurEqDGFOEdge eqdg eid; edge = fromJustErr ("Edge with id " ++ (show eid) ++ " could not be found.") (getDGFOEdge (eqdgraph eqdg) reid); sids = edge ^. lens_dgfoedge_sources
 
 eqDGFOEdge_target :: Ord fot => Int -> StateT (EqDGraph s fot sot) (ST s) (EqDGRelFoId s fot sot)
 eqDGFOEdge_target eid = StateT (\eqdg -> return (f_eqDGFOEdge_target eid eqdg))
 
 f_eqDGFOEdge_target :: Ord fot => Int -> (EqDGraph s fot sot -> (EqDGRelFoId s fot sot, EqDGraph s fot sot))
-f_eqDGFOEdge_target eid eqdg = (directEqDGFoId tid, eqdg) where edge = fromJust (getDGFOEdge (eqdgraph eqdg) eid); tid = edge ^. lens_dgfoedge_target
+f_eqDGFOEdge_target eid eqdg = (directEqDGFoId tid, eqdg) where reid = getCurEqDGFOEdge eqdg eid; edge = fromJustErr ("Edge with id " ++ (show eid) ++ " could not be found.") (getDGFOEdge (eqdgraph eqdg) reid); tid = edge ^. lens_dgfoedge_target
+
+checkEqDGSOEdge :: Ord sot => Int -> StateT (EqDGraph s fot sot) (ST s) Bool
+checkEqDGSOEdge eid = StateT (\eqdg -> return (f_checkEqDGSOEdge eid eqdg))
+
+f_checkEqDGSOEdge :: Ord sot => Int -> (EqDGraph s fot sot -> (Bool,EqDGraph s fot sot))
+f_checkEqDGSOEdge eid eqdg = (isJust mb_edge,eqdg) where reid = getCurEqDGSOEdge eqdg eid; mb_edge = getDGSOEdge (eqdgraph eqdg) reid
 
 eqDGSOEdge_head :: Ord sot => Int -> StateT (EqDGraph s fot sot) (ST s) (EqDGRelSoId s fot sot)
 eqDGSOEdge_head eid = StateT (\eqdg -> return (f_eqDGSOEdge_head eid eqdg))
 
 f_eqDGSOEdge_head :: Ord sot => Int -> (EqDGraph s fot sot -> (EqDGRelSoId s fot sot, EqDGraph s fot sot))
-f_eqDGSOEdge_head eid eqdg = (directEqDGSoId hid, eqdg) where edge = fromJust (getDGSOEdge (eqdgraph eqdg) eid); hid = edge ^. lens_dgsoedge_head
+f_eqDGSOEdge_head eid eqdg = (directEqDGSoId hid, eqdg) where reid = getCurEqDGSOEdge eqdg eid; edge = fromJustErr ("Edge with id " ++ (show eid) ++ " could not be found.") (getDGSOEdge (eqdgraph eqdg) reid); hid = edge ^. lens_dgsoedge_head
 
 eqDGSOEdge_sources :: Ord sot => Int -> StateT (EqDGraph s fot sot) (ST s) [EqDGRelSoId s fot sot]
 eqDGSOEdge_sources eid = StateT (\eqdg -> return (f_eqDGSOEdge_sources eid eqdg))
 
 f_eqDGSOEdge_sources :: Ord sot => Int -> (EqDGraph s fot sot -> ([EqDGRelSoId s fot sot], EqDGraph s fot sot))
-f_eqDGSOEdge_sources eid eqdg = (directEqDGSoId <$> sids, eqdg) where edge = fromJust (getDGSOEdge (eqdgraph eqdg) eid); sids = edge ^. lens_dgsoedge_sources
+f_eqDGSOEdge_sources eid eqdg = (directEqDGSoId <$> sids, eqdg) where reid = getCurEqDGSOEdge eqdg eid; edge = fromJustErr ("Edge with id " ++ (show eid) ++ " could not be found.") (getDGSOEdge (eqdgraph eqdg) reid); sids = edge ^. lens_dgsoedge_sources
 
 eqDGSOEdge_target :: Ord sot => Int -> StateT (EqDGraph s fot sot) (ST s) (EqDGRelSoId s fot sot)
 eqDGSOEdge_target eid = StateT (\eqdg -> return (f_eqDGSOEdge_target eid eqdg))
 
 f_eqDGSOEdge_target :: Ord sot => Int -> (EqDGraph s fot sot -> (EqDGRelSoId s fot sot, EqDGraph s fot sot))
-f_eqDGSOEdge_target eid eqdg = (directEqDGSoId tid, eqdg) where edge = fromJust (getDGSOEdge (eqdgraph eqdg) eid); tid = edge ^. lens_dgsoedge_target
+f_eqDGSOEdge_target eid eqdg = (directEqDGSoId tid, eqdg) where reid = getCurEqDGSOEdge eqdg eid; edge = fromJustErr ("Edge with id " ++ (show eid) ++ " could not be found.") (getDGSOEdge (eqdgraph eqdg) reid); tid = edge ^. lens_dgsoedge_target
 
 
 
@@ -572,7 +633,7 @@ raw_newEqDGSONode :: Ord sot => sot -> StateT (EqDGraph s fot sot) (ST s) Int
 raw_newEqDGSONode sot = StateT (f_raw_newEqDGSONode sot)
 
 f_raw_newEqDGSONode :: Ord sot => sot -> (EqDGraph s fot sot -> ST s (Int, EqDGraph s fot sot))
-f_raw_newEqDGSONode sot eqdg = do {apt <- fresh sot; let {with_st = mzoom lens_eqdgraph newDGSONode; (nn,eqdg1) = runState with_st eqdg; eqdg2 = lens_eqdg_sopoints ..~ Data.Map.Strict.insert sot apt $ eqdg1; eqdg3 = lens_eqdg_sonodes ..~ Data.Map.Strict.insert sot nn $ eqdg2; eqdg4 = lens_eqdg_soelements ..~ (add_to_maplist nn sot) $ eqdg3}; return (nn,eqdg4)}
+f_raw_newEqDGSONode sot eqdg = do {apt <- (fresh sot); let {with_st = (mzoom lens_eqdgraph newDGSONode); (nn,eqdg1) = (runState with_st eqdg); eqdg2 = (lens_eqdg_sopoints ..~ Data.Map.Strict.insert sot apt $ eqdg1); eqdg3 = (lens_eqdg_sonodes ..~ Data.Map.Strict.insert sot nn $ eqdg2); eqdg4 = (lens_eqdg_soelements ..~ (add_to_maplist nn sot) $ eqdg3)}; (return (nn,eqdg4))}
 
 -- Creates the node if necessary.
 doGetEqDGSONode :: Ord sot => sot -> StateT (EqDGraph s fot sot) (ST s) Int
@@ -595,7 +656,7 @@ raw_newEqDGFOEdge :: (Ord fot, Ord sot) => Int -> [Int] -> Int -> StateT (EqDGra
 raw_newEqDGFOEdge h ss t = StateT (\eqdg -> return (f_newEqDGFOEdge h ss t eqdg))
 
 f_newEqDGFOEdge :: (Ord fot, Ord sot) => Int -> [Int] -> Int -> (EqDGraph s fot sot -> (Int, EqDGraph s fot sot))
-f_newEqDGFOEdge h ss t eqdg = (edge, eqdg1) where edge_st = newDGFOEdge h ss t; (edge,eqdg1) = runState (mzoom lens_eqdgraph edge_st) eqdg
+f_newEqDGFOEdge h ss t eqdg = (edge, eqdg1) where rh = getEqDGSORId eqdg h; rss = Prelude.map (getEqDGFORId eqdg) ss; rt = getEqDGFORId eqdg t; edge_st = newDGFOEdge rh rss rt; (edge,eqdg1) = runState (mzoom lens_eqdgraph edge_st) eqdg
 
 newEqDGFOEdge :: (Ord fot, Ord sot) => EqDGRelSoId s fot sot -> [EqDGRelFoId s fot sot] -> EqDGRelFoId s fot sot -> StateT (EqDGraph s fot sot) (ST s) Int
 newEqDGFOEdge h ss t = do {rh <- getSTRelativeEqDGSoId h; rss <- traverse getSTRelativeEqDGFoId ss; rt <- getSTRelativeEqDGFoId t; raw_newEqDGFOEdge rh rss rt}
@@ -608,13 +669,13 @@ newAnonEqDGFOEdge :: (Ord fot, Ord sot) => EqDGRelSoId s fot sot -> [EqDGRelFoId
 newAnonEqDGFOEdge h ss = do {rh <- getSTRelativeEqDGSoId h; rss <- traverse getSTRelativeEqDGFoId ss; directEqDGFoId <$> (raw_newAnonEqDGFOEdge rh rss)}
 
 f_newAnonEqDGFOEdge :: (Ord fot, Ord sot) => Int -> [Int] -> (EqDGraph s fot sot -> ST s (Int, EqDGraph s fot sot))
-f_newAnonEqDGFOEdge h ss eqdg = do {(t,eqdg1) <- runStateT raw_newAnonEqDGFONode eqdg; let {edge_st = newDGFOEdge h ss t; (edge,eqdg2) = runState (mzoom lens_eqdgraph edge_st) eqdg1}; return (t,eqdg2)}
+f_newAnonEqDGFOEdge h ss eqdg = do {(t,eqdg1) <- runStateT raw_newAnonEqDGFONode eqdg; let {rh = getEqDGSORId eqdg1 h; rss = Prelude.map (getEqDGFORId eqdg1) ss; edge_st = newDGFOEdge rh rss t; (edge,eqdg2) = runState (mzoom lens_eqdgraph edge_st) eqdg1}; return (t,eqdg2)}
 
 raw_newEqDGSOEdge :: Ord sot => Int -> [Int] -> Int -> StateT (EqDGraph s fot sot) (ST s) Int
 raw_newEqDGSOEdge h ss t = StateT (\eqdg -> return (f_newEqDGSOEdge h ss t eqdg))
 
 f_newEqDGSOEdge :: Ord sot => Int -> [Int] -> Int -> (EqDGraph s fot sot -> (Int, EqDGraph s fot sot))
-f_newEqDGSOEdge h ss t eqdg = (edge, eqdg1) where edge_st = newDGSOEdge h ss t; (edge,eqdg1) = runState (mzoom lens_eqdgraph edge_st) eqdg
+f_newEqDGSOEdge h ss t eqdg = (edge, eqdg1) where rh = getEqDGSORId eqdg h; rss = Prelude.map (getEqDGSORId eqdg) ss; rt = getEqDGSORId eqdg t; edge_st = newDGSOEdge rh rss rt; (edge,eqdg1) = runState (mzoom lens_eqdgraph edge_st) eqdg
 
 newEqDGSOEdge :: Ord sot => EqDGRelSoId s fot sot -> [EqDGRelSoId s fot sot] -> EqDGRelSoId s fot sot -> StateT (EqDGraph s fot sot) (ST s) Int
 newEqDGSOEdge h ss t = do {rh <- getSTRelativeEqDGSoId h; rss <- traverse getSTRelativeEqDGSoId ss; rt <- getSTRelativeEqDGSoId t; raw_newEqDGSOEdge rh rss rt}
@@ -627,13 +688,13 @@ newAnonEqDGSOEdge :: Ord sot => EqDGRelSoId s fot sot -> [EqDGRelSoId s fot sot]
 newAnonEqDGSOEdge h ss = do {rh <- getSTRelativeEqDGSoId h; rss <- traverse getSTRelativeEqDGSoId ss; directEqDGSoId <$> (raw_newAnonEqDGSOEdge rh rss)}
 
 f_newAnonEqDGSOEdge :: Ord sot => Int -> [Int] -> (EqDGraph s fot sot -> ST s (Int, EqDGraph s fot sot))
-f_newAnonEqDGSOEdge h ss eqdg = do {(t,eqdg1) <- runStateT raw_newAnonEqDGSONode eqdg; let {edge_st = newDGSOEdge h ss t; (edge,eqdg2) = runState (mzoom lens_eqdgraph edge_st) eqdg1}; return (t,eqdg2)}
+f_newAnonEqDGSOEdge h ss eqdg = do {(t,eqdg1) <- runStateT raw_newAnonEqDGSONode eqdg; let {rh = getEqDGSORId eqdg1 h; rss = Prelude.map (getEqDGSORId eqdg1) ss; edge_st = newDGSOEdge rh rss t; (edge,eqdg2) = runState (mzoom lens_eqdgraph edge_st) eqdg1}; return (t,eqdg2)}
 
-deleteEqDGFOEdge :: Int -> StateT (EqDGraph s fot sot) (ST s) ()
-deleteEqDGFOEdge id = hoist (return . runIdentity) (mzoom lens_eqdgraph (deleteDGFOEdge id))
+deleteEqDGFOEdge :: Ord fot => Int -> StateT (EqDGraph s fot sot) (ST s) ()
+deleteEqDGFOEdge id = hoist (return . runIdentity) (do {eqdg <- get; let {rid = getCurEqDGFOEdge eqdg id}; (mzoom lens_eqdgraph (deleteDGFOEdge rid))})
 
-deleteEqDGSOEdge :: Int -> StateT (EqDGraph s fot sot) (ST s) ()
-deleteEqDGSOEdge id = hoist (return . runIdentity) (mzoom lens_eqdgraph (deleteDGSOEdge id))
+deleteEqDGSOEdge :: Ord sot => Int -> StateT (EqDGraph s fot sot) (ST s) ()
+deleteEqDGSOEdge id = hoist (return . runIdentity) (do {eqdg <- get; let {rid = getCurEqDGSOEdge eqdg id}; (mzoom lens_eqdgraph (deleteDGSOEdge rid))})
 
 -- Valid heads, valid sources, valid targets.
 in_filterEqDGFOEdges :: (Ord fot, Ord sot) => [sot] -> [fot] -> [fot] -> EqDGraph s fot sot -> [Int] -> ST s [Int]
@@ -653,7 +714,7 @@ in_filterIdEqDGFOEdges :: [Int] -> [Int] -> [Int] -> EqDGraph s fot sot -> [Int]
 in_filterIdEqDGFOEdges hs ss ts eqdg es = Prelude.filter (in_filterIdEqDGFOEdge hs ss ts eqdg) es
 
 in_filterIdEqDGFOEdge :: [Int] -> [Int] -> [Int] -> EqDGraph s fot sot -> Int -> Bool
-in_filterIdEqDGFOEdge hs ss ts eqdg e = (isJust mb_edge) && (elem_or_empty rh hs) && (any (\s -> elem_or_empty s ss) rss) && (elem_or_empty rt ts) where mb_edge = getDGFOEdge (eqdg ^. lens_eqdgraph) e; (DGFOEdge _ rh rss rt) = fromJust mb_edge
+in_filterIdEqDGFOEdge hs ss ts eqdg e = (isJust mb_edge) && (elem_or_empty frh fhs) && (any (\s -> elem_or_empty s fss) frss) && (elem_or_empty frt fts) where mb_edge = getDGFOEdge (eqdg ^. lens_eqdgraph) e; (DGFOEdge _ rh rss rt) = fromJust mb_edge; fhs = Prelude.map (getEqDGSORId eqdg) hs; fss = Prelude.map (getEqDGFORId eqdg) ss; fts = Prelude.map (getEqDGFORId eqdg) ts; frh = getEqDGSORId eqdg rh; frss = Prelude.map (getEqDGFORId eqdg) rss; frt = getEqDGFORId eqdg rt
 
 in_filterEqDGSOEdges :: Ord sot => [sot] -> [sot] -> [sot] -> EqDGraph s fot sot -> [Int] -> ST s [Int]
 in_filterEqDGSOEdges hs ss ts eqdg es = do
@@ -672,10 +733,10 @@ in_filterIdEqDGSOEdges :: [Int] -> [Int] -> [Int] -> EqDGraph s fot sot -> [Int]
 in_filterIdEqDGSOEdges hs ss ts eqdg es = Prelude.filter (in_filterIdEqDGSOEdge hs ss ts eqdg) es
 
 in_filterIdEqDGSOEdge :: [Int] -> [Int] -> [Int] -> EqDGraph s fot sot -> Int -> Bool
-in_filterIdEqDGSOEdge hs ss ts eqdg e = (isJust mb_edge) && (elem_or_empty rh hs) && (any (\s -> elem_or_empty s ss) rss) && (elem_or_empty rt ts) where mb_edge = getDGSOEdge (eqdg ^. lens_eqdgraph) e; (DGSOEdge _ rh rss rt) = fromJust mb_edge
+in_filterIdEqDGSOEdge hs ss ts eqdg e = (isJust mb_edge) && (elem_or_empty frh fhs) && (any (\s -> elem_or_empty s fss) frss) && (elem_or_empty frt fts) where mb_edge = getDGSOEdge (eqdg ^. lens_eqdgraph) e; (DGSOEdge _ rh rss rt) = fromJust mb_edge; fhs = Prelude.map (getEqDGSORId eqdg) hs; fss = Prelude.map (getEqDGSORId eqdg) ss; fts = Prelude.map (getEqDGSORId eqdg) ts; frh = getEqDGSORId eqdg rh; frss = Prelude.map (getEqDGSORId eqdg) rss; frt = getEqDGSORId eqdg rt
 
 searchOutEqDGFOEdges :: (Ord fot, Ord sot) => [Int] -> [Int] -> EqDGraph s fot sot -> Int -> [Int]
-searchOutEqDGFOEdges hs ts eqdg s = if (isNothing mb_node) then [] else (in_filterIdEqDGFOEdges hs [] ts eqdg out) where mb_node = getDGFONode (eqdg ^. lens_eqdgraph) s; (DGFONode _ out _) = fromJust mb_node;
+searchOutEqDGFOEdges hs ts eqdg s = if (isNothing mb_node) then [] else (in_filterIdEqDGFOEdges hs [] ts eqdg out) where rs = getEqDGFORId eqdg s; mb_node = getDGFONode (eqdg ^. lens_eqdgraph) rs; (DGFONode _ out _) = fromJust mb_node;
 
 raw_st_searchOutEqDGFOEdges :: (Ord fot, Ord sot) => [Int] -> [Int] -> Int -> StateT (EqDGraph s fot sot) (ST s) [Int]
 raw_st_searchOutEqDGFOEdges hs ts s = StateT (f_searchOutEqDGFOEdges hs ts s)
@@ -687,7 +748,7 @@ f_searchOutEqDGFOEdges :: (Ord fot, Ord sot) => [Int] -> [Int] -> Int -> (EqDGra
 f_searchOutEqDGFOEdges hs ts s eqdg = (,eqdg) <$> stmb_int where stmb_int = return (searchOutEqDGFOEdges hs ts eqdg s)
 
 searchInEqDGFOEdges :: (Ord fot, Ord sot) => [Int] -> [Int] -> EqDGraph s fot sot -> Int -> [Int]
-searchInEqDGFOEdges hs ss eqdg t = if (isNothing mb_node) then [] else (in_filterIdEqDGFOEdges hs ss [] eqdg iin) where mb_node = getDGFONode (eqdg ^. lens_eqdgraph) t; (DGFONode _ _ iin) = fromJust mb_node;
+searchInEqDGFOEdges hs ss eqdg t = if (isNothing mb_node) then [] else (in_filterIdEqDGFOEdges hs ss [] eqdg iin) where rt = getEqDGFORId eqdg t; mb_node = getDGFONode (eqdg ^. lens_eqdgraph) rt; (DGFONode _ _ iin) = fromJust mb_node;
 
 raw_st_searchInEqDGFOEdges :: (Ord fot, Ord sot) => [Int] -> [Int] -> Int -> StateT (EqDGraph s fot sot) (ST s) [Int]
 raw_st_searchInEqDGFOEdges hs ss t = StateT (f_searchInEqDGFOEdges hs ss t)
@@ -699,7 +760,7 @@ f_searchInEqDGFOEdges :: (Ord fot, Ord sot) => [Int] -> [Int] -> Int -> (EqDGrap
 f_searchInEqDGFOEdges hs ss t eqdg = (,eqdg) <$> stmb_int where stmb_int = return (searchInEqDGFOEdges hs ss eqdg t)
 
 searchHEqDGFOEdges :: (Ord fot, Ord sot) => [Int] -> [Int] -> EqDGraph s fot sot -> Int -> [Int]
-searchHEqDGFOEdges ss ts eqdg h = if (isNothing mb_node) then [] else (in_filterIdEqDGFOEdges [] ss ts eqdg foh) where mb_node = getDGSONode (eqdg ^. lens_eqdgraph) h; (DGSONode _ _ _ foh _) = fromJust mb_node;
+searchHEqDGFOEdges ss ts eqdg h = if (isNothing mb_node) then [] else (in_filterIdEqDGFOEdges [] ss ts eqdg foh) where rh = getEqDGSORId eqdg h; mb_node = getDGSONode (eqdg ^. lens_eqdgraph) rh; (DGSONode _ _ _ foh _) = fromJust mb_node;
 
 raw_st_searchHEqDGFOEdges :: (Ord fot, Ord sot) => [Int] -> [Int] -> Int -> StateT (EqDGraph s fot sot) (ST s) [Int]
 raw_st_searchHEqDGFOEdges ss ts h = StateT (f_searchHEqDGFOEdges ss ts h)
@@ -714,10 +775,10 @@ st_checkEqDGFOEdge :: (Ord fot, Ord sot) => EqDGRelSoId s fot sot -> [EqDGRelFoI
 st_checkEqDGFOEdge h ss t = do {es <- st_searchHEqDGFOEdges ss [t] h; let {ecs = Prelude.map (st_checkEqDGFOSingleEdge h ss t) es}; Prelude.foldr (>>=|) (return False) ecs}
 
 st_checkEqDGFOSingleEdge :: (Ord fot, Ord sot) => EqDGRelSoId s fot sot -> [EqDGRelFoId s fot sot] -> EqDGRelFoId s fot sot -> Int -> StateT (EqDGraph s fot sot) (ST s) Bool
-st_checkEqDGFOSingleEdge h ss t e = do {eh <- eqDGFOEdge_head e; ess <- eqDGFOEdge_sources e; et <- eqDGFOEdge_target e; let {sscs = Prelude.map (uncurry eqSTRelativeIds) (zip ess ss)}; ssb <- Prelude.foldr (>>=&) (return True) sscs; if ((length ss) == (length ess)) then ((return ssb) >>=& (eqSTRelativeIds eh h) >>=& (eqSTRelativeIds et t)) else (return False)}
+st_checkEqDGFOSingleEdge h ss t e = do {eh <- eqDGFOEdge_head e; ess <- eqDGFOEdge_sources e; et <- eqDGFOEdge_target e; let {sscs = Prelude.map (uncurry eqSTRelativeEqDGFoIds) (zip ess ss)}; ssb <- Prelude.foldr (>>=&) (return True) sscs; if ((length ss) == (length ess)) then ((return ssb) >>=& (eqSTRelativeEqDGSoIds eh h) >>=& (eqSTRelativeEqDGFoIds et t)) else (return False)}
 
 searchOutEqDGSOEdges :: Ord sot => [Int] -> [Int] -> EqDGraph s fot sot -> Int -> [Int]
-searchOutEqDGSOEdges hs ts eqdg s = if (isNothing mb_node) then [] else (in_filterIdEqDGSOEdges hs [] ts eqdg out) where mb_node = getDGSONode (eqdg ^. lens_eqdgraph) s; (DGSONode _ out _ _ _) = fromJust mb_node;
+searchOutEqDGSOEdges hs ts eqdg s = if (isNothing mb_node) then [] else (in_filterIdEqDGSOEdges hs [] ts eqdg out) where rs = getEqDGSORId eqdg s; mb_node = getDGSONode (eqdg ^. lens_eqdgraph) rs; (DGSONode _ out _ _ _) = fromJust mb_node;
 
 raw_st_searchOutEqDGSOEdges :: Ord sot => [Int] -> [Int] -> Int -> StateT (EqDGraph s fot sot) (ST s) [Int]
 raw_st_searchOutEqDGSOEdges hs ts s = StateT (f_searchOutEqDGSOEdges hs ts s)
@@ -729,7 +790,7 @@ f_searchOutEqDGSOEdges :: Ord sot => [Int] -> [Int] -> Int -> (EqDGraph s fot so
 f_searchOutEqDGSOEdges hs ts s eqdg = (,eqdg) <$> stmb_int where stmb_int = return (searchOutEqDGSOEdges hs ts eqdg s)
 
 searchInEqDGSOEdges :: Ord sot => [Int] -> [Int] -> EqDGraph s fot sot -> Int -> [Int]
-searchInEqDGSOEdges hs ss eqdg t = if (isNothing mb_node) then [] else (in_filterIdEqDGSOEdges hs ss [] eqdg iin) where mb_node = getDGSONode (eqdg ^. lens_eqdgraph) t; (DGSONode _ _ iin _ _) = fromJust mb_node;
+searchInEqDGSOEdges hs ss eqdg t = if (isNothing mb_node) then [] else (in_filterIdEqDGSOEdges hs ss [] eqdg iin) where rt = getEqDGSORId eqdg t; mb_node = getDGSONode (eqdg ^. lens_eqdgraph) rt; (DGSONode _ _ iin _ _) = fromJust mb_node;
 
 raw_st_searchInEqDGSOEdges :: Ord sot => [Int] -> [Int] -> Int -> StateT (EqDGraph s fot sot) (ST s) [Int]
 raw_st_searchInEqDGSOEdges hs ss t = StateT (f_searchInEqDGSOEdges hs ss t)
@@ -741,7 +802,7 @@ f_searchInEqDGSOEdges :: Ord sot => [Int] -> [Int] -> Int -> (EqDGraph s fot sot
 f_searchInEqDGSOEdges hs ss t eqdg = (,eqdg) <$> stmb_int where stmb_int = return (searchInEqDGSOEdges hs ss eqdg t)
 
 searchHEqDGSOEdges :: Ord sot => [Int] -> [Int] -> EqDGraph s fot sot -> Int -> [Int]
-searchHEqDGSOEdges ss ts eqdg h = if (isNothing mb_node) then [] else (in_filterIdEqDGSOEdges [] ss ts eqdg soh) where mb_node = getDGSONode (eqdg ^. lens_eqdgraph) h; (DGSONode _ _ _ _ soh) = fromJust mb_node;
+searchHEqDGSOEdges ss ts eqdg h = if (isNothing mb_node) then [] else (in_filterIdEqDGSOEdges [] ss ts eqdg soh) where rh = getEqDGSORId eqdg h; mb_node = getDGSONode (eqdg ^. lens_eqdgraph) rh; (DGSONode _ _ _ _ soh) = fromJust mb_node;
 
 raw_st_searchHEqDGSOEdges :: Ord sot => [Int] -> [Int] -> Int -> StateT (EqDGraph s fot sot) (ST s) [Int]
 raw_st_searchHEqDGSOEdges ss ts h = StateT (f_searchHEqDGSOEdges ss ts h)
@@ -752,11 +813,11 @@ st_searchHEqDGSOEdges ss ts h = do {rss <- traverse getSTRelativeEqDGSoId ss; rt
 f_searchHEqDGSOEdges :: Ord sot => [Int] -> [Int] -> Int -> (EqDGraph s fot sot -> ST s ([Int], EqDGraph s fot sot))
 f_searchHEqDGSOEdges ss ts h eqdg = (,eqdg) <$> stmb_int where stmb_int = return (searchHEqDGSOEdges ss ts eqdg h)
 
-st_checkEqDGSOEdge :: Ord sot => EqDGRelSoId s fot sot -> [EqDGRelSoId s fot sot] -> EqDGRelSoId s fot sot -> StateT (EqDGraph s fot sot) (ST s) Bool
+st_checkEqDGSOEdge :: (Ord fot, Ord sot) => EqDGRelSoId s fot sot -> [EqDGRelSoId s fot sot] -> EqDGRelSoId s fot sot -> StateT (EqDGraph s fot sot) (ST s) Bool
 st_checkEqDGSOEdge h ss t = do {es <- st_searchHEqDGSOEdges ss [t] h; let {ecs = Prelude.map (st_checkEqDGSOSingleEdge h ss t) es}; Prelude.foldr (>>=|) (return False) ecs}
 
-st_checkEqDGSOSingleEdge :: Ord sot => EqDGRelSoId s fot sot -> [EqDGRelSoId s fot sot] -> EqDGRelSoId s fot sot -> Int -> StateT (EqDGraph s fot sot) (ST s) Bool
-st_checkEqDGSOSingleEdge h ss t e = do {eh <- eqDGSOEdge_head e; ess <- eqDGSOEdge_sources e; et <- eqDGSOEdge_target e; let {sscs = Prelude.map (uncurry eqSTRelativeIds) (zip ess ss)}; ssb <- Prelude.foldr (>>=&) (return True) sscs; if ((length ss) == (length ess)) then ((return ssb) >>=& (eqSTRelativeIds eh h) >>=& (eqSTRelativeIds et t)) else (return False)}
+st_checkEqDGSOSingleEdge :: (Ord fot, Ord sot) => EqDGRelSoId s fot sot -> [EqDGRelSoId s fot sot] -> EqDGRelSoId s fot sot -> Int -> StateT (EqDGraph s fot sot) (ST s) Bool
+st_checkEqDGSOSingleEdge h ss t e = do {eh <- eqDGSOEdge_head e; ess <- eqDGSOEdge_sources e; et <- eqDGSOEdge_target e; let {sscs = Prelude.map (uncurry eqSTRelativeEqDGSoIds) (zip ess ss)}; ssb <- Prelude.foldr (>>=&) (return True) sscs; if ((length ss) == (length ess)) then ((return ssb) >>=& (eqSTRelativeEqDGSoIds eh h) >>=& (eqSTRelativeEqDGSoIds et t)) else (return False)}
 
 
 raw_getEquivDGFONodes :: Ord fot => EqDGraph s fot sot -> fot -> ST s [fot]
@@ -765,8 +826,8 @@ raw_getEquivDGFONodes eqdg fot = do {(nid,eqdg1) <- runStateT (doGetEqDGFONode f
 raw_st_getEquivDGFONodes :: Ord fot => fot -> StateT (EqDGraph s fot sot) (ST s) [fot]
 raw_st_getEquivDGFONodes fot = StateT (f_getEquivDGFONodes fot)
 
-getEquivDGFONodes :: Ord fot => EqDGRelFoId s fot sot -> StateT (EqDGraph s fot sot) (ST s) [EqDGRelFoId s fot sot]
-getEquivDGFONodes fot = (fmap relbwEqDGFoId) <$> ((getSTRelativeEqDGFoCoId fot) >>= raw_st_getEquivDGFONodes)
+getEquivDGFONodes :: Ord fot => EqDGRelFoId s fot sot -> StateT (EqDGraph s fot sot) (ST s) [fot]
+getEquivDGFONodes fot = do {mb_coid <- getSTRelativeEqDGFoCoId fot; let {coid = fromJustErr "getEquivDGFONodes" mb_coid}; equivs <- if (isNothing mb_coid) then (return []) else (raw_st_getEquivDGFONodes coid); return equivs}
 
 f_getEquivDGFONodes :: Ord fot => fot -> (EqDGraph s fot sot -> ST s ([fot], EqDGraph s fot sot))
 f_getEquivDGFONodes fot eqdg = (,eqdg) <$> stmb_int where stmb_int = raw_getEquivDGFONodes eqdg fot
@@ -777,8 +838,8 @@ raw_getEquivDGSONodes eqdg sot = do {(nid,eqdg1) <- runStateT (doGetEqDGSONode s
 raw_st_getEquivDGSONodes :: Ord sot => sot -> StateT (EqDGraph s fot sot) (ST s) [sot]
 raw_st_getEquivDGSONodes sot = StateT (f_getEquivDGSONodes sot)
 
-getEquivDGSONodes :: Ord sot => EqDGRelSoId s fot sot -> StateT (EqDGraph s fot sot) (ST s) [EqDGRelSoId s fot sot]
-getEquivDGSONodes sot = (fmap relbwEqDGSoId) <$> ((getSTRelativeEqDGSoCoId sot) >>= raw_st_getEquivDGSONodes)
+getEquivDGSONodes :: Ord sot => EqDGRelSoId s fot sot -> StateT (EqDGraph s fot sot) (ST s) [sot]
+getEquivDGSONodes sot = do {mb_coid <- getSTRelativeEqDGSoCoId sot; let {coid = fromJustErr "getEquivDGSONodes" mb_coid}; equivs <- if (isNothing mb_coid) then (return []) else (raw_st_getEquivDGSONodes coid); return equivs}
 
 f_getEquivDGSONodes :: Ord sot => sot -> (EqDGraph s fot sot -> ST s ([sot], EqDGraph s fot sot))
 f_getEquivDGSONodes sot eqdg = (,eqdg) <$> stmb_int where stmb_int = raw_getEquivDGSONodes eqdg sot
@@ -805,12 +866,13 @@ mergeEqDGFONodes :: (Ord fot, Ord sot) => EqDGRelFoId s fot sot -> EqDGRelFoId s
 mergeEqDGFONodes lfot rfot = do {lnid <- getSTRelativeEqDGFoId lfot; rnid <- getSTRelativeEqDGFoId rfot; directEqDGFoId <$> (raw_mergeEqDGFONodes lnid rnid)}
 
 f_mergeEqDGFONodes :: (Ord fot, Ord sot) => Int -> Int -> (EqDGraph s fot sot -> ST s (Int,EqDGraph s fot sot))
-f_mergeEqDGFONodes lnid rnid eqdg | lnid == rnid = return (lnid,eqdg)
+f_mergeEqDGFONodes lnid rnid eqdg | (getEqDGFORId eqdg lnid) == (getEqDGFORId eqdg rnid) = return (lnid,eqdg)
 f_mergeEqDGFONodes lnid rnid eqdg = 
 	do
 	{
-		mb_lfot <- getEqDGFORep eqdg lnid;
-		mb_rfot <- getEqDGFORep eqdg rnid;
+		let {rlnid = getEqDGFORId eqdg lnid; rrnid = getEqDGFORId eqdg rnid};
+		mb_lfot <- getEqDGFORep eqdg rlnid;
+		mb_rfot <- getEqDGFORep eqdg rrnid;
 		let {lfot = fromJust mb_lfot; rfot = fromJust mb_rfot};
 		let {lpt = fromJust (eqdg ^. lens_eqdg_fopoints . (at lfot)); rpt = fromJust (eqdg ^. lens_eqdg_fopoints . (at rfot))};			
 		-- We need to do both directions to consider the cases where one of the nodes has elements and the other not: we never update the fonodes map, 
@@ -818,36 +880,38 @@ f_mergeEqDGFONodes lnid rnid eqdg =
 		-- cannot deal with that with union because there is nothing to unite with.		
 		if (isNothing mb_rfot) then do
 		{
-			let {eout = searchOutEqDGFOEdges [] [] eqdg rnid};
-			let {ein = searchInEqDGFOEdges [] [] eqdg rnid};
+			let {eout = searchOutEqDGFOEdges [] [] eqdg rrnid};
+			let {ein = searchInEqDGFOEdges [] [] eqdg rrnid};
 			let {alle = nub (eout ++ ein)};
 			let {allee = (fromJust <$>) . (Prelude.filter isJust) . (Prelude.map (getDGFOEdge (eqdg ^. lens_eqdgraph))) $ alle};
-			let {ralle = Prelude.map (\(DGFOEdge id h ss t) -> DGFOEdge id h (replaceAll rnid lnid ss) (replaceIf rnid lnid t)) allee};		
+			let {ralle = Prelude.map (\(DGFOEdge id h ss t) -> DGFOEdge id h (replaceAll rrnid rlnid ss) (replaceIf rrnid rlnid t)) allee};		
 			(_,eqdg3) <- runStateT (traverse deleteEqDGFOEdge alle) eqdg;
 			eqdg5 <- (return eqdg3);
-			(_,eqdg5_2) <- runStateT (zoom_on_dgraph (deleteDGFONode rnid)) eqdg5;
-			let {eqdg6 = snd (runState (traverse (\(DGFOEdge _ h ss t) -> mzoom lens_eqdgraph (newDGFOEdge h ss t)) ralle) eqdg5_2)};
-			return (lnid,eqdg6)
+			(_,eqdg5_2) <- runStateT (zoom_on_dgraph (deleteDGFONode rrnid)) eqdg5;
+			let {eqdg6 = snd (runState (traverse (\(DGFOEdge previd h ss t) -> do {newid <- mzoom lens_eqdgraph (newDGFOEdge h ss t); seqdg <- get; put ((lens_eqdg_foedges . (at previd)) .~ (Just newid) $ seqdg)}) ralle) eqdg5_2)};
+			let {eqdg7 = (lens_eqdg_fomerges . (at rrnid)) .~ (Just rlnid) $ eqdg6};
+			return (rlnid,eqdg7)
 		}
 		else do
 		{
-			let {eout = searchOutEqDGFOEdges [] [] eqdg lnid};
-			let {ein = searchInEqDGFOEdges [] [] eqdg lnid};
+			let {eout = searchOutEqDGFOEdges [] [] eqdg rlnid};
+			let {ein = searchInEqDGFOEdges [] [] eqdg rlnid};
 			let {alle = nub (eout ++ ein)};
 			let {allee = (fromJust <$>) . (Prelude.filter isJust) . (Prelude.map (getDGFOEdge (eqdg ^. lens_eqdgraph))) $ alle};
-			let {ralle = Prelude.map (\(DGFOEdge id h ss t) -> DGFOEdge id h (replaceAll lnid rnid ss) (replaceIf lnid rnid t)) allee};		
+			let {ralle = Prelude.map (\(DGFOEdge id h ss t) -> DGFOEdge id h (replaceAll rlnid rrnid ss) (replaceIf rlnid rrnid t)) allee};		
 			(_,eqdg3) <- runStateT (traverse deleteEqDGFOEdge alle) eqdg;
 			eqdg5 <- if (isJust mb_lfot) then do
 			{
 				lfots <- raw_getEquivDGFONodes eqdg3 lfot;
-				let {eqdg4 = addElementsDGFONode eqdg3 rnid lfots; eqdg5 = clearElementsDGFONode eqdg4 lnid};
+				let {eqdg4 = addElementsDGFONode eqdg3 rrnid lfots; eqdg5 = clearElementsDGFONode eqdg4 rlnid};
 				return eqdg5
 			}
 			else (return eqdg3);
-			(_,eqdg5_2) <- runStateT (zoom_on_dgraph (deleteDGFONode lnid)) eqdg5;
-			let {eqdg6 = snd (runState (traverse (\(DGFOEdge _ h ss t) -> mzoom lens_eqdgraph (newDGFOEdge h ss t)) ralle) eqdg5_2)};
+			(_,eqdg5_2) <- runStateT (zoom_on_dgraph (deleteDGFONode rlnid)) eqdg5;
+			let {eqdg6 = snd (runState (traverse (\(DGFOEdge previd h ss t) -> do {newid <- mzoom lens_eqdgraph (newDGFOEdge h ss t); seqdg <- get; put ((lens_eqdg_foedges . (at previd)) .~ (Just newid) $ seqdg)}) ralle) eqdg5_2)};
 			when (isJust mb_lfot) (Data.UnionFind.ST.union lpt rpt);
-			return (rnid,eqdg6)
+			let {eqdg7 = (lens_eqdg_fomerges . (at rlnid)) .~ (Just rrnid) $ eqdg6};
+			return (rrnid,eqdg7)
 		}
 	}
 
@@ -858,12 +922,13 @@ mergeEqDGSONodes :: (Ord fot, Ord sot) => EqDGRelSoId s fot sot -> EqDGRelSoId s
 mergeEqDGSONodes lsot rsot = do {lnid <- getSTRelativeEqDGSoId lsot; rnid <- getSTRelativeEqDGSoId rsot; directEqDGSoId <$> (raw_mergeEqDGSONodes lnid rnid)}
 
 f_mergeEqDGSONodes :: (Ord fot, Ord sot) => Int -> Int -> (EqDGraph s fot sot -> ST s (Int,EqDGraph s fot sot))
-f_mergeEqDGSONodes lnid rnid eqdg | lnid == rnid = return (lnid,eqdg)
+f_mergeEqDGSONodes lnid rnid eqdg | (getEqDGSORId eqdg lnid) == (getEqDGSORId eqdg rnid) = return (lnid,eqdg)
 f_mergeEqDGSONodes lnid rnid eqdg = 
 	do
 	{
-		mb_lsot <- getEqDGSORep eqdg lnid;
-		mb_rsot <- getEqDGSORep eqdg rnid;
+		let {rlnid = getEqDGSORId eqdg lnid; rrnid = getEqDGSORId eqdg rnid};
+		mb_lsot <- getEqDGSORep eqdg rlnid;
+		mb_rsot <- getEqDGSORep eqdg rrnid;
 		let {lsot = fromJust mb_lsot; rsot = fromJust mb_rsot};
 		let {lpt = fromJust (eqdg ^. lens_eqdg_sopoints . (at lsot)); rpt = fromJust (eqdg ^. lens_eqdg_sopoints . (at rsot))};
 		-- We need to do both directions to consider the cases where one of the nodes has elements and the other not: we never update the sonodes map, 
@@ -871,45 +936,64 @@ f_mergeEqDGSONodes lnid rnid eqdg =
 		-- cannot deal with that with union because there is nothing to unite with.
 		if (isNothing mb_rsot) then do
 		{
-			let {eout = searchOutEqDGSOEdges [] [] eqdg rnid};
-			let {ein = searchInEqDGSOEdges [] [] eqdg rnid};
-			let {efoh = searchHEqDGFOEdges [] [] eqdg rnid};
-			let {esoh = searchHEqDGSOEdges [] [] eqdg rnid};
+			let {eout = searchOutEqDGSOEdges [] [] eqdg rrnid};
+			let {ein = searchInEqDGSOEdges [] [] eqdg rrnid};
+			let {efoh = searchHEqDGFOEdges [] [] eqdg rrnid};
+			let {esoh = searchHEqDGSOEdges [] [] eqdg rrnid};
 			let {allse = nub (eout ++ ein ++ esoh); allfe = nub efoh};
 			let {allsee = (fromJust <$>) . (Prelude.filter isJust) . (Prelude.map (getDGSOEdge (eqdg ^. lens_eqdgraph))) $ allse; allfee = (fromJust <$>) . (Prelude.filter isJust) . (Prelude.map (getDGFOEdge (eqdg ^. lens_eqdgraph))) $ allfe};
-			let {rallse = Prelude.map (\(DGSOEdge id h ss t) -> DGSOEdge id (replaceIf rnid lnid h) (replaceAll rnid lnid ss) (replaceIf rnid lnid t)) allsee; rallfe = Prelude.map (\(DGFOEdge id h ss t) -> DGFOEdge id (replaceIf rnid lnid h) ss t) allfee};
+			let {rallse = Prelude.map (\(DGSOEdge id h ss t) -> DGSOEdge id (replaceIf rrnid rlnid h) (replaceAll rrnid rlnid ss) (replaceIf rrnid rlnid t)) allsee; rallfe = Prelude.map (\(DGFOEdge id h ss t) -> DGFOEdge id (replaceIf rrnid rlnid h) ss t) allfee};
 			(_,eqdg3) <- runStateT (traverse deleteEqDGSOEdge allse) eqdg;
 			(_,eqdg3_2) <- runStateT (traverse deleteEqDGFOEdge allfe) eqdg3;
 			eqdg5 <- (return eqdg3_2);
-			(_,eqdg5_2) <- runStateT (zoom_on_dgraph (deleteDGSONode rnid)) eqdg5;
-			let {eqdg6 = snd (runState (traverse (\(DGSOEdge _ h ss t) -> mzoom lens_eqdgraph (newDGSOEdge h ss t)) rallse) eqdg5_2); eqdg6_2 = snd (runState (traverse (\(DGFOEdge _ h ss t) -> mzoom lens_eqdgraph (newDGFOEdge h ss t)) rallfe) eqdg6)};			
-			return (lnid,eqdg6_2)
+			(_,eqdg5_2) <- runStateT (zoom_on_dgraph (deleteDGSONode rrnid)) eqdg5;
+			let {eqdg6 = snd (runState (traverse (\(DGSOEdge previd h ss t) -> do {newid <- mzoom lens_eqdgraph (newDGSOEdge h ss t); seqdg <- get; put ((lens_eqdg_soedges . (at previd)) .~ (Just newid) $ seqdg)}) rallse) eqdg5_2); eqdg6_2 = snd (runState (traverse (\(DGFOEdge previd h ss t) -> do {newid <- mzoom lens_eqdgraph (newDGFOEdge h ss t); seqdg <- get; put ((lens_eqdg_foedges . (at previd)) .~ (Just newid) $ seqdg)}) rallfe) eqdg6)};
+			let {eqdg7 = (lens_eqdg_somerges . (at rrnid)) .~ (Just rlnid) $ eqdg6_2};
+			return (rlnid,eqdg7)
 		}
 		else do
 		{
-			let {eout = searchOutEqDGSOEdges [] [] eqdg lnid};
-			let {ein = searchInEqDGSOEdges [] [] eqdg lnid};
-			let {efoh = searchHEqDGFOEdges [] [] eqdg lnid};
-			let {esoh = searchHEqDGSOEdges [] [] eqdg lnid};
+			let {eout = searchOutEqDGSOEdges [] [] eqdg rlnid};
+			let {ein = searchInEqDGSOEdges [] [] eqdg rlnid};
+			let {efoh = searchHEqDGFOEdges [] [] eqdg rlnid};
+			let {esoh = searchHEqDGSOEdges [] [] eqdg rlnid};
 			let {allse = nub (eout ++ ein ++ esoh); allfe = nub efoh};
 			let {allsee = (fromJust <$>) . (Prelude.filter isJust) . (Prelude.map (getDGSOEdge (eqdg ^. lens_eqdgraph))) $ allse; allfee = (fromJust <$>) . (Prelude.filter isJust) . (Prelude.map (getDGFOEdge (eqdg ^. lens_eqdgraph))) $ allfe};
-			let {rallse = Prelude.map (\(DGSOEdge id h ss t) -> DGSOEdge id (replaceIf lnid rnid h) (replaceAll lnid rnid ss) (replaceIf lnid rnid t)) allsee; rallfe = Prelude.map (\(DGFOEdge id h ss t) -> DGFOEdge id (replaceIf lnid rnid h) ss t) allfee};
+			let {rallse = Prelude.map (\(DGSOEdge id h ss t) -> DGSOEdge id (replaceIf rlnid rrnid h) (replaceAll rlnid rrnid ss) (replaceIf rlnid rrnid t)) allsee; rallfe = Prelude.map (\(DGFOEdge id h ss t) -> DGFOEdge id (replaceIf rlnid rrnid h) ss t) allfee};
 			(_,eqdg3) <- runStateT (traverse deleteEqDGSOEdge allse) eqdg;
 			(_,eqdg3_2) <- runStateT (traverse deleteEqDGFOEdge allfe) eqdg3;
 			eqdg5 <- if (isJust mb_lsot) then do
 			{
 				lsots <- raw_getEquivDGSONodes eqdg3_2 lsot;
-				let {eqdg4 = addElementsDGSONode eqdg3_2 rnid lsots; eqdg5 = clearElementsDGSONode eqdg4 lnid};
+				let {eqdg4 = addElementsDGSONode eqdg3_2 rrnid lsots; eqdg5 = clearElementsDGSONode eqdg4 rlnid};
 				return eqdg5
 			}
 			else (return eqdg3_2);
-			(_,eqdg5_2) <- runStateT (zoom_on_dgraph (deleteDGSONode lnid)) eqdg5;
-			let {eqdg6 = snd (runState (traverse (\(DGSOEdge _ h ss t) -> mzoom lens_eqdgraph (newDGSOEdge h ss t)) rallse) eqdg5_2); eqdg6_2 = snd (runState (traverse (\(DGFOEdge _ h ss t) -> mzoom lens_eqdgraph (newDGFOEdge h ss t)) rallfe) eqdg6)};
+			(_,eqdg5_2) <- runStateT (zoom_on_dgraph (deleteDGSONode rlnid)) eqdg5;
+			let {eqdg6 = snd (runState (traverse (\(DGSOEdge previd h ss t) -> do {newid <- mzoom lens_eqdgraph (newDGSOEdge h ss t); seqdg <- get; put ((lens_eqdg_soedges . (at previd)) .~ (Just newid) $ seqdg)}) rallse) eqdg5_2); eqdg6_2 = snd (runState (traverse (\(DGFOEdge previd h ss t) -> do {newid <- mzoom lens_eqdgraph (newDGFOEdge h ss t); seqdg <- get; put ((lens_eqdg_foedges . (at previd)) .~ (Just newid) $ seqdg)}) rallfe) eqdg6)};
 			when (isJust mb_lsot) (Data.UnionFind.ST.union lpt rpt);
-			return (rnid,eqdg6_2)
+			let {eqdg7 = (lens_eqdg_somerges . (at rlnid)) .~ (Just rrnid) $ eqdg6_2};
+			return (rrnid,eqdg7)
 		}
 	}
 
+find_eqdgraph_foleaves :: StateT (EqDGraph s fot sot) (ST s) [EqDGRelFoId s fot sot]
+find_eqdgraph_foleaves = do
+	{
+		eqdg <- get;
+		let {nodes = (eqdgraph eqdg) ^. lens_fonodes; fnodes = Prelude.map fromJust (Prelude.filter isJust nodes)};
+		let {fil = (\node -> Prelude.null (node ^. lens_dgfonode_out)); ffnodes = Prelude.filter fil fnodes};
+		return (Prelude.map (DirectId . EqDGFoId . dgid) ffnodes)
+	}
+
+find_eqdgraph_soleaves :: StateT (EqDGraph s fot sot) (ST s) [EqDGRelSoId s fot sot]
+find_eqdgraph_soleaves = do
+	{
+		eqdg <- get;
+		let {nodes = (eqdgraph eqdg) ^. lens_sonodes; fnodes = Prelude.map fromJust (Prelude.filter isJust nodes)};
+		let {fil = (\node -> (Prelude.null (node ^. lens_dgsonode_out)) && (Prelude.null (node ^. lens_dgsonode_soh))); ffnodes = Prelude.filter fil fnodes};
+		return (Prelude.map (DirectId . EqDGSoId . dgid) ffnodes)
+	}
 
 zoom_on_dgraph :: State DGraph c -> StateT (EqDGraph s fot sot) (ST s) c
 zoom_on_dgraph st = hoist (return . runIdentity) (mzoom lens_eqdgraph st)

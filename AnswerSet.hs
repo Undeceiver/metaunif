@@ -13,18 +13,22 @@ module AnswerSet where
 
 import HaskellPlus
 import EnumProc
+import Algorithm
 import Data.Bifunctor
 
 class Implicit (s :: *) (t :: *) | s -> t where
 	checkImplicit :: s -> t -> Bool
-	enumImplicit :: s -> EnumProc t
+	enumImplicit :: s -> Computation t
+
+diagEnumImplicit :: Implicit s t => s -> EnumProc t
+diagEnumImplicit s = (enumImplicit s) \$ ()
 
 class (Implicit sa a, Implicit sb b, Functional f a (AnswerSet sb b)) => ImplicitF (sa :: *) (a :: *) (sb :: *) (b :: *) (f :: *) | f sa -> sb, f a -> b where
 	composeImplicit :: sa -> f -> AnswerSet sb b
 
 -- Any functional can be "composed implicitly" by doing it absolutely explicitly. This is the most inefficient thing to do, but it can always be done. Only use when no more clever thing can be done.
 composeImplicitDefault :: (Implicit sa a, Functional f a (AnswerSet sb b)) => sa -> f -> AnswerSet sb b
-composeImplicitDefault sa f = (explicitAS (enumImplicit sa)) >>= (tofun f)
+composeImplicitDefault sa f = (explicitAS (diagEnumImplicit sa)) >>= (tofun f)
 
 -- The third constructor should only appear when there is an instance Implicit s a.
 data AnswerSet s a = SingleAS a | ExplicitAS (EnumProc (AnswerSet s a)) | Implicit s a => ImplicitAS s
@@ -33,10 +37,10 @@ emptyAS :: AnswerSet s a
 emptyAS = ExplicitAS Empty
 
 -- Make the answer set explicit, and therefore the implicit structure type becomes irrelevant. Useful when we need to convert types for when we know there are no more implicit things we can usefully do with it.
-makeExplicit :: AnswerSet s1 a -> AnswerSet s2 a
-makeExplicit (SingleAS a) = SingleAS a
-makeExplicit (ExplicitAS en) = ExplicitAS (fmap makeExplicit en)
-makeExplicit (ImplicitAS s) = ExplicitAS (fmap SingleAS (enumImplicit s))
+makeExplicit :: ExecOrder t => t -> AnswerSet s1 a -> AnswerSet s2 a
+makeExplicit _ (SingleAS a) = SingleAS a
+makeExplicit t (ExplicitAS en) = ExplicitAS (fmap (makeExplicit t) en)
+makeExplicit t (ImplicitAS s) = ExplicitAS (fmap SingleAS (runcomp t (enumImplicit s)))
 
 checkAS :: Eq a => AnswerSet s a -> a -> Bool
 checkAS (SingleAS a1) a2 | a1 == a2 = True
@@ -46,12 +50,15 @@ checkAS (ImplicitAS s) a = checkImplicit s a
 
 -- Don't use this if you can do things with checkAS: This is necessarily explicit and therefore slower in general
 checkPAS :: (a -> Bool) -> AnswerSet s a -> Bool
-checkPAS p as = uns_produce_next (eany (\a -> return (p a)) (enumAS as))
+checkPAS p as = uns_produce_next (eany (\a -> return (p a)) (diagEnumAS as))
 
-enumAS :: AnswerSet s a -> EnumProc a
-enumAS (SingleAS a) = a --> Empty
-enumAS (ExplicitAS en) = es_econcat (fmap enumAS en)
+enumAS :: AnswerSet s a -> Computation a
+enumAS (SingleAS a) = comp a
+enumAS (ExplicitAS en) = (algcomp . ecomp) (fmap enumAS en)
 enumAS (ImplicitAS s) = enumImplicit s
+
+diagEnumAS :: AnswerSet s a -> EnumProc a
+diagEnumAS as = (enumAS as) \$ ()
 
 explicitAS :: EnumProc a -> AnswerSet s a
 explicitAS en = ExplicitAS (fmap SingleAS en)
@@ -77,22 +84,23 @@ instance Functor (AnswerSet s) where
 	fmap f (SingleAS x) = SingleAS (f x)
 	fmap f (ExplicitAS en) = ExplicitAS (fmap (fmap f) en)
 	-- This is where the ugly happens, so don't use fmap if you can use implicit composition.
-	fmap f (ImplicitAS s) = ExplicitAS (fmap (SingleAS . f) (enumImplicit s))
+	fmap f (ImplicitAS s) = ExplicitAS (fmap (SingleAS . f) (diagEnumImplicit s))
 
 instance Applicative (AnswerSet s) where
 	pure x = SingleAS x
 	(SingleAS f) <*> xs = fmap f xs
 	(ExplicitAS en) <*> xs = ExplicitAS (fmap (<*> xs) en)
-	(ImplicitAS s) <*> xs = ExplicitAS (fmap (\f -> fmap f xs) (enumImplicit s))
+	(ImplicitAS s) <*> xs = ExplicitAS (fmap (\f -> fmap f xs) (diagEnumImplicit s))
 
 instance Monad (AnswerSet s) where
 	return x = SingleAS x
 	(SingleAS x) >>= f = f x
 	(ExplicitAS en) >>= f = ExplicitAS (fmap (>>= f) en)
-	(ImplicitAS s) >>= f = (ExplicitAS (fmap SingleAS (enumImplicit s))) >>= f
+	(ImplicitAS s) >>= f = (ExplicitAS (fmap SingleAS (diagEnumImplicit s))) >>= f
 
-instance Foldable (AnswerSet s) where
-	foldr f e as = foldr f e (enumAS as)
+-- We really should not need this instance for now.
+--instance Foldable (AnswerSet s) where
+--	foldr f e as = foldr f e (enumAS as)
 
 -- Invertible relations are always implicitly composable.
 data Invertible sa sb a b = Invertible {fun :: a -> AnswerSet sb b, inv :: b -> AnswerSet sa a, dom :: AnswerSet sa a, rg :: AnswerSet sb b}
@@ -113,7 +121,7 @@ enum_inversion :: (Implicit sa a, Eq a, Eq b) => Inversion sa sb a b -> AnswerSe
 enum_inversion (Inversion f a) = a ?>>= f
 
 instance (Implicit sa a, Functional (Invertible sa sb a b) a (AnswerSet (Inversion sa sb a b) b), Eq a, Eq b) => Implicit (Inversion sa sb a b) b where
-	checkImplicit (Inversion f a) b = if (checkAS (rg f) b) then (any (\x -> (checkAS a x)) (inv f b)) else False
+	checkImplicit (Inversion f a) b = if (checkAS (rg f) b) then (any (\x -> (checkAS a x)) (diagEnumAS (inv f b))) else False
 	enumImplicit (Inversion f a) = (enumAS a) >>= (\x -> enumAS (fun f x))
 
 instance (Implicit sa a, Functional (Invertible sa sb a b) a (AnswerSet (Inversion sa sb a b) b), Eq a, Eq b) => ImplicitF sa a (Inversion sa sb a b) b (Invertible sa sb a b) where
@@ -127,7 +135,7 @@ instance (Implicit sa a, Eq a, Eq b) => Functional (Invertible sa sb a b) a (Ans
 -- Similarly, making a tuple is always implicitly composable (independent answer sets).
 instance (Implicit sa a, Implicit sb b, Eq a, Eq b) => Implicit (AnswerSet sa a, AnswerSet sb b) (a,b) where
 	checkImplicit (asa,asb) (a,b) = (checkAS asa a) && (checkAS asb b)
-	enumImplicit (asa,asb) = (enumAS asa) >>= (\x -> (enumAS asb) >>= (\y -> ((x,y) --> Empty)))
+	enumImplicit (asa,asb) = (enumAS asa) >>= (\x -> (enumAS asb) >>= (\y -> (comp (x,y))))
 
 -- Because this makes the type "grow", it is highly recommended that it is only used to construct, meaning that the implicit type can be left as a wildcard and then simply enumAS or checkAS are used on the final result. Otherwise, use with care.
 tupleAS :: (Implicit sa a, Implicit sb b, Eq a, Eq b) => AnswerSet sa a -> AnswerSet sb b -> AnswerSet (AnswerSet sa a, AnswerSet sb b) (a,b)
@@ -142,4 +150,4 @@ instance (Implicit sa a, Eq a) => Implicit (AnswerSet ssa sa) a where
 as_checkImplicit :: (Implicit sa a, Eq a) => AnswerSet ssa sa -> a -> EnumProc Bool
 as_checkImplicit (SingleAS imp) a = (checkImplicit imp a) --> Empty
 as_checkImplicit (ExplicitAS en) a = eany (\imp -> as_checkImplicit imp a) en
-as_checkImplicit (ImplicitAS iimp) a = eany (\imp -> (checkImplicit imp a) --> Empty) (enumImplicit iimp)
+as_checkImplicit (ImplicitAS iimp) a = eany (\imp -> (checkImplicit imp a) --> Empty) (diagEnumImplicit iimp)

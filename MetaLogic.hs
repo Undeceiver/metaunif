@@ -37,6 +37,7 @@ import ESUnification
 import EnumProc
 import Control.Monad.ST
 import Control.Monad.State
+import AnswerSet
 
 -- We may use these so we leave them, but these are the old flat meta-variables approach. Check the new second-order approach instead.
 
@@ -346,19 +347,103 @@ instance Read SOMetaTermDependant where
 				[(TDDirect (fst r),(snd r))])
 		}
 
-type SOMetaUnifDGraph s = ESUnifNDGraph s CTermF OFunction OVariable SOMVariable UnifVariable
+type SOMetaUnifDGraph s = ESUnifVDGraph s CTermF OFunction OVariable SOMVariable UnifVariable
 type SOMetaUnifRelFoId s = ESUnifRelFoId s CTermF OFunction OVariable SOMVariable UnifVariable
 type SOMetaUnifRelSoId s = ESUnifRelSoId s CTermF OFunction OVariable SOMVariable UnifVariable
+type RSOMetaUnifDGraph = RESUnifVDGraph CTermF OFunction OVariable SOMVariable UnifVariable
+type SOMetaUnifSysSolution = UnifSysSolution OFunction SOMVariable
 
 metaunif_vertical_commute :: StateT (SOMetaUnifDGraph s) (ST s) ()
-metaunif_vertical_commute = do_esu_vertical_commute
+metaunif_vertical_commute = esu_vertical_commute
 
 metaunif_vertical_align :: StateT (SOMetaUnifDGraph s) (ST s) ()
-metaunif_vertical_align = do_esu_vertical_align
+metaunif_vertical_align = esu_vertical_align
 
 metaunif_sozip :: StateT (SOMetaUnifDGraph s) (ST s) ()
-metaunif_sozip = do_esu_sozip
+metaunif_sozip = esu_sozip
 
+metaunif_fozip :: StateT (SOMetaUnifDGraph s) (ST s) ()
+metaunif_fozip = esu_fozip
+
+metaunif_so_simplify_projections :: StateT (SOMetaUnifDGraph s) (ST s) ()
+metaunif_so_simplify_projections = esu_so_simplify_projections
+
+metaunif_fo_simplify_projections :: StateT (SOMetaUnifDGraph s) (ST s) ()
+metaunif_fo_simplify_projections = esu_fo_simplify_projections
+
+metaunif_fo_dump :: StateT (SOMetaUnifDGraph s) (ST s) ()
+metaunif_fo_dump = esu_fo_dump
+
+metaunif_so_dump :: StateT (SOMetaUnifDGraph s) (ST s) ()
+metaunif_so_dump = esu_so_dump
+
+metaunif_check_all_consistency :: StateT (SOMetaUnifDGraph s) (ST s) Bool
+metaunif_check_all_consistency = metaunif_check_sot_consistency >>=& metaunif_check_head_arity_so >>=& metaunif_check_head_arity_fo >>=& metaunif_check_target_arity_so >>=& metaunif_occurs_check_so >>=& metaunif_occurs_check_fo
+
+metaunif_check_sot_consistency :: StateT (SOMetaUnifDGraph s) (ST s) Bool
+metaunif_check_sot_consistency = check_sot_consistency
+
+metaunif_check_fot_consistency :: StateT (SOMetaUnifDGraph s) (ST s) Bool
+metaunif_check_fot_consistency = check_fot_consistency
+
+metaunif_check_head_arity_so :: StateT (SOMetaUnifDGraph s) (ST s) Bool
+metaunif_check_head_arity_so = check_head_arity_so
+
+metaunif_check_head_arity_fo :: StateT (SOMetaUnifDGraph s) (ST s) Bool
+metaunif_check_head_arity_fo = check_head_arity_fo
+
+metaunif_check_target_arity_so :: StateT (SOMetaUnifDGraph s) (ST s) Bool
+metaunif_check_target_arity_so = check_target_arity_so
+
+metaunif_occurs_check_so :: StateT (SOMetaUnifDGraph s) (ST s) Bool
+metaunif_occurs_check_so = occurs_check_so
+
+metaunif_occurs_check_fo :: StateT (SOMetaUnifDGraph s) (ST s) Bool
+metaunif_occurs_check_fo = occurs_check_fo
+
+metaunif_validate_all_consistency :: RSOMetaUnifDGraph -> AnswerSet RSOMetaUnifDGraph SOMetaUnifSysSolution
+metaunif_validate_all_consistency resuvdg = (ImplicitAS resuvdg) ?>>= SOTConsistency ?>>= HeadAritySO ?>>= HeadArityFO ?>>= OccursCheckSO ?>>= OccursCheckFO
+
+metaunif_validate_sot_consistency :: RSOMetaUnifDGraph -> AnswerSet RSOMetaUnifDGraph SOMetaUnifSysSolution
+metaunif_validate_sot_consistency = validate_sot_consistency
+
+metaunif_validate_fot_consistency :: RSOMetaUnifDGraph -> AnswerSet RSOMetaUnifDGraph SOMetaUnifSysSolution
+metaunif_validate_fot_consistency = validate_fot_consistency
+
+metaunif_validate_head_arity_so :: RSOMetaUnifDGraph -> AnswerSet RSOMetaUnifDGraph SOMetaUnifSysSolution
+metaunif_validate_head_arity_so = validate_head_arity_so
+
+metaunif_validate_head_arity_fo :: RSOMetaUnifDGraph -> AnswerSet RSOMetaUnifDGraph SOMetaUnifSysSolution
+metaunif_validate_head_arity_fo = validate_head_arity_fo
+
+metaunif_validate_target_arity_so :: RSOMetaUnifDGraph -> AnswerSet RSOMetaUnifDGraph SOMetaUnifSysSolution
+metaunif_validate_target_arity_so = validate_target_arity_so
+
+metaunif_validate_occurs_check_so :: RSOMetaUnifDGraph -> AnswerSet RSOMetaUnifDGraph SOMetaUnifSysSolution
+metaunif_validate_occurs_check_so = validate_occurs_check_so
+
+metaunif_validate_occurs_check_fo :: RSOMetaUnifDGraph -> AnswerSet RSOMetaUnifDGraph SOMetaUnifSysSolution
+metaunif_validate_occurs_check_fo = validate_occurs_check_fo
+
+
+type SOMetaUnifFOExp = FOTermDependantExp CTermF OFunction OVariable SOMVariable UnifVariable
+type SOMetaUnifSOExp = SOTermDependantExp OFunction SOMVariable
+
+instance Read SOMetaUnifFOExp where
+	readsPrec _ xs = 
+		case stripPrefix "u" xs of
+		{
+			Just _ -> (let r = (head (reads xs)::(SOMetaTermDependant,String))
+					in [(FOTDExp (fst r),(snd r))]);
+			Nothing -> (let r = (head (reads xs)::(SOMetatermF,String))
+					in (let r2 = read_term_list (snd r)
+						in [(FOEdgeExp (fst r) (fst r2),(snd r2))]))
+		}
+
+instance Read SOMetaUnifSOExp where
+	readsPrec _ xs = 
+		let r = (head (reads xs)::(SOMetatermF,String))
+			in [(separate_sot_dependant_exp (normalize (fst r)),(snd r))]
 
 
 -- Queries in this meta-logic.
@@ -370,7 +455,6 @@ type SOMetaSignature = SOSignature OPredicate OFunction OVariable SOMVariable
 
 type SOMetaMGU = ESMGU CTermF OPredicate OFunction OVariable SOMVariable
 type SOMetaNMGU = NESMGU CTermF OPredicate OFunction OVariable SOMVariable
-type SOMetaUnifSol = UnifSolution CTermF OFunction OVariable SOMVariable
 
 type SOMetaQVar = CESQVar SOAMVariable SOMVariable
 type SOMetaQSol = CESQSol OPredicate OFunction

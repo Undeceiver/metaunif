@@ -172,7 +172,7 @@ runQuery t (BaseQ vs q) = runBaseQ t vs q
 runQuery t (SequentialQ q1 m q2) = (runQuery t q2) >>= (\m2 -> runQuery t (Data.List.foldr (\(v,f) -> subst v (f m2)) q1 (assocs m)))
 runQuery t (ImplicitQ q1 m q2) = (runQuery t q2) ?>>= m ?>>= (t,q1)
 runQuery t (ProductQ q1 q2) = (tupleAS (runQuery t q1) (runQuery t q2)) ?>>= ProductQOP
-runQuery t (IntersectionQ q1 m q2) = ExplicitAS (SingleAS <$> (eintersectAll ((\m2 -> enumAS (runQuery t (Data.List.foldr (\(v,f) -> subst v (f m2)) q1 (assocs m)))) <$> (enumAS (runQuery t q2)))))
+runQuery t (IntersectionQ q1 m q2) = ExplicitAS (SingleAS <$> (eintersectAll ((\m2 -> diagEnumAS (runQuery t (Data.List.foldr (\(v,f) -> subst v (f m2)) q1 (assocs m)))) <$> (diagEnumAS (runQuery t q2)))))
 
 -- In this instance we assume that the argument map has already been processed. This is important, as a base query does not include the argument map in itself, but it must be processed for correctness.
 -- That is, the input map is expressed in the variables of the query.
@@ -184,7 +184,7 @@ instance (Queriable q v t r s, Eq v, Substitutable r v r, Substitutable q v r, O
 	composeImplicit s (t,(SequentialQ q1 m q2)) = (composeImplicit s (t,q2)) >>= (\m2 -> runQuery t (Data.List.foldr (\(v,f) -> subst v (f m2)) q1 (assocs m)))
 	composeImplicit s (t,(ImplicitQ q1 m q2)) = (composeImplicit s (t,q2)) ?>>= m ?>>= (t,q1)
 	composeImplicit s (t,(ProductQ q1 q2)) = (tupleAS (composeImplicit s (t,q1)) (composeImplicit s (t,q2))) ?>>= ProductQOP
-	composeImplicit s (t,(IntersectionQ q1 m q2)) = ExplicitAS (SingleAS <$> (eintersectAll ((\m2 -> enumAS (runQuery t (Data.List.foldr (\(v,f) -> subst v (f m2)) q1 (assocs m)))) <$> (enumAS (composeImplicit s (t,q2))))))
+	composeImplicit s (t,(IntersectionQ q1 m q2)) = ExplicitAS (SingleAS <$> (eintersectAll ((\m2 -> diagEnumAS (runQuery t (Data.List.foldr (\(v,f) -> subst v (f m2)) q1 (assocs m)))) <$> (diagEnumAS (composeImplicit s (t,q2))))))
 
 instance (Queriable q v t r s, Eq v, Substitutable r v r, Substitutable q v r, Ord v, ImplicitF s (v := r) s (v := r) (QArgumentMap v r), ImplicitF s (v := r) s (v := r) (BaseQueryInput q v t r), ImplicitF (AnswerSet s (v := r), AnswerSet s (v := r)) (v := r, v := r) s (v := r) ProductQOP, Eq r) => Functional (QueryInput q v t r) (v := r) (AnswerSet s (v := r)) where
 	tofun (t,q) m = runQuery t (Data.List.foldr (\(v,r) -> subst v r) q (assocs m))

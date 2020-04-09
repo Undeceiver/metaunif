@@ -226,6 +226,14 @@ fntraversal = fntraverse
 data SOTermPF fn p f = ConstF fn | Proj Int | CompF p [f] deriving (Eq, Ord)
 newtype SOTermF fn f = SOF (SOTermPF fn f f) deriving (Eq, Ord)
 
+isproj :: SOTermPF fn p f -> Bool
+isproj (ConstF _) = False
+isproj (Proj _) = True
+isproj (CompF _ _) = False
+
+isproj_sof :: SOTermF fn f -> Bool
+isproj_sof (SOF x) = isproj x
+
 instance Bifunctor (SOTermPF fn) where
 	bimap f g (ConstF fn) = ConstF fn
 	bimap f g (Proj idx) = Proj idx
@@ -277,10 +285,35 @@ instance (HasArity fn, HasArity f) => HasArity (SOTermF fn f) where
 
 type GroundSOT fn = Fix (SOTermF fn)
 
+isproj_groundsot :: GroundSOT fn -> Bool
+isproj_groundsot (Fix x) = isproj_sof x
+
 instance HasArity fn => HasArity (GroundSOT fn) where
 	arity (Fix x) = arity x
 
 type SOTerm fn sov = UTerm (SOTermF fn) sov
+
+isproj_sot :: SOTerm fn sov -> Bool
+isproj_sot (UVar _) = False
+isproj_sot (UTerm x) = isproj_sof x
+
+-- Note we do not consider compositions of just variables as variable here. This may be a problem, but it should not for now.
+isvar_sot :: SOTerm fn sov -> Bool
+isvar_sot (UVar _) = True
+isvar_sot (UTerm _) = False
+
+-- A growing second-order term is a second-order term that definitely makes the expression grow. That is, something that containts constant symbols.
+isgrowing_sot :: SOTerm fn sov -> Bool
+isgrowing_sot (UVar _) = False
+isgrowing_sot (UTerm (SOF (ConstF _))) = True
+isgrowing_sot (UTerm (SOF (Proj _))) = False
+isgrowing_sot (UTerm (SOF (CompF h ss))) = (isgrowing_sot h) || (any isgrowing_sot ss)
+
+sot_min_arity :: (HasArity fn, HasArity sov) => SOTerm fn sov -> Int
+sot_min_arity (UVar _) = 0
+sot_min_arity (UTerm (SOF (ConstF x))) = arity x
+sot_min_arity (UTerm (SOF (Proj idx))) = idx + 1
+sot_min_arity (UTerm (SOF (CompF h sts))) = Prelude.foldr (\i -> \m -> max (sot_min_arity i) m) 0 sts
 
 instance (HasArity fn, HasArity sov) => HasArity (SOTerm fn sov) where
 	arity (UVar v) = arity v
