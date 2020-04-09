@@ -340,7 +340,8 @@ dump_soinst :: (Eq fn, ChangeArity sov, Variabilizable sov, Variable sov, Substi
 dump_soinst sig soinst vars value = Data.List.foldr (\osov -> \cval -> cval >>= (\rcval -> (\sovval -> subst osov sovval rcval) <$> (apply_somvunif sig soinst (UVar osov)))) (Just value) vars
 
 instance ESMGUConstraints t pd fn v sov => Implicit (NESMGU t pd fn v sov) (UnifSolution t fn v sov) where
-	checkImplicit mgu sol = fst (runState (rsosol >>=& rfosol) mgu) where rsosol = st_checkESMGUsosol_norm (nsig mgu) (sosol sol); rfosol = st_checkESMGUfosol_norm (nsig mgu) (fosol sol)
+	checkImplicit mgu sol = undefined
+	--checkImplicit mgu sol = fst (runState (rsosol >>=& rfosol) mgu) where rsosol = st_checkESMGUsosol_norm (nsig mgu) (sosol sol); rfosol = st_checkESMGUfosol_norm (nsig mgu) (fosol sol)
 	enumImplicit mgu = undefined
 	--enumImplicit mgu = raw <$> (fromProvenanceT (nesmgu_enumImplicit mgu))
 
@@ -880,6 +881,9 @@ justprop_newEqDGSOEdge eid = do
 getStateTSTESUnifVDGraph :: (forall s. StateT (ESUnifVDGraph s t fn v sov uv) (ST s) a) -> RESUnifVDGraph t fn v sov uv -> a
 getStateTSTESUnifVDGraph st resuvdg = runST (do {esuvdg <- fromRESUnifVDGraph resuvdg; fst <$> runStateT st esuvdg})
 
+getStateTSTESUnifVDGraphState :: (forall s. StateT (ESUnifVDGraph s t fn v sov uv) (ST s) a) -> RESUnifVDGraph t fn v sov uv -> RESUnifVDGraph t fn v sov uv
+getStateTSTESUnifVDGraphState st resuvdg = RESUnifVDGraph (do {esuvdg <- fromRESUnifVDGraph resuvdg; snd <$> runStateT st esuvdg})
+
 validate_occurs_check_fo :: ESMGUConstraintsU t pd fn v sov uv => RESUnifVDGraph t fn v sov uv -> AnswerSet (RESUnifVDGraph t fn v sov uv) (UnifSysSolution fn sov)
 validate_occurs_check_fo resuvdg = if consistent then (ImplicitAS resuvdg) else (ExplicitAS EnumProc.Empty)
 	where
@@ -1125,7 +1129,8 @@ check_fot_consistency_fot fot = do
 		return (allEq nvfots)
 	}
 
--- TODO: First-order version of the consistency check for so. This applies because there can be constant terms. (!)
+as_esu_fo_dump :: ESMGUConstraintsU t pd fn v sov uv => RESUnifVDGraph t fn v sov uv -> AnswerSet (RESUnifVDGraph t fn v sov uv) (UnifSysSolution fn sov)
+as_esu_fo_dump resuvdg = ImplicitAS (getStateTSTESUnifVDGraphState esu_fo_dump resuvdg)
 
 esu_fo_dump :: ESMGUConstraintsU t pd fn v sov uv => StateT (ESUnifVDGraph s t fn v sov uv) (ST s) ()
 esu_fo_dump = (StateT (\esuvdg -> runStateT (runStateTOps (Prelude.map (ESUFODump . dgid . fromJust) (Prelude.filter isJust ((eqdgraph (esunifdgraph esuvdg)) ^. lens_foedges)))) esuvdg)) >> pass

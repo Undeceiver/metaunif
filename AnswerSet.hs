@@ -17,7 +17,7 @@ import Algorithm
 import Data.Bifunctor
 
 class Implicit (s :: *) (t :: *) | s -> t where
-	checkImplicit :: s -> t -> Bool
+	checkImplicit :: s -> t -> Computation Bool
 	enumImplicit :: s -> Computation t
 
 diagEnumImplicit :: Implicit s t => s -> EnumProc t
@@ -42,10 +42,10 @@ makeExplicit _ (SingleAS a) = SingleAS a
 makeExplicit t (ExplicitAS en) = ExplicitAS (fmap (makeExplicit t) en)
 makeExplicit t (ImplicitAS s) = ExplicitAS (fmap SingleAS (runcomp t (enumImplicit s)))
 
-checkAS :: Eq a => AnswerSet s a -> a -> Bool
-checkAS (SingleAS a1) a2 | a1 == a2 = True
-checkAS (SingleAS a1) a2 = False
-checkAS (ExplicitAS en) a = or (fmap (\x -> checkAS x a) en)
+checkAS :: Eq a => AnswerSet s a -> a -> Computation Bool
+checkAS (SingleAS a1) a2 | a1 == a2 = comp True
+checkAS (SingleAS a1) a2 = comp False
+checkAS (ExplicitAS en) a = compor ((cunfactor (\x -> checkAS x a)) ... (ecomp en))
 checkAS (ImplicitAS s) a = checkImplicit s a
 
 -- Don't use this if you can do things with checkAS: This is necessarily explicit and therefore slower in general
@@ -121,7 +121,16 @@ enum_inversion :: (Implicit sa a, Eq a, Eq b) => Inversion sa sb a b -> AnswerSe
 enum_inversion (Inversion f a) = a ?>>= f
 
 instance (Implicit sa a, Functional (Invertible sa sb a b) a (AnswerSet (Inversion sa sb a b) b), Eq a, Eq b) => Implicit (Inversion sa sb a b) b where
-	checkImplicit (Inversion f a) b = if (checkAS (rg f) b) then (any (\x -> (checkAS a x)) (diagEnumAS (inv f b))) else False
+	checkImplicit (Inversion f a) b = do
+		{
+			inrg <- checkAS (rg f) b;
+			if inrg then do
+			{
+				let {invs = enumAS (inv f b); ch = cunfactor (checkAS a)};
+				company ch invs
+			}
+			else (return False)
+		}
 	enumImplicit (Inversion f a) = (enumAS a) >>= (\x -> enumAS (fun f x))
 
 instance (Implicit sa a, Functional (Invertible sa sb a b) a (AnswerSet (Inversion sa sb a b) b), Eq a, Eq b) => ImplicitF sa a (Inversion sa sb a b) b (Invertible sa sb a b) where
@@ -134,7 +143,7 @@ instance (Implicit sa a, Eq a, Eq b) => Functional (Invertible sa sb a b) a (Ans
 
 -- Similarly, making a tuple is always implicitly composable (independent answer sets).
 instance (Implicit sa a, Implicit sb b, Eq a, Eq b) => Implicit (AnswerSet sa a, AnswerSet sb b) (a,b) where
-	checkImplicit (asa,asb) (a,b) = (checkAS asa a) && (checkAS asb b)
+	checkImplicit (asa,asb) (a,b) = do {cha <- checkAS asa a; chb <- checkAS asb b; return (cha && chb)}
 	enumImplicit (asa,asb) = (enumAS asa) >>= (\x -> (enumAS asb) >>= (\y -> (comp (x,y))))
 
 -- Because this makes the type "grow", it is highly recommended that it is only used to construct, meaning that the implicit type can be left as a wildcard and then simply enumAS or checkAS are used on the final result. Otherwise, use with care.
@@ -144,10 +153,7 @@ tupleAS asa asb = ImplicitAS (asa,asb)
 
 -- An answer set of implicit solutions is also an implicit solution. But, if enumeration is infinite for the set of implicit solutions, then even checking for the set of combined solutions could be non-terminating.
 instance (Implicit sa a, Eq a) => Implicit (AnswerSet ssa sa) a where
-	checkImplicit as a = uns_produce_next (as_checkImplicit as a)
+	checkImplicit (SingleAS imp) a = checkImplicit imp a
+	checkImplicit (ExplicitAS en) a = company (cunfactor (\imp -> checkImplicit imp a)) (ecomp en)
+	checkImplicit (ImplicitAS iimp) a = company (cunfactor (\imp -> checkImplicit imp a)) (enumImplicit iimp)
 	enumImplicit as = (enumAS as) >>= enumImplicit
-
-as_checkImplicit :: (Implicit sa a, Eq a) => AnswerSet ssa sa -> a -> EnumProc Bool
-as_checkImplicit (SingleAS imp) a = (checkImplicit imp a) --> Empty
-as_checkImplicit (ExplicitAS en) a = eany (\imp -> as_checkImplicit imp a) en
-as_checkImplicit (ImplicitAS iimp) a = eany (\imp -> (checkImplicit imp a) --> Empty) (diagEnumImplicit iimp)

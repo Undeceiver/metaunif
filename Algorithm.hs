@@ -56,6 +56,13 @@ infixr 0 ...
 withorder :: (forall t. ExecOrder t => t -> a -> EnumProc b) -> Algorithm a b
 withorder = AlgEval
 
+-- Lifts a transformation on enumerations into a transformation on algorithms.
+withenum :: ((a -> EnumProc b) -> (c -> EnumProc d)) -> (a .-> b) -> (c .-> d)
+withenum f alg = withorder (\t -> f (runorder t alg))
+
+withenumcomp :: (EnumProc a -> EnumProc b) -> Computation a -> Computation b
+withenumcomp f comp = withenum (\g -> (\() -> f (g ()))) comp
+
 -- To lift EnumProc functions to algorithms when pattern matching, without doing any search order combining.
 alg_empty :: Algorithm a b
 alg_empty = withorder (\_ -> \_ -> Empty)
@@ -336,6 +343,21 @@ alg_traverse = alg_traversal traverse
 alg_traversal :: Control.Lens.Traversal s t a b -> (a .-> b) -> s .-> t
 alg_traversal t = cunfactor . t . cfactor
 
+
+-- Some utilities
+-- Note that here the "Computation" on the arguments and the result is different in the sense of how many results it returns, but NOT in the sense of in what order the checks are done.
+-- In some sense, these are "folds in an arbitrary order".
+compor :: Computation Bool -> Computation Bool
+compor = withenumcomp eor
+
+compand :: Computation Bool -> Computation Bool
+compand = withenumcomp eand
+
+company :: (a .-> Bool) -> Computation a -> Computation Bool
+company f a = compor (f ... a)
+
+compall :: (a .-> Bool) -> Computation a -> Computation Bool
+compall f a = compand (f ... a)
 
 
 -- W/Provenance operators
