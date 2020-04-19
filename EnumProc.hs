@@ -5,6 +5,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE RankNTypes #-}
 module EnumProc where
 
 import Data.Time
@@ -20,6 +21,8 @@ import Data.Functor.Identity
 import Control.Monad.Trans.Class
 import HaskellPlus
 import Data.Maybe
+import Control.Monad.ST
+import Control.Applicative
 
 -- There are two fundamental assumptions for any instance of the type EnumProc:
 --
@@ -88,6 +91,13 @@ es_cofoldr f (Error str) = Error str
 es_cofoldr f (Continue x) = Continue (es_cofoldr f x)
 es_cofoldr f (Produce v x) = f v (es_cofoldr f x)
 
+-- Note that this can cause unsafe non-termination depending on the behaviour of the applicative's fmap!
+instance Traversable EnumProc where
+	traverse f Empty = pure Empty
+	traverse f Halt = pure Halt
+	traverse f (Error str) = pure (Error str)
+	traverse f (Continue x) = Continue <$> (traverse f x)
+	traverse f (Produce v x) = liftA2 Produce (f v) (traverse f x)
 
 instance Applicative EnumProc where
 	pure x = single_enum x
@@ -182,6 +192,10 @@ es_efilter f en = en >>= (\x -> (f x) >>= (\y -> if y then (return x) else Empty
 --es_efilter f (Error x) = Error x
 --es_efilter f (Continue x) = Continue (es_efilter f x)
 --es_efilter f (Produce v x) = do {r <- f v; if r then (v --> (es_efilter f x)) else (Continue (es_efilter f x))}
+
+m_efilter :: Monad m => (a -> m Bool) -> EnumProc a -> m (EnumProc a)
+m_efilter f l = traverse_collect ((fmap fromJust) . (efilter isJust)) (\a -> do {b <- f a; if b then (return (Just a)) else (return Nothing)}) l
+
 
 -- A useful case of efilter with Maybe types.
 efilter_mb :: EnumProc (Maybe t) -> EnumProc t
@@ -870,3 +884,29 @@ class Functor f => ConstFFunctor f where
 instance (Functor f, Applicative f) => ConstFFunctor f where
 	constfmap (Left x) = Left (pure x)
 	constfmap (Right f) = Right (fmap f)
+
+data STEnumProcCommute = EmptyCom | HaltCom | ErrorCom | ContinueCom | ProduceCom
+
+st_en_commute :: (forall s. ST s (EnumProc t)) -> (forall s2. EnumProc (ST s2 t))
+st_en_commute sten = case comtype of
+	{
+		EmptyCom -> Empty;
+		HaltCom -> Halt;
+		ErrorCom -> Error (runST (do {(Error str) <- sten; return str}));
+		ContinueCom -> Continue (st_en_commute (do {(Continue x) <- sten; return x}));
+		ProduceCom -> Produce (do {(Produce v x) <- sten; return v}) (st_en_commute (do {(Produce v x) <- sten; return x}))
+	}
+	where
+		comtype = runST (do
+		{
+			en <- sten;
+			case en of
+			{
+				Empty -> return EmptyCom;
+				Halt -> return HaltCom;
+				Error str -> return ErrorCom;
+				Continue x -> return ContinueCom;
+				Produce v x -> return ProduceCom
+			}
+		})
+

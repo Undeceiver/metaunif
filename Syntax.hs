@@ -32,12 +32,13 @@ import Control.Monad.Error.Class
 import Control.Monad.Trans.Identity
 import Control.Monad.Except
 import Control.Unification.Types
+import Control.Monad.State
 import Extensionality
 import Data.List
 import Data.Maybe
 import Data.Map.Strict
 import EnumProc
-import qualified Control.Lens
+import Control.Lens
 
 class Variabilizable t where
 	from_var :: IntVar -> t
@@ -324,6 +325,10 @@ instance (HasArity fn, HasArity sov) => HasArity (FlippedBifunctor UTerm sov (SO
 
 inject_groundsot :: GroundSOT fn -> SOTerm fn sov
 inject_groundsot (Fix x) = UTerm (fmap inject_groundsot x)
+
+to_groundsot :: SOTerm fn sov -> GroundSOT fn
+to_groundsot (UVar _) = error "Trying to convert a second-order variable into a constant second-order term!"
+to_groundsot (UTerm t) = Fix (to_groundsot <$> t)
 
 -- Dummy second-order variable type used when using inject_groundsot. Its entire purpose is that it can be an instance of any class, because its methods will never be used.
 newtype DummySOV = DummySOV ()
@@ -909,6 +914,13 @@ enum_terms :: (HasArity fn, SimpleTerm t, Functor (t (GroundSOT fn))) => Signatu
 enum_terms sig = plain_ggsomw <$> ggsomws where fs = enum_funcs 0 sig; ggsomws = (\f -> GGSOMetawrap (Fix (build_term f []))) <$> fs
 
 data SOSignature pd fn v sov = SOSignature {fosig :: Signature pd fn v, sovars :: EnumProc sov}
+
+lens_fosig :: Lens' (SOSignature pd fn v sov) (Signature pd fn v)
+lens_fosig = lens fosig (\prev -> \new -> SOSignature new (sovars prev))
+
+lens_sovars :: Lens' (SOSignature pd fn v sov) (EnumProc sov)
+lens_sovars = lens sovars (\prev -> \new -> SOSignature (fosig prev) new)
+
 fopreds :: SOSignature pd fn v sov -> [EnumProc pd]
 fopreds = preds . fosig
 
@@ -930,7 +942,7 @@ refresh_somv :: (Eq sov, ChangeArity sov) => SOSignature pd fn v sov -> sov -> s
 refresh_somv sig v = refresh_somv_vars (sovars sig) v
 
 refresh_somv_vars :: (Eq sov, ChangeArity sov) => EnumProc sov -> sov -> sov
-refresh_somv_vars Empty v = v
+refresh_somv_vars EnumProc.Empty v = v
 refresh_somv_vars Halt v = v
 refresh_somv_vars (Error str) v = error str
 refresh_somv_vars (Continue x) v = refresh_somv_vars x v
@@ -942,4 +954,15 @@ refresh_somv_soterm sig t = (refresh_somv sig) <$> t
 
 apply_somvunif :: (Eq fn, Eq sov, ChangeArity sov, Variabilizable sov, Variable sov) => SOSignature pd fn v sov -> MaybeUnifier (SOTermF fn) sov (UFailure (SOTermF fn) sov) -> SOTerm fn sov -> Maybe (SOTerm fn sov)
 apply_somvunif sig u t = (refresh_somv_soterm sig) <$> ru where ru = u $= t
-	
+
+new_sovar :: (Variabilizable sov, ChangeArity sov, Monad m) => Int -> StateT (SOSignature pd fn v sov) m sov
+new_sovar aty = do
+	{
+		sosig <- get;
+		let {fmaxvar = (\sov -> \prev -> max prev ((getVarID . get_var) $ sov))};
+		let {maxvaridx = Prelude.foldr fmaxvar (-1) (sovars sosig)};
+		let {newvar = (from_var . IntVar) $ (maxvaridx + 1); newvaraty = change_arity newvar aty};
+		let {nsosig = lens_sovars ..~ (newvaraty -->) $ sosig};
+		put nsosig;
+		return newvaraty
+	}

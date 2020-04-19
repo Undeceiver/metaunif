@@ -753,66 +753,66 @@ newtype RTestSOMetaUnifDGraph s = RTestSOMetaUnifDGraph {fromMudg :: SOMetaUnifD
 lens_RTestSOMetaUnifDGraph :: Lens' (RTestSOMetaUnifDGraph s) (SOMetaUnifDGraph s)
 lens_RTestSOMetaUnifDGraph f rrmudg = fmap (\rmudg -> RTestSOMetaUnifDGraph rmudg) (f (fromMudg rrmudg))
 
-emptyRMUDG :: RTestSOMetaUnifDGraph s
-emptyRMUDG = RTestSOMetaUnifDGraph emptyVDGraph
+emptyRMUDG :: SOMetaSignature -> RTestSOMetaUnifDGraph s
+emptyRMUDG sig = RTestSOMetaUnifDGraph (emptyVDGraph sig)
 
-on_vdgraph :: StateT (ESUnifVDGraph s CTermF OFunction OVariable SOMVariable UnifVariable) (ST s) a -> StateT (RTestSOMetaUnifDGraph s) (ST s) a
+on_vdgraph :: StateT (ESUnifVDGraph s CTermF OPredicate OFunction OVariable SOMVariable UnifVariable) (ST s) a -> StateT (RTestSOMetaUnifDGraph s) (ST s) a
 on_vdgraph = mzoom lens_RTestSOMetaUnifDGraph
 
 on_dgraph :: StateT (ESUnifDGraph s CTermF OFunction OVariable SOMVariable UnifVariable) (ST s) a -> StateT (RTestSOMetaUnifDGraph s) (ST s) a
 on_dgraph = mzoom (lens_RTestSOMetaUnifDGraph . lens_esunifdgraph_dgraph)
 
-show_mudg :: (forall s. StateT (RTestSOMetaUnifDGraph s) (ST s) a) -> IO ()
+show_mudg :: SOMetaSignature -> (forall s. StateT (RTestSOMetaUnifDGraph s) (ST s) a) -> IO ()
 --show_mudg s = putStr (runST ((show_eqdgraph . esunifdgraph . fromESUnifNDGraph . fromMudg . snd) <$> (runStateT s emptyRMUDG)))
-show_mudg s = putStr (runST (fst <$> (runStateT (s >> (mzoom lens_RTestSOMetaUnifDGraph show_esuvdg)) emptyRMUDG)))
+show_mudg sig s = putStr (runST (fst <$> (runStateT (s >> (mzoom lens_RTestSOMetaUnifDGraph show_esuvdg)) (emptyRMUDG sig))))
 
 -- Check that horizontal edge exists / does not exist
-check_hfoedge :: String -> (forall s. StateT (RTestSOMetaUnifDGraph s) (ST s) a) -> SOMetatermF -> [SOMetaTermDependant] -> SOMetaTermDependant -> AutomatedTest
-check_hfoedge title stmudg h ss t = AT title (if result then (ATR True "The horizontal edge was correctly found.") else (ATR False "Could not find the expected horizontal edge.")) where hid = relbwEqDGSoId h; sids = Prelude.map relbwEqDGFoId ss; tid = relbwEqDGFoId t; checked = do {stmudg; on_dgraph (st_checkEqDGFOEdge hid sids tid)}; result = getStateTSTValue checked emptyRMUDG
+check_hfoedge :: SOMetaSignature -> String -> (forall s. StateT (RTestSOMetaUnifDGraph s) (ST s) a) -> SOMetatermF -> [SOMetaTermDependant] -> SOMetaTermDependant -> AutomatedTest
+check_hfoedge sig title stmudg h ss t = AT title (if result then (ATR True "The horizontal edge was correctly found.") else (ATR False "Could not find the expected horizontal edge.")) where hid = relbwEqDGSoId h; sids = Prelude.map relbwEqDGFoId ss; tid = relbwEqDGFoId t; checked = do {stmudg; on_dgraph (st_checkEqDGFOEdge hid sids tid)}; result = getStateTSTValue checked (emptyRMUDG sig)
 
-check_hsoedge :: String -> (forall s. StateT (RTestSOMetaUnifDGraph s) (ST s) a) -> SOMetatermF -> [SOMetatermF] -> SOMetatermF -> AutomatedTest
-check_hsoedge title stmudg h ss t = AT title (if result then (ATR True "The horizontal edge was correctly found.") else (ATR False "Could not find the expected horizontal edge.")) where hid = relbwEqDGSoId h; sids = Prelude.map relbwEqDGSoId ss; tid = relbwEqDGSoId t; checked = do {stmudg; on_dgraph (st_checkEqDGSOEdge hid sids tid)}; result = getStateTSTValue checked emptyRMUDG
+check_hsoedge :: SOMetaSignature -> String -> (forall s. StateT (RTestSOMetaUnifDGraph s) (ST s) a) -> SOMetatermF -> [SOMetatermF] -> SOMetatermF -> AutomatedTest
+check_hsoedge sig title stmudg h ss t = AT title (if result then (ATR True "The horizontal edge was correctly found.") else (ATR False "Could not find the expected horizontal edge.")) where hid = relbwEqDGSoId h; sids = Prelude.map relbwEqDGSoId ss; tid = relbwEqDGSoId t; checked = do {stmudg; on_dgraph (st_checkEqDGSOEdge hid sids tid)}; result = getStateTSTValue checked (emptyRMUDG sig)
 
-check_not_hfoedge :: String -> (forall s. StateT (RTestSOMetaUnifDGraph s) (ST s) a) -> SOMetatermF -> [SOMetaTermDependant] -> SOMetaTermDependant -> AutomatedTest
-check_not_hfoedge title stmudg h ss t = AT title (if result then (ATR True "The horizontal edge was correctly not found.") else (ATR False "Found the horizontal edge, but we should not have done so.")) where hid = relbwEqDGSoId h; sids = Prelude.map relbwEqDGFoId ss; tid = relbwEqDGFoId t; checked = do {stmudg; on_dgraph (st_checkEqDGFOEdge hid sids tid)}; result = not (getStateTSTValue checked emptyRMUDG)
+check_not_hfoedge :: SOMetaSignature -> String -> (forall s. StateT (RTestSOMetaUnifDGraph s) (ST s) a) -> SOMetatermF -> [SOMetaTermDependant] -> SOMetaTermDependant -> AutomatedTest
+check_not_hfoedge sig title stmudg h ss t = AT title (if result then (ATR True "The horizontal edge was correctly not found.") else (ATR False "Found the horizontal edge, but we should not have done so.")) where hid = relbwEqDGSoId h; sids = Prelude.map relbwEqDGFoId ss; tid = relbwEqDGFoId t; checked = do {stmudg; on_dgraph (st_checkEqDGFOEdge hid sids tid)}; result = not (getStateTSTValue checked (emptyRMUDG sig))
 
-check_not_hsoedge :: String -> (forall s. StateT (RTestSOMetaUnifDGraph s) (ST s) a) -> SOMetatermF -> [SOMetatermF] -> SOMetatermF -> AutomatedTest
-check_not_hsoedge title stmudg h ss t = AT title (if result then (ATR True "The horizontal edge was correctly not found.") else (ATR False "Found the horizontal edge, but we should not have done so.")) where hid = relbwEqDGSoId h; sids = Prelude.map relbwEqDGSoId ss; tid = relbwEqDGSoId t; checked = do {stmudg; on_dgraph (st_checkEqDGSOEdge hid sids tid)}; result = not (getStateTSTValue checked emptyRMUDG)
+check_not_hsoedge :: SOMetaSignature -> String -> (forall s. StateT (RTestSOMetaUnifDGraph s) (ST s) a) -> SOMetatermF -> [SOMetatermF] -> SOMetatermF -> AutomatedTest
+check_not_hsoedge sig title stmudg h ss t = AT title (if result then (ATR True "The horizontal edge was correctly not found.") else (ATR False "Found the horizontal edge, but we should not have done so.")) where hid = relbwEqDGSoId h; sids = Prelude.map relbwEqDGSoId ss; tid = relbwEqDGSoId t; checked = do {stmudg; on_dgraph (st_checkEqDGSOEdge hid sids tid)}; result = not (getStateTSTValue checked (emptyRMUDG sig))
 
 
 -- Check that vertical edge exists / does not exist
-check_vedge :: String -> (forall s. StateT (RTestSOMetaUnifDGraph s) (ST s) a) -> SOMetaTermDependant -> SOMetaTermDependant -> AutomatedTest
-check_vedge title stmudg s t = AT title (if result then (ATR True "The vertical edge was correctly found.") else (ATR False "Could not find the expected vertical edge.")) where sid = relbwEqDGFoId s; tid = relbwEqDGFoId t; checked = do {stmudg; on_vdgraph (checkVFoEdge sid tid)}; result = getStateTSTValue checked emptyRMUDG
+check_vedge :: SOMetaSignature -> String -> (forall s. StateT (RTestSOMetaUnifDGraph s) (ST s) a) -> SOMetaTermDependant -> SOMetaTermDependant -> AutomatedTest
+check_vedge sig title stmudg s t = AT title (if result then (ATR True "The vertical edge was correctly found.") else (ATR False "Could not find the expected vertical edge.")) where sid = relbwEqDGFoId s; tid = relbwEqDGFoId t; checked = do {stmudg; on_vdgraph (checkVFoEdge sid tid)}; result = getStateTSTValue checked (emptyRMUDG sig)
 
-check_not_vedge :: String -> (forall s. StateT (RTestSOMetaUnifDGraph s) (ST s) a) -> SOMetaTermDependant -> SOMetaTermDependant -> AutomatedTest
-check_not_vedge title stmudg s t = AT title (if result then (ATR True "The vertical edge was correctly not found.") else (ATR False "Found the vertical edge, but we should not have done so.")) where sid = relbwEqDGFoId s; tid = relbwEqDGFoId t; checked = do {stmudg; on_vdgraph (checkVFoEdge sid tid)}; result = not (getStateTSTValue checked emptyRMUDG)
+check_not_vedge :: SOMetaSignature -> String -> (forall s. StateT (RTestSOMetaUnifDGraph s) (ST s) a) -> SOMetaTermDependant -> SOMetaTermDependant -> AutomatedTest
+check_not_vedge sig title stmudg s t = AT title (if result then (ATR True "The vertical edge was correctly not found.") else (ATR False "Found the vertical edge, but we should not have done so.")) where sid = relbwEqDGFoId s; tid = relbwEqDGFoId t; checked = do {stmudg; on_vdgraph (checkVFoEdge sid tid)}; result = not (getStateTSTValue checked (emptyRMUDG sig))
 
 -- Check that two elements are equivalent / not equivalent
-check_foequiv :: String -> (forall s. StateT (RTestSOMetaUnifDGraph s) (ST s) a) -> SOMetaTermDependant -> SOMetaTermDependant -> AutomatedTest
-check_foequiv title stmudg a b = AT title (if result then (ATR True "The two elements were indeed found to be equivalent.") else (ATR False "The two elements were not equivalent, but they should be.")) where aid = relbwEqDGFoId a; bid = relbwEqDGFoId b; checked = do {stmudg; on_dgraph (eqSTRelativeIds aid bid)}; result = getStateTSTValue checked emptyRMUDG
+check_foequiv :: SOMetaSignature -> String -> (forall s. StateT (RTestSOMetaUnifDGraph s) (ST s) a) -> SOMetaTermDependant -> SOMetaTermDependant -> AutomatedTest
+check_foequiv sig title stmudg a b = AT title (if result then (ATR True "The two elements were indeed found to be equivalent.") else (ATR False "The two elements were not equivalent, but they should be.")) where aid = relbwEqDGFoId a; bid = relbwEqDGFoId b; checked = do {stmudg; on_dgraph (eqSTRelativeIds aid bid)}; result = getStateTSTValue checked (emptyRMUDG sig)
 
-check_soequiv :: String -> (forall s. StateT (RTestSOMetaUnifDGraph s) (ST s) a) -> SOMetatermF -> SOMetatermF -> AutomatedTest
-check_soequiv title stmudg a b = AT title (if result then (ATR True "The two elements were indeed found to be equivalent.") else (ATR False "The two elements were not equivalent, but they should be.")) where aid = relbwEqDGSoId a; bid = relbwEqDGSoId b; checked = do {stmudg; on_dgraph (eqSTRelativeIds aid bid)}; result = getStateTSTValue checked emptyRMUDG
+check_soequiv :: SOMetaSignature -> String -> (forall s. StateT (RTestSOMetaUnifDGraph s) (ST s) a) -> SOMetatermF -> SOMetatermF -> AutomatedTest
+check_soequiv sig title stmudg a b = AT title (if result then (ATR True "The two elements were indeed found to be equivalent.") else (ATR False "The two elements were not equivalent, but they should be.")) where aid = relbwEqDGSoId a; bid = relbwEqDGSoId b; checked = do {stmudg; on_dgraph (eqSTRelativeIds aid bid)}; result = getStateTSTValue checked (emptyRMUDG sig)
 
-check_not_foequiv :: String -> (forall s. StateT (RTestSOMetaUnifDGraph s) (ST s) a) -> SOMetaTermDependant -> SOMetaTermDependant -> AutomatedTest
-check_not_foequiv title stmudg a b = AT title (if result then (ATR True "The two elements were indeed found to be not equivalent.") else (ATR False "The two elements were equivalent, but they should not be.")) where aid = relbwEqDGFoId a; bid = relbwEqDGFoId b; checked = do {stmudg; on_dgraph (eqSTRelativeIds aid bid)}; result = not (getStateTSTValue checked emptyRMUDG)
+check_not_foequiv :: SOMetaSignature -> String -> (forall s. StateT (RTestSOMetaUnifDGraph s) (ST s) a) -> SOMetaTermDependant -> SOMetaTermDependant -> AutomatedTest
+check_not_foequiv sig title stmudg a b = AT title (if result then (ATR True "The two elements were indeed found to be not equivalent.") else (ATR False "The two elements were equivalent, but they should not be.")) where aid = relbwEqDGFoId a; bid = relbwEqDGFoId b; checked = do {stmudg; on_dgraph (eqSTRelativeIds aid bid)}; result = not (getStateTSTValue checked (emptyRMUDG sig))
 
-check_not_soequiv :: String -> (forall s. StateT (RTestSOMetaUnifDGraph s) (ST s) a) -> SOMetatermF -> SOMetatermF -> AutomatedTest
-check_not_soequiv title stmudg a b = AT title (if result then (ATR True "The two elements were indeed found to be not equivalent.") else (ATR False "The two elements were equivalent, but they should not be.")) where aid = relbwEqDGSoId a; bid = relbwEqDGSoId b; checked = do {stmudg; on_dgraph (eqSTRelativeIds aid bid)}; result = not (getStateTSTValue checked emptyRMUDG)
+check_not_soequiv :: SOMetaSignature -> String -> (forall s. StateT (RTestSOMetaUnifDGraph s) (ST s) a) -> SOMetatermF -> SOMetatermF -> AutomatedTest
+check_not_soequiv sig title stmudg a b = AT title (if result then (ATR True "The two elements were indeed found to be not equivalent.") else (ATR False "The two elements were equivalent, but they should not be.")) where aid = relbwEqDGSoId a; bid = relbwEqDGSoId b; checked = do {stmudg; on_dgraph (eqSTRelativeIds aid bid)}; result = not (getStateTSTValue checked (emptyRMUDG sig))
 
 
 -- Checking with expressions
-check_foexp :: String -> (forall s. StateT (RTestSOMetaUnifDGraph s) (ST s) a) -> SOMetaUnifFOExp -> SOMetaTermDependant -> AutomatedTest
-check_foexp title stmudg exp t = AT title (if result then (ATR True "The dependant matches the expression in the graph.") else (ATR False "The dependant does not match the expression in the graph, but it should.")) where checked = do {stmudg; on_vdgraph (match_foexp exp (relbwEqDGFoId t))}; result = getStateTSTValue checked emptyRMUDG
+check_foexp :: SOMetaSignature -> String -> (forall s. StateT (RTestSOMetaUnifDGraph s) (ST s) a) -> SOMetaUnifFOExp -> SOMetaTermDependant -> AutomatedTest
+check_foexp sig title stmudg exp t = AT title (if result then (ATR True "The dependant matches the expression in the graph.") else (ATR False "The dependant does not match the expression in the graph, but it should.")) where checked = do {stmudg; on_vdgraph (match_foexp exp (relbwEqDGFoId t))}; result = getStateTSTValue checked (emptyRMUDG sig)
 
-check_not_foexp :: String -> (forall s. StateT (RTestSOMetaUnifDGraph s) (ST s) a) -> SOMetaUnifFOExp -> SOMetaTermDependant -> AutomatedTest
-check_not_foexp title stmudg exp t = AT title (if result then (ATR True "The dependant does not match the expression in the graph.") else (ATR False "The dependant matches the expression in the graph, but it should not.")) where checked = do {stmudg; on_vdgraph (match_foexp exp (relbwEqDGFoId t))}; result = not (getStateTSTValue checked emptyRMUDG)
+check_not_foexp :: SOMetaSignature -> String -> (forall s. StateT (RTestSOMetaUnifDGraph s) (ST s) a) -> SOMetaUnifFOExp -> SOMetaTermDependant -> AutomatedTest
+check_not_foexp sig title stmudg exp t = AT title (if result then (ATR True "The dependant does not match the expression in the graph.") else (ATR False "The dependant matches the expression in the graph, but it should not.")) where checked = do {stmudg; on_vdgraph (match_foexp exp (relbwEqDGFoId t))}; result = not (getStateTSTValue checked (emptyRMUDG sig))
 
-check_soexp :: String -> (forall s. StateT (RTestSOMetaUnifDGraph s) (ST s) a) -> SOMetaUnifSOExp -> SOMetatermF -> AutomatedTest
-check_soexp title stmudg exp t = AT title (if result then (ATR True "The dependant matches the expression in the graph.") else (ATR False "The dependant does not match the expression in the graph, but it should.")) where checked = do {stmudg; on_vdgraph (match_soexp exp (relbwEqDGSoId t))}; result = getStateTSTValue checked emptyRMUDG
+check_soexp :: SOMetaSignature -> String -> (forall s. StateT (RTestSOMetaUnifDGraph s) (ST s) a) -> SOMetaUnifSOExp -> SOMetatermF -> AutomatedTest
+check_soexp sig title stmudg exp t = AT title (if result then (ATR True "The dependant matches the expression in the graph.") else (ATR False "The dependant does not match the expression in the graph, but it should.")) where checked = do {stmudg; on_vdgraph (match_soexp exp (relbwEqDGSoId t))}; result = getStateTSTValue checked (emptyRMUDG sig)
 
-check_not_soexp :: String -> (forall s. StateT (RTestSOMetaUnifDGraph s) (ST s) a) -> SOMetaUnifSOExp -> SOMetatermF -> AutomatedTest
-check_not_soexp title stmudg exp t = AT title (if result then (ATR True "The dependant does not match the expression in the graph.") else (ATR False "The dependant matches the expression in the graph, but it should not.")) where checked = do {stmudg; on_vdgraph (match_soexp exp (relbwEqDGSoId t))}; result = not (getStateTSTValue checked emptyRMUDG)
+check_not_soexp :: SOMetaSignature -> String -> (forall s. StateT (RTestSOMetaUnifDGraph s) (ST s) a) -> SOMetaUnifSOExp -> SOMetatermF -> AutomatedTest
+check_not_soexp sig title stmudg exp t = AT title (if result then (ATR True "The dependant does not match the expression in the graph.") else (ATR False "The dependant matches the expression in the graph, but it should not.")) where checked = do {stmudg; on_vdgraph (match_soexp exp (relbwEqDGSoId t))}; result = not (getStateTSTValue checked (emptyRMUDG sig))
 
 
 -- Vertical commute tests
@@ -849,6 +849,9 @@ vcommute1_soterm1 = read "f1[1]"
 vcommute1_sotid1 :: SOMetaUnifRelSoId s
 vcommute1_sotid1 = relbwEqDGSoId vcommute1_soterm1
 
+vcommute1_sig :: SOMetaSignature
+vcommute1_sig = SOSignature (Signature [] [EnumProc.Empty,read "f1[1]" --> EnumProc.Empty] (read "x0" --> read "x1" --> EnumProc.Empty)) EnumProc.Empty
+
 vcommute1_mudg1 :: StateT (RTestSOMetaUnifDGraph s) (ST s) _
 vcommute1_mudg1 = do {on_dgraph (newEqDGFOEdge vcommute1_sotid1 [vcommute1_tid1] vcommute1_tid2); on_vdgraph (addVFoEdge vcommute1_tid2 vcommute1_tid3)}
 
@@ -856,28 +859,28 @@ vcommute1_mudg2 :: StateT (RTestSOMetaUnifDGraph s) (ST s) _
 vcommute1_mudg2 = do {vcommute1_mudg1; on_vdgraph metaunif_vertical_commute}
 
 vcommute1_t1 :: AutomatedTest
-vcommute1_t1 = check_hfoedge "Checking the source horizontal edge is there before" vcommute1_mudg1 vcommute1_soterm1 [vcommute1_term1] vcommute1_term2
+vcommute1_t1 = check_hfoedge vcommute1_sig "Checking the source horizontal edge is there before" vcommute1_mudg1 vcommute1_soterm1 [vcommute1_term1] vcommute1_term2
 
 vcommute1_t2 :: AutomatedTest
-vcommute1_t2 = check_vedge "Checking the source vertical edge is there before" vcommute1_mudg1 vcommute1_term2 vcommute1_term3
+vcommute1_t2 = check_vedge vcommute1_sig "Checking the source vertical edge is there before" vcommute1_mudg1 vcommute1_term2 vcommute1_term3
 
 vcommute1_t3 :: AutomatedTest
-vcommute1_t3 = check_not_hfoedge "Checking the commuted horizontal edge is not there before" vcommute1_mudg1 vcommute1_soterm1 [vcommute1_term4] vcommute1_term3
+vcommute1_t3 = check_not_hfoedge vcommute1_sig "Checking the commuted horizontal edge is not there before" vcommute1_mudg1 vcommute1_soterm1 [vcommute1_term4] vcommute1_term3
 
 vcommute1_t4 :: AutomatedTest
-vcommute1_t4 = check_not_vedge "Checking the commuted vertical edge is not there before" vcommute1_mudg1 vcommute1_term1 vcommute1_term4
+vcommute1_t4 = check_not_vedge vcommute1_sig "Checking the commuted vertical edge is not there before" vcommute1_mudg1 vcommute1_term1 vcommute1_term4
 
 vcommute1_t5 :: AutomatedTest
-vcommute1_t5 = check_hfoedge "Checking the source horizontal edge is there after" vcommute1_mudg2 vcommute1_soterm1 [vcommute1_term1] vcommute1_term2
+vcommute1_t5 = check_hfoedge vcommute1_sig "Checking the source horizontal edge is there after" vcommute1_mudg2 vcommute1_soterm1 [vcommute1_term1] vcommute1_term2
 
 vcommute1_t6 :: AutomatedTest
-vcommute1_t6 = check_vedge "Checking the source vertical edge is there after" vcommute1_mudg2 vcommute1_term2 vcommute1_term3
+vcommute1_t6 = check_vedge vcommute1_sig "Checking the source vertical edge is there after" vcommute1_mudg2 vcommute1_term2 vcommute1_term3
 
 vcommute1_t7 :: AutomatedTest
-vcommute1_t7 = check_hfoedge "Checking the commuted horizontal edge is there after" vcommute1_mudg2 vcommute1_soterm1 [vcommute1_term4] vcommute1_term3
+vcommute1_t7 = check_hfoedge vcommute1_sig "Checking the commuted horizontal edge is there after" vcommute1_mudg2 vcommute1_soterm1 [vcommute1_term4] vcommute1_term3
 
 vcommute1_t8 :: AutomatedTest
-vcommute1_t8 = check_vedge "Checking the commuted vertical edge is there after" vcommute1_mudg2 vcommute1_term1 vcommute1_term4
+vcommute1_t8 = check_vedge vcommute1_sig "Checking the commuted vertical edge is there after" vcommute1_mudg2 vcommute1_term1 vcommute1_term4
 
 vcommute_tests1 :: String
 vcommute_tests1 = combine_test_results [vcommute1_t1,vcommute1_t2,vcommute1_t3,vcommute1_t4,vcommute1_t5,vcommute1_t6,vcommute1_t7,vcommute1_t8]
@@ -926,6 +929,9 @@ vcommute2_soterm1 = read "f1[2]"
 vcommute2_sotid1 :: SOMetaUnifRelSoId s
 vcommute2_sotid1 = relbwEqDGSoId vcommute2_soterm1
 
+vcommute2_sig :: SOMetaSignature
+vcommute2_sig = SOSignature (Signature [] [EnumProc.Empty,EnumProc.Empty,read "f1[2]" --> EnumProc.Empty] (read "x0" --> read "x1" --> read "x2" --> EnumProc.Empty)) EnumProc.Empty
+
 vcommute2_mudg1 :: StateT (RTestSOMetaUnifDGraph s) (ST s) _
 vcommute2_mudg1 = do {on_dgraph (newEqDGFOEdge vcommute2_sotid1 [vcommute2_tid1,vcommute2_tid2] vcommute2_tid3); on_vdgraph (addVFoEdge vcommute2_tid3 vcommute2_tid4)}
 
@@ -933,44 +939,44 @@ vcommute2_mudg2 :: StateT (RTestSOMetaUnifDGraph s) (ST s) _
 vcommute2_mudg2 = do {vcommute2_mudg1; on_vdgraph metaunif_vertical_commute}
 
 vcommute2_t1 :: AutomatedTest
-vcommute2_t1 = check_hfoedge "Checking the source horizontal edge is there before" vcommute2_mudg1 vcommute2_soterm1 [vcommute2_term1,vcommute2_term2] vcommute2_term3
+vcommute2_t1 = check_hfoedge vcommute2_sig "Checking the source horizontal edge is there before" vcommute2_mudg1 vcommute2_soterm1 [vcommute2_term1,vcommute2_term2] vcommute2_term3
 
 vcommute2_t2 :: AutomatedTest
-vcommute2_t2 = check_vedge "Checking the source vertical edge is there before" vcommute2_mudg1 vcommute2_term3 vcommute2_term4
+vcommute2_t2 = check_vedge vcommute2_sig "Checking the source vertical edge is there before" vcommute2_mudg1 vcommute2_term3 vcommute2_term4
 
 vcommute2_t3 :: AutomatedTest
-vcommute2_t3 = check_not_hfoedge "Checking the commuted horizontal edge is not there before" vcommute2_mudg1 vcommute2_soterm1 [vcommute2_term5,vcommute2_term6] vcommute2_term4
+vcommute2_t3 = check_not_hfoedge vcommute2_sig "Checking the commuted horizontal edge is not there before" vcommute2_mudg1 vcommute2_soterm1 [vcommute2_term5,vcommute2_term6] vcommute2_term4
 
 vcommute2_t4 :: AutomatedTest
-vcommute2_t4 = check_not_vedge "Checking the commuted vertical edge is not there before" vcommute2_mudg1 vcommute2_term1 vcommute2_term5
+vcommute2_t4 = check_not_vedge vcommute2_sig "Checking the commuted vertical edge is not there before" vcommute2_mudg1 vcommute2_term1 vcommute2_term5
 
 vcommute2_t5 :: AutomatedTest
-vcommute2_t5 = check_not_vedge "Checking the commuted vertical edge is not there before" vcommute2_mudg1 vcommute2_term2 vcommute2_term6
+vcommute2_t5 = check_not_vedge vcommute2_sig "Checking the commuted vertical edge is not there before" vcommute2_mudg1 vcommute2_term2 vcommute2_term6
 
 vcommute2_t6 :: AutomatedTest
-vcommute2_t6 = check_hfoedge "Checking the source horizontal edge is there after" vcommute2_mudg2 vcommute2_soterm1 [vcommute2_term1,vcommute2_term2] vcommute2_term3
+vcommute2_t6 = check_hfoedge vcommute2_sig "Checking the source horizontal edge is there after" vcommute2_mudg2 vcommute2_soterm1 [vcommute2_term1,vcommute2_term2] vcommute2_term3
 
 vcommute2_t7 :: AutomatedTest
-vcommute2_t7 = check_vedge "Checking the source vertical edge is there after" vcommute2_mudg2 vcommute2_term3 vcommute2_term4
+vcommute2_t7 = check_vedge vcommute2_sig "Checking the source vertical edge is there after" vcommute2_mudg2 vcommute2_term3 vcommute2_term4
 
 vcommute2_t8 :: AutomatedTest
-vcommute2_t8 = check_hfoedge "Checking the commuted horizontal edge is there after" vcommute2_mudg2 vcommute2_soterm1 [vcommute2_term5,vcommute2_term6] vcommute2_term4
+vcommute2_t8 = check_hfoedge vcommute2_sig "Checking the commuted horizontal edge is there after" vcommute2_mudg2 vcommute2_soterm1 [vcommute2_term5,vcommute2_term6] vcommute2_term4
 
 vcommute2_t9 :: AutomatedTest
-vcommute2_t9 = check_vedge "Checking the commuted vertical edge is there after" vcommute2_mudg2 vcommute2_term1 vcommute2_term5
+vcommute2_t9 = check_vedge vcommute2_sig "Checking the commuted vertical edge is there after" vcommute2_mudg2 vcommute2_term1 vcommute2_term5
 
 vcommute2_t10 :: AutomatedTest
-vcommute2_t10 = check_vedge "Checking the commuted vertical edge is there after" vcommute2_mudg2 vcommute2_term2 vcommute2_term6
+vcommute2_t10 = check_vedge vcommute2_sig "Checking the commuted vertical edge is there after" vcommute2_mudg2 vcommute2_term2 vcommute2_term6
 
 -- Additional tests, verifying no weird crossings have happened.
 vcommute2_t11 :: AutomatedTest
-vcommute2_t11 = check_not_hfoedge "Checking no crossed horizontal edge is there after" vcommute2_mudg2 vcommute2_soterm1 [vcommute2_term6,vcommute2_term5] vcommute2_term4
+vcommute2_t11 = check_not_hfoedge vcommute2_sig "Checking no crossed horizontal edge is there after" vcommute2_mudg2 vcommute2_soterm1 [vcommute2_term6,vcommute2_term5] vcommute2_term4
 
 vcommute2_t12 :: AutomatedTest
-vcommute2_t12 = check_not_vedge "Checking no crossed vertical edge is there after" vcommute2_mudg2 vcommute2_term1 vcommute2_term6
+vcommute2_t12 = check_not_vedge vcommute2_sig "Checking no crossed vertical edge is there after" vcommute2_mudg2 vcommute2_term1 vcommute2_term6
 
 vcommute2_t13 :: AutomatedTest
-vcommute2_t13 = check_not_vedge "Checking no crossed vertical edge is there after" vcommute2_mudg2 vcommute2_term2 vcommute2_term5
+vcommute2_t13 = check_not_vedge vcommute2_sig "Checking no crossed vertical edge is there after" vcommute2_mudg2 vcommute2_term2 vcommute2_term5
 
 vcommute_tests2 :: String
 vcommute_tests2 = combine_test_results [vcommute2_t1,vcommute2_t2,vcommute2_t3,vcommute2_t4,vcommute2_t5,vcommute2_t6,vcommute2_t7,vcommute2_t8,vcommute2_t9,vcommute2_t10,vcommute2_t11,vcommute2_t12,vcommute2_t13]
@@ -1026,6 +1032,9 @@ vcommute3_soterm2 = read "f2[1]"
 vcommute3_sotid2 :: SOMetaUnifRelSoId s
 vcommute3_sotid2 = relbwEqDGSoId vcommute3_soterm2
 
+vcommute3_sig :: SOMetaSignature
+vcommute3_sig = SOSignature (Signature [] [EnumProc.Empty,read "f1[1]" --> read "f2[1]" --> EnumProc.Empty] (read "x0" --> read "x1" --> read "x2" --> EnumProc.Empty)) EnumProc.Empty
+
 vcommute3_mudg1 :: StateT (RTestSOMetaUnifDGraph s) (ST s) _
 vcommute3_mudg1 = do {on_dgraph (newEqDGFOEdge vcommute3_sotid1 [vcommute3_tid1] vcommute3_tid2); on_dgraph (newEqDGFOEdge vcommute3_sotid2 [vcommute3_tid5] vcommute3_tid1); on_vdgraph (addVFoEdge vcommute3_tid2 vcommute3_tid3)}
 
@@ -1033,37 +1042,37 @@ vcommute3_mudg2 :: StateT (RTestSOMetaUnifDGraph s) (ST s) _
 vcommute3_mudg2 = do {vcommute3_mudg1; on_vdgraph metaunif_vertical_commute}
 
 vcommute3_t1 :: AutomatedTest
-vcommute3_t1 = check_hfoedge "Checking the source horizontal edge is there before" vcommute3_mudg1 vcommute3_soterm1 [vcommute3_term1] vcommute3_term2
+vcommute3_t1 = check_hfoedge vcommute3_sig "Checking the source horizontal edge is there before" vcommute3_mudg1 vcommute3_soterm1 [vcommute3_term1] vcommute3_term2
 
 vcommute3_t2 :: AutomatedTest
-vcommute3_t2 = check_hfoedge "Checking the source horizontal edge is there before" vcommute3_mudg1 vcommute3_soterm2 [vcommute3_term5] vcommute3_term1
+vcommute3_t2 = check_hfoedge vcommute3_sig "Checking the source horizontal edge is there before" vcommute3_mudg1 vcommute3_soterm2 [vcommute3_term5] vcommute3_term1
 
 vcommute3_t3 :: AutomatedTest
-vcommute3_t3 = check_not_hfoedge "Checking that the target horizontal edge is not there before" vcommute3_mudg1 vcommute3_soterm1 [vcommute3_term4] vcommute3_term3
+vcommute3_t3 = check_not_hfoedge vcommute3_sig "Checking that the target horizontal edge is not there before" vcommute3_mudg1 vcommute3_soterm1 [vcommute3_term4] vcommute3_term3
 
 vcommute3_t4 :: AutomatedTest
-vcommute3_t4 = check_not_hfoedge "Checking that the target horizontal edge is not there before" vcommute3_mudg1 vcommute3_soterm2 [vcommute3_term6] vcommute3_term4
+vcommute3_t4 = check_not_hfoedge vcommute3_sig "Checking that the target horizontal edge is not there before" vcommute3_mudg1 vcommute3_soterm2 [vcommute3_term6] vcommute3_term4
 
 vcommute3_t5 :: AutomatedTest
-vcommute3_t5 = check_vedge "Checking that the source vertical edge is there before" vcommute3_mudg1 vcommute3_term2 vcommute3_term3
+vcommute3_t5 = check_vedge vcommute3_sig "Checking that the source vertical edge is there before" vcommute3_mudg1 vcommute3_term2 vcommute3_term3
 
 vcommute3_t6 :: AutomatedTest
-vcommute3_t6 = check_not_vedge "Checking that the target vertical edge is not there before" vcommute3_mudg1 vcommute3_term1 vcommute3_term4
+vcommute3_t6 = check_not_vedge vcommute3_sig "Checking that the target vertical edge is not there before" vcommute3_mudg1 vcommute3_term1 vcommute3_term4
 
 vcommute3_t7 :: AutomatedTest
-vcommute3_t7 = check_not_vedge "Checking that the target vertical edge is not there before" vcommute3_mudg1 vcommute3_term5 vcommute3_term6
+vcommute3_t7 = check_not_vedge vcommute3_sig "Checking that the target vertical edge is not there before" vcommute3_mudg1 vcommute3_term5 vcommute3_term6
 
 vcommute3_t8 :: AutomatedTest
-vcommute3_t8 = check_hfoedge "Checking that the target horizontal edge is there after" vcommute3_mudg2 vcommute3_soterm1 [vcommute3_term4] vcommute3_term3
+vcommute3_t8 = check_hfoedge vcommute3_sig "Checking that the target horizontal edge is there after" vcommute3_mudg2 vcommute3_soterm1 [vcommute3_term4] vcommute3_term3
 
 vcommute3_t9 :: AutomatedTest
-vcommute3_t9 = check_hfoedge "Checking that the target horizontal edge is there after" vcommute3_mudg2 vcommute3_soterm2 [vcommute3_term6] vcommute3_term4
+vcommute3_t9 = check_hfoedge vcommute3_sig "Checking that the target horizontal edge is there after" vcommute3_mudg2 vcommute3_soterm2 [vcommute3_term6] vcommute3_term4
 
 vcommute3_t10 :: AutomatedTest
-vcommute3_t10 = check_vedge "Checking that the target vertical edge is there after" vcommute3_mudg2 vcommute3_term1 vcommute3_term4
+vcommute3_t10 = check_vedge vcommute3_sig "Checking that the target vertical edge is there after" vcommute3_mudg2 vcommute3_term1 vcommute3_term4
 
 vcommute3_t11 :: AutomatedTest
-vcommute3_t11 = check_vedge "Checking that the target vertical edge is there after" vcommute3_mudg2 vcommute3_term5 vcommute3_term6
+vcommute3_t11 = check_vedge vcommute3_sig "Checking that the target vertical edge is there after" vcommute3_mudg2 vcommute3_term5 vcommute3_term6
 
 vcommute_tests3 :: String
 vcommute_tests3 = combine_test_results [vcommute3_t1,vcommute3_t2,vcommute3_t3,vcommute3_t4,vcommute3_t5,vcommute3_t6,vcommute3_t7,vcommute3_t8,vcommute3_t9,vcommute3_t10,vcommute3_t11]
@@ -1100,6 +1109,9 @@ vcommute4_soterm1 = read "f1[1]"
 vcommute4_sotid1 :: SOMetaUnifRelSoId s
 vcommute4_sotid1 = relbwEqDGSoId vcommute4_soterm1
 
+vcommute4_sig :: SOMetaSignature
+vcommute4_sig = SOSignature (Signature [] [EnumProc.Empty,read "f1[1]" --> EnumProc.Empty] (read "x0" --> read "x1" --> EnumProc.Empty)) EnumProc.Empty
+
 vcommute4_mudg1 :: StateT (RTestSOMetaUnifDGraph s) (ST s) _
 vcommute4_mudg1 = do {on_dgraph (newEqDGFOEdge vcommute4_sotid1 [vcommute4_tid1] vcommute4_tid2); on_vdgraph (addVFoEdge vcommute4_tid1 vcommute4_tid4)}
 
@@ -1107,28 +1119,28 @@ vcommute4_mudg2 :: StateT (RTestSOMetaUnifDGraph s) (ST s) _
 vcommute4_mudg2 = do {vcommute4_mudg1; on_vdgraph metaunif_vertical_commute}
 
 vcommute4_t1 :: AutomatedTest
-vcommute4_t1 = check_hfoedge "Checking the source horizontal edge is there before" vcommute4_mudg1 vcommute4_soterm1 [vcommute4_term1] vcommute4_term2
+vcommute4_t1 = check_hfoedge vcommute4_sig "Checking the source horizontal edge is there before" vcommute4_mudg1 vcommute4_soterm1 [vcommute4_term1] vcommute4_term2
 
 vcommute4_t2 :: AutomatedTest
-vcommute4_t2 = check_vedge "Checking the source vertical edge is there before" vcommute4_mudg1 vcommute4_term1 vcommute4_term4
+vcommute4_t2 = check_vedge vcommute4_sig "Checking the source vertical edge is there before" vcommute4_mudg1 vcommute4_term1 vcommute4_term4
 
 vcommute4_t3 :: AutomatedTest
-vcommute4_t3 = check_not_hfoedge "Checking the resulting horizontal edge is not there before" vcommute4_mudg1 vcommute4_soterm1 [vcommute4_term4] vcommute4_term3
+vcommute4_t3 = check_not_hfoedge vcommute4_sig "Checking the resulting horizontal edge is not there before" vcommute4_mudg1 vcommute4_soterm1 [vcommute4_term4] vcommute4_term3
 
 vcommute4_t4 :: AutomatedTest
-vcommute4_t4 = check_not_vedge "Checking the resulting vertical edge is not there before" vcommute4_mudg1 vcommute4_term2 vcommute4_term3
+vcommute4_t4 = check_not_vedge vcommute4_sig "Checking the resulting vertical edge is not there before" vcommute4_mudg1 vcommute4_term2 vcommute4_term3
 
 vcommute4_t5 :: AutomatedTest
-vcommute4_t5 = check_hfoedge "Checking the source horizontal edge is there after" vcommute4_mudg2 vcommute4_soterm1 [vcommute4_term1] vcommute4_term2
+vcommute4_t5 = check_hfoedge vcommute4_sig "Checking the source horizontal edge is there after" vcommute4_mudg2 vcommute4_soterm1 [vcommute4_term1] vcommute4_term2
 
 vcommute4_t6 :: AutomatedTest
-vcommute4_t6 = check_vedge "Checking the source vertical edge is there after" vcommute4_mudg2 vcommute4_term1 vcommute4_term4
+vcommute4_t6 = check_vedge vcommute4_sig "Checking the source vertical edge is there after" vcommute4_mudg2 vcommute4_term1 vcommute4_term4
 
 vcommute4_t7 :: AutomatedTest
-vcommute4_t7 = check_hfoedge "Checking the resulting horizontal edge is there after" vcommute4_mudg2 vcommute4_soterm1 [vcommute4_term4] vcommute4_term3
+vcommute4_t7 = check_hfoedge vcommute4_sig "Checking the resulting horizontal edge is there after" vcommute4_mudg2 vcommute4_soterm1 [vcommute4_term4] vcommute4_term3
 
 vcommute4_t8 :: AutomatedTest
-vcommute4_t8 = check_vedge "Checking the resulting vertical edge is there before" vcommute4_mudg2 vcommute4_term2 vcommute4_term3
+vcommute4_t8 = check_vedge vcommute4_sig "Checking the resulting vertical edge is there before" vcommute4_mudg2 vcommute4_term2 vcommute4_term3
 
 vcommute_tests4 :: String
 vcommute_tests4 = combine_test_results [vcommute4_t1,vcommute4_t2,vcommute4_t3,vcommute4_t4,vcommute4_t5,vcommute4_t6,vcommute4_t7,vcommute4_t8]
@@ -1181,6 +1193,9 @@ valign1_term6 = read "x1"
 valign1_tid6 :: SOMetaUnifRelFoId s
 valign1_tid6 = relbwEqDGFoId valign1_term6
 
+valign1_sig :: SOMetaSignature
+valign1_sig = SOSignature (Signature [] [] (read "x0" --> read "x1" --> EnumProc.Empty)) EnumProc.Empty
+
 valign1_mudg1 :: StateT (RTestSOMetaUnifDGraph s) (ST s) _
 valign1_mudg1 = do {on_vdgraph (addVFoEdge valign1_tid3 valign1_tid1); on_dgraph (newEqDGFONode valign1_term6); on_dgraph (newEqDGFONode valign1_term2); return ()}
 
@@ -1188,40 +1203,40 @@ valign1_mudg2 :: StateT (RTestSOMetaUnifDGraph s) (ST s) _
 valign1_mudg2 = do {valign1_mudg1; on_vdgraph metaunif_vertical_align; return ()}
 
 valign1_t1 :: AutomatedTest
-valign1_t1 = check_vedge "Checking that the preexisting vertical edge exists before" valign1_mudg1 valign1_term3 valign1_term1
+valign1_t1 = check_vedge valign1_sig "Checking that the preexisting vertical edge exists before" valign1_mudg1 valign1_term3 valign1_term1
 
 valign1_t2 :: AutomatedTest
-valign1_t2 = check_not_vedge "Checking that the produced vertical edge does not exist before" valign1_mudg1 valign1_term4 valign1_term3
+valign1_t2 = check_not_vedge valign1_sig "Checking that the produced vertical edge does not exist before" valign1_mudg1 valign1_term4 valign1_term3
 
 valign1_t3 :: AutomatedTest
-valign1_t3 = check_not_vedge "Checking that the produced vertical edge does not exist before" valign1_mudg1 valign1_term5 valign1_term2
+valign1_t3 = check_not_vedge valign1_sig "Checking that the produced vertical edge does not exist before" valign1_mudg1 valign1_term5 valign1_term2
 
 valign1_t4 :: AutomatedTest
-valign1_t4 = check_not_vedge "Checking that the produced vertical edge does not exist before" valign1_mudg1 valign1_term6 valign1_term5
+valign1_t4 = check_not_vedge valign1_sig "Checking that the produced vertical edge does not exist before" valign1_mudg1 valign1_term6 valign1_term5
 
 valign1_t5 :: AutomatedTest
-valign1_t5 = check_not_vedge "Checking that a transitive vertical edge does not exist before" valign1_mudg1 valign1_term6 valign1_term2
+valign1_t5 = check_not_vedge valign1_sig "Checking that a transitive vertical edge does not exist before" valign1_mudg1 valign1_term6 valign1_term2
 
 valign1_t6 :: AutomatedTest
-valign1_t6 = check_not_vedge "Checking that a transitive vertical edge does not exist before" valign1_mudg1 valign1_term4 valign1_term1
+valign1_t6 = check_not_vedge valign1_sig "Checking that a transitive vertical edge does not exist before" valign1_mudg1 valign1_term4 valign1_term1
 
 valign1_t7 :: AutomatedTest
-valign1_t7 = check_vedge "Checking that the preexisting vertical edge exists after" valign1_mudg2 valign1_term3 valign1_term1
+valign1_t7 = check_vedge valign1_sig "Checking that the preexisting vertical edge exists after" valign1_mudg2 valign1_term3 valign1_term1
 
 valign1_t8 :: AutomatedTest
-valign1_t8 = check_vedge "Checking that the produced vertical edge exists after" valign1_mudg2 valign1_term4 valign1_term3
+valign1_t8 = check_vedge valign1_sig "Checking that the produced vertical edge exists after" valign1_mudg2 valign1_term4 valign1_term3
 
 valign1_t9 :: AutomatedTest
-valign1_t9 = check_vedge "Checking that the produced vertical edge exists after" valign1_mudg2 valign1_term5 valign1_term2
+valign1_t9 = check_vedge valign1_sig "Checking that the produced vertical edge exists after" valign1_mudg2 valign1_term5 valign1_term2
 
 valign1_t10 :: AutomatedTest
-valign1_t10 = check_vedge "Checking that the produced vertical edge exists after" valign1_mudg2 valign1_term6 valign1_term5
+valign1_t10 = check_vedge valign1_sig "Checking that the produced vertical edge exists after" valign1_mudg2 valign1_term6 valign1_term5
 
 valign1_t11 :: AutomatedTest
-valign1_t11 = check_not_vedge "Checking that a transitive vertical edge does not exist after" valign1_mudg2 valign1_term6 valign1_term2
+valign1_t11 = check_not_vedge valign1_sig "Checking that a transitive vertical edge does not exist after" valign1_mudg2 valign1_term6 valign1_term2
 
 valign1_t12 :: AutomatedTest
-valign1_t12 = check_not_vedge "Checking that a transitive vertical edge does not exist after" valign1_mudg2 valign1_term4 valign1_term1
+valign1_t12 = check_not_vedge valign1_sig "Checking that a transitive vertical edge does not exist after" valign1_mudg2 valign1_term4 valign1_term1
 
 valign_tests1 :: String
 valign_tests1 = combine_test_results [valign1_t1,valign1_t2,valign1_t3,valign1_t4,valign1_t5,valign1_t6,valign1_t7,valign1_t8,valign1_t9,valign1_t10,valign1_t11,valign1_t12]
@@ -1293,6 +1308,9 @@ zip1_soterm10 = read "F7[1]"
 zip1_sotid10 :: SOMetaUnifRelSoId s
 zip1_sotid10 = relbwEqDGSoId zip1_soterm10
 
+zip1_sig :: SOMetaSignature
+zip1_sig = SOSignature (Signature [] [EnumProc.Empty,EnumProc.Empty,read "f1[2]" --> read "f2[2]" --> EnumProc.Empty] EnumProc.Empty) (read "F0[1]" --> read "F1[1]" --> read "F2[1]" --> read "F3[1]" --> read "F4[1]" --> read "F5[1]" --> read "F6[1]" --> read "F7[1]" --> EnumProc.Empty)
+
 zip1_mudg1 :: StateT (RTestSOMetaUnifDGraph s) (ST s) _
 zip1_mudg1 = do
 	{
@@ -1317,64 +1335,64 @@ zip1_mudg2 :: StateT (RTestSOMetaUnifDGraph s) (ST s) _
 zip1_mudg2 = do {zip1_mudg1; on_vdgraph metaunif_sozip}
 
 zip1_t1 :: AutomatedTest
-zip1_t1 = check_not_soequiv "Checking that F3 and F4 are not equivalent before" zip1_mudg1 zip1_soterm6 zip1_soterm7
+zip1_t1 = check_not_soequiv zip1_sig "Checking that F3 and F4 are not equivalent before" zip1_mudg1 zip1_soterm6 zip1_soterm7
 
 zip1_t2 :: AutomatedTest
-zip1_t2 = check_not_soequiv "Checking that F3 and F5 are not equivalent before" zip1_mudg1 zip1_soterm6 zip1_soterm8
+zip1_t2 = check_not_soequiv zip1_sig "Checking that F3 and F5 are not equivalent before" zip1_mudg1 zip1_soterm6 zip1_soterm8
 
 zip1_t3 :: AutomatedTest
-zip1_t3 = check_not_soequiv "Checking that F3 and F6 are not equivalent before" zip1_mudg1 zip1_soterm6 zip1_soterm9
+zip1_t3 = check_not_soequiv zip1_sig "Checking that F3 and F6 are not equivalent before" zip1_mudg1 zip1_soterm6 zip1_soterm9
 
 zip1_t4 :: AutomatedTest
-zip1_t4 = check_not_soequiv "Checking that F3 and F7 are not equivalent before" zip1_mudg1 zip1_soterm6 zip1_soterm10
+zip1_t4 = check_not_soequiv zip1_sig "Checking that F3 and F7 are not equivalent before" zip1_mudg1 zip1_soterm6 zip1_soterm10
 
 zip1_t5 :: AutomatedTest
-zip1_t5 = check_not_soequiv "Checking that F4 and F5 are not equivalent before" zip1_mudg1 zip1_soterm7 zip1_soterm8
+zip1_t5 = check_not_soequiv zip1_sig "Checking that F4 and F5 are not equivalent before" zip1_mudg1 zip1_soterm7 zip1_soterm8
 
 zip1_t6 :: AutomatedTest
-zip1_t6 = check_not_soequiv "Checking that F4 and F6 are not equivalent before" zip1_mudg1 zip1_soterm7 zip1_soterm9
+zip1_t6 = check_not_soequiv zip1_sig "Checking that F4 and F6 are not equivalent before" zip1_mudg1 zip1_soterm7 zip1_soterm9
 
 zip1_t7 :: AutomatedTest
-zip1_t7 = check_not_soequiv "Checking that F4 and F7 are not equivalent before" zip1_mudg1 zip1_soterm7 zip1_soterm10
+zip1_t7 = check_not_soequiv zip1_sig "Checking that F4 and F7 are not equivalent before" zip1_mudg1 zip1_soterm7 zip1_soterm10
 
 zip1_t8 :: AutomatedTest
-zip1_t8 = check_not_soequiv "Checking that F5 and F6 are not equivalent before" zip1_mudg1 zip1_soterm8 zip1_soterm9
+zip1_t8 = check_not_soequiv zip1_sig "Checking that F5 and F6 are not equivalent before" zip1_mudg1 zip1_soterm8 zip1_soterm9
 
 zip1_t9 :: AutomatedTest
-zip1_t9 = check_not_soequiv "Checking that F5 and F7 are not equivalent before" zip1_mudg1 zip1_soterm8 zip1_soterm10
+zip1_t9 = check_not_soequiv zip1_sig "Checking that F5 and F7 are not equivalent before" zip1_mudg1 zip1_soterm8 zip1_soterm10
 
 zip1_t10 :: AutomatedTest
-zip1_t10 = check_not_soequiv "Checking that F6 and F7 are not equivalent before" zip1_mudg1 zip1_soterm9 zip1_soterm10
+zip1_t10 = check_not_soequiv zip1_sig "Checking that F6 and F7 are not equivalent before" zip1_mudg1 zip1_soterm9 zip1_soterm10
 
 zip1_t11 :: AutomatedTest
-zip1_t11 = check_soequiv "Checking that F3 and F4 are equivalent after" zip1_mudg2 zip1_soterm6 zip1_soterm7
+zip1_t11 = check_soequiv zip1_sig "Checking that F3 and F4 are equivalent after" zip1_mudg2 zip1_soterm6 zip1_soterm7
 
 zip1_t12 :: AutomatedTest
-zip1_t12 = check_not_soequiv "Checking that F3 and F5 are not equivalent after" zip1_mudg2 zip1_soterm6 zip1_soterm8
+zip1_t12 = check_not_soequiv zip1_sig "Checking that F3 and F5 are not equivalent after" zip1_mudg2 zip1_soterm6 zip1_soterm8
 
 zip1_t13 :: AutomatedTest
-zip1_t13 = check_not_soequiv "Checking that F3 and F6 are not equivalent after" zip1_mudg2 zip1_soterm6 zip1_soterm9
+zip1_t13 = check_not_soequiv zip1_sig "Checking that F3 and F6 are not equivalent after" zip1_mudg2 zip1_soterm6 zip1_soterm9
 
 zip1_t14 :: AutomatedTest
-zip1_t14 = check_not_soequiv "Checking that F3 and F7 are not equivalent after" zip1_mudg2 zip1_soterm6 zip1_soterm10
+zip1_t14 = check_not_soequiv zip1_sig "Checking that F3 and F7 are not equivalent after" zip1_mudg2 zip1_soterm6 zip1_soterm10
 
 zip1_t15 :: AutomatedTest
-zip1_t15 = check_not_soequiv "Checking that F4 and F5 are not equivalent after" zip1_mudg2 zip1_soterm7 zip1_soterm8
+zip1_t15 = check_not_soequiv zip1_sig "Checking that F4 and F5 are not equivalent after" zip1_mudg2 zip1_soterm7 zip1_soterm8
 
 zip1_t16 :: AutomatedTest
-zip1_t16 = check_not_soequiv "Checking that F4 and F6 are not equivalent after" zip1_mudg2 zip1_soterm7 zip1_soterm9
+zip1_t16 = check_not_soequiv zip1_sig "Checking that F4 and F6 are not equivalent after" zip1_mudg2 zip1_soterm7 zip1_soterm9
 
 zip1_t17 :: AutomatedTest
-zip1_t17 = check_not_soequiv "Checking that F4 and F7 are not equivalent after" zip1_mudg2 zip1_soterm7 zip1_soterm10
+zip1_t17 = check_not_soequiv zip1_sig "Checking that F4 and F7 are not equivalent after" zip1_mudg2 zip1_soterm7 zip1_soterm10
 
 zip1_t18 :: AutomatedTest
-zip1_t18 = check_not_soequiv "Checking that F5 and F6 are not equivalent after" zip1_mudg2 zip1_soterm8 zip1_soterm9
+zip1_t18 = check_not_soequiv zip1_sig "Checking that F5 and F6 are not equivalent after" zip1_mudg2 zip1_soterm8 zip1_soterm9
 
 zip1_t19 :: AutomatedTest
-zip1_t19 = check_not_soequiv "Checking that F5 and F7 are not equivalent after" zip1_mudg2 zip1_soterm8 zip1_soterm10
+zip1_t19 = check_not_soequiv zip1_sig "Checking that F5 and F7 are not equivalent after" zip1_mudg2 zip1_soterm8 zip1_soterm10
 
 zip1_t20 :: AutomatedTest
-zip1_t20 = check_not_soequiv "Checking that F6 and F7 are not equivalent after" zip1_mudg2 zip1_soterm9 zip1_soterm10
+zip1_t20 = check_not_soequiv zip1_sig "Checking that F6 and F7 are not equivalent after" zip1_mudg2 zip1_soterm9 zip1_soterm10
 
 zip_tests1 :: String
 zip_tests1 = combine_test_results [zip1_t1,zip1_t2,zip1_t3,zip1_t4,zip1_t5,zip1_t6,zip1_t7,zip1_t8,zip1_t9,zip1_t10,zip1_t11,zip1_t12,zip1_t13,zip1_t14,zip1_t15,zip1_t16,zip1_t17,zip1_t18,zip1_t19,zip1_t20]
@@ -1423,6 +1441,9 @@ zip2_soterm7 = read "f1[1]"
 zip2_sotid7 :: SOMetaUnifRelSoId s
 zip2_sotid7 = relbwEqDGSoId zip2_soterm7
 
+zip2_sig :: SOMetaSignature
+zip2_sig = SOSignature (Signature [] [EnumProc.Empty,read "f0[1]" --> read "f1[1]" --> EnumProc.Empty] EnumProc.Empty) (read "F0[1]" --> read "F1[1]" --> read "F2[1]" --> read "F3[1]" --> read "F4[1]" --> EnumProc.Empty)
+
 zip2_mudg1 :: StateT (RTestSOMetaUnifDGraph s) (ST s) _
 zip2_mudg1 = do
 	{
@@ -1443,22 +1464,22 @@ zip2_mudg2 :: StateT (RTestSOMetaUnifDGraph s) (ST s) _
 zip2_mudg2 = do {zip2_mudg1; on_vdgraph metaunif_sozip}
 
 zip2_t1 :: AutomatedTest
-zip2_t1 = check_not_soequiv "Checking that F1 and F2 are not equivalent before" zip2_mudg1 zip2_soterm2 zip2_soterm3
+zip2_t1 = check_not_soequiv zip2_sig "Checking that F1 and F2 are not equivalent before" zip2_mudg1 zip2_soterm2 zip2_soterm3
 
 zip2_t2 :: AutomatedTest
-zip2_t2 = check_not_soequiv "Checking that F3 and F4 are not equivalent before" zip2_mudg1 zip2_soterm4 zip2_soterm5
+zip2_t2 = check_not_soequiv zip2_sig "Checking that F3 and F4 are not equivalent before" zip2_mudg1 zip2_soterm4 zip2_soterm5
 
 zip2_t3 :: AutomatedTest
-zip2_t3 = check_not_soequiv "Checking that F1 and F3 are not equivalent before" zip2_mudg1 zip2_soterm2 zip2_soterm4
+zip2_t3 = check_not_soequiv zip2_sig "Checking that F1 and F3 are not equivalent before" zip2_mudg1 zip2_soterm2 zip2_soterm4
 
 zip2_t4 :: AutomatedTest
-zip2_t4 = check_soequiv "Checking that F1 and F2 are equivalent after" zip2_mudg2 zip2_soterm2 zip2_soterm3
+zip2_t4 = check_soequiv zip2_sig "Checking that F1 and F2 are equivalent after" zip2_mudg2 zip2_soterm2 zip2_soterm3
 
 zip2_t5 :: AutomatedTest
-zip2_t5 = check_soequiv "Checking that F3 and F4 are equivalent after" zip2_mudg2 zip2_soterm4 zip2_soterm5
+zip2_t5 = check_soequiv zip2_sig "Checking that F3 and F4 are equivalent after" zip2_mudg2 zip2_soterm4 zip2_soterm5
 
 zip2_t6 :: AutomatedTest
-zip2_t6 = check_not_soequiv "Checking that F1 and F3 are not equivalent after" zip2_mudg2 zip2_soterm2 zip2_soterm4
+zip2_t6 = check_not_soequiv zip2_sig "Checking that F1 and F3 are not equivalent after" zip2_mudg2 zip2_soterm2 zip2_soterm4
 
 zip_tests2 :: String
 zip_tests2 = combine_test_results [zip2_t1,zip2_t2,zip2_t3,zip2_t4,zip2_t5,zip2_t6]
@@ -1507,6 +1528,9 @@ zip3_soterm7 = read "f1[1]"
 zip3_sotid7 :: SOMetaUnifRelSoId s
 zip3_sotid7 = relbwEqDGSoId zip3_soterm7
 
+zip3_sig :: SOMetaSignature
+zip3_sig = SOSignature (Signature [] [EnumProc.Empty,read "f0[1]" --> read "f1[1]" --> EnumProc.Empty] (read "x0" --> read "x1" --> read "x2" --> read "x3" --> read "x4" --> EnumProc.Empty)) EnumProc.Empty
+
 zip3_mudg1 :: StateT (RTestSOMetaUnifDGraph s) (ST s) _
 zip3_mudg1 = do
 	{
@@ -1527,22 +1551,22 @@ zip3_mudg2 :: StateT (RTestSOMetaUnifDGraph s) (ST s) _
 zip3_mudg2 = do {zip3_mudg1; on_vdgraph metaunif_fozip}
 
 zip3_t1 :: AutomatedTest
-zip3_t1 = check_not_foequiv "Checking that u0 x1 and u0 x2 are not equivalent before" zip3_mudg1 zip3_term2 zip3_term3
+zip3_t1 = check_not_foequiv zip3_sig "Checking that u0 x1 and u0 x2 are not equivalent before" zip3_mudg1 zip3_term2 zip3_term3
 
 zip3_t2 :: AutomatedTest
-zip3_t2 = check_not_foequiv "Checking that u0 x3 and u0 x4 are not equivalent before" zip3_mudg1 zip3_term4 zip3_term5
+zip3_t2 = check_not_foequiv zip3_sig "Checking that u0 x3 and u0 x4 are not equivalent before" zip3_mudg1 zip3_term4 zip3_term5
 
 zip3_t3 :: AutomatedTest
-zip3_t3 = check_not_foequiv "Checking that u0 x1 and u0 x3 are not equivalent before" zip3_mudg1 zip3_term2 zip3_term4
+zip3_t3 = check_not_foequiv zip3_sig "Checking that u0 x1 and u0 x3 are not equivalent before" zip3_mudg1 zip3_term2 zip3_term4
 
 zip3_t4 :: AutomatedTest
-zip3_t4 = check_foequiv "Checking that u0 x1 and u0 x2 are equivalent after" zip3_mudg2 zip3_term2 zip3_term3
+zip3_t4 = check_foequiv zip3_sig "Checking that u0 x1 and u0 x2 are equivalent after" zip3_mudg2 zip3_term2 zip3_term3
 
 zip3_t5 :: AutomatedTest
-zip3_t5 = check_foequiv "Checking that u0 x3 and u0 x4 are equivalent after" zip3_mudg2 zip3_term4 zip3_term5
+zip3_t5 = check_foequiv zip3_sig "Checking that u0 x3 and u0 x4 are equivalent after" zip3_mudg2 zip3_term4 zip3_term5
 
 zip3_t6 :: AutomatedTest
-zip3_t6 = check_not_foequiv "Checking that u0 x1 and u0 x3 are not equivalent after" zip3_mudg2 zip3_term2 zip3_term4
+zip3_t6 = check_not_foequiv zip3_sig "Checking that u0 x1 and u0 x3 are not equivalent after" zip3_mudg2 zip3_term2 zip3_term4
 
 zip_tests3 :: String
 zip_tests3 = combine_test_results [zip3_t1,zip3_t2,zip3_t3,zip3_t4,zip3_t5,zip3_t6]
@@ -1626,6 +1650,9 @@ zip4_soterm3 = read "f3[1]"
 zip4_sotid3 :: SOMetaUnifRelSoId s
 zip4_sotid3 = relbwEqDGSoId zip4_soterm3
 
+zip4_sig :: SOMetaSignature
+zip4_sig = SOSignature (Signature [] [EnumProc.Empty,read "f1[1]" --> read "f2[1]" --> read "f3[1]" --> EnumProc.Empty] (read "x0" --> read "x1" --> read "x2" --> read "x3" --> EnumProc.Empty)) EnumProc.Empty
+
 zip4_mudg1 :: StateT (RTestSOMetaUnifDGraph s) (ST s) _
 zip4_mudg1 = do
 	{
@@ -1656,34 +1683,34 @@ zip4_mudg3 :: StateT (RTestSOMetaUnifDGraph s) (ST s) _
 zip4_mudg3 = do {zip4_mudg2; on_vdgraph metaunif_fozip; pass}
 
 zip4_t1 :: AutomatedTest
-zip4_t1 = check_not_foequiv "Checking that u0 x1 and u0 x2 are not equivalent before" zip4_mudg1 zip4_term2 zip4_term3
+zip4_t1 = check_not_foequiv zip4_sig "Checking that u0 x1 and u0 x2 are not equivalent before" zip4_mudg1 zip4_term2 zip4_term3
 
 zip4_t2 :: AutomatedTest
-zip4_t2 = check_not_hfoedge "Checking there is no g horizontal edge between u0 x3 and u0 x1 before" zip4_mudg1 zip4_soterm2 [zip4_term4] zip4_term2
+zip4_t2 = check_not_hfoedge zip4_sig "Checking there is no g horizontal edge between u0 x3 and u0 x1 before" zip4_mudg1 zip4_soterm2 [zip4_term4] zip4_term2
 
 zip4_t3 :: AutomatedTest
-zip4_t3 = check_not_foequiv "Checking that u1 u0 x1 and u1 x3 are not equivalent before" zip4_mudg1 zip4_term6 zip4_term8
+zip4_t3 = check_not_foequiv zip4_sig "Checking that u1 u0 x1 and u1 x3 are not equivalent before" zip4_mudg1 zip4_term6 zip4_term8
 
 zip4_t4 :: AutomatedTest
-zip4_t4 = check_not_hfoedge "Checking there is no g horizontal edge between u1 u0 x3 and u1 u0 x1 before" zip4_mudg1 zip4_soterm2 [zip4_term7] zip4_term6
+zip4_t4 = check_not_hfoedge zip4_sig "Checking there is no g horizontal edge between u1 u0 x3 and u1 u0 x1 before" zip4_mudg1 zip4_soterm2 [zip4_term7] zip4_term6
 
 zip4_t5 :: AutomatedTest
-zip4_t5 = check_not_hfoedge "Checking there is no h horizontal edge between u1 x1 and u1 x3 before" zip4_mudg1 zip4_soterm3 [zip4_term5] zip4_term8
+zip4_t5 = check_not_hfoedge zip4_sig "Checking there is no h horizontal edge between u1 x1 and u1 x3 before" zip4_mudg1 zip4_soterm3 [zip4_term5] zip4_term8
 
 zip4_t6 :: AutomatedTest
-zip4_t6 = check_not_hfoedge "Checking there is no h horizontal edge between u2 u1 x1 and u2 u1 x3 before" zip4_mudg1 zip4_soterm3 [zip4_term10] zip4_term9
+zip4_t6 = check_not_hfoedge zip4_sig "Checking there is no h horizontal edge between u2 u1 x1 and u2 u1 x3 before" zip4_mudg1 zip4_soterm3 [zip4_term10] zip4_term9
 
 zip4_t7 :: AutomatedTest
-zip4_t7 = check_not_vedge "Checking there is no vertical edge between u0 x3 and u1 u0 x3 before" zip4_mudg1 zip4_term4 zip4_term7
+zip4_t7 = check_not_vedge zip4_sig "Checking there is no vertical edge between u0 x3 and u1 u0 x3 before" zip4_mudg1 zip4_term4 zip4_term7
 
 zip4_t8 :: AutomatedTest
-zip4_t8 = check_not_vedge "Checking there is no vertical edge between u0 x1 and u1 u0 x1 before" zip4_mudg1 zip4_term2 zip4_term6
+zip4_t8 = check_not_vedge zip4_sig "Checking there is no vertical edge between u0 x1 and u1 u0 x1 before" zip4_mudg1 zip4_term2 zip4_term6
 
 zip4_t9 :: AutomatedTest
-zip4_t9 = check_not_vedge "Checking there is no vertical edge between u1 x1 and u2 u1 x1 before" zip4_mudg1 zip4_term5 zip4_term10
+zip4_t9 = check_not_vedge zip4_sig "Checking there is no vertical edge between u1 x1 and u2 u1 x1 before" zip4_mudg1 zip4_term5 zip4_term10
 
 zip4_t10 :: AutomatedTest
-zip4_t10 = check_not_vedge "Checking there is no vertical edge between u1 x3 and u2 u1 x3 before" zip4_mudg1 zip4_term8 zip4_term9
+zip4_t10 = check_not_vedge zip4_sig "Checking there is no vertical edge between u1 x3 and u2 u1 x3 before" zip4_mudg1 zip4_term8 zip4_term9
 
 -- We remove the inbetween tests because we underestimated how good propagation actually is!
 {-|
@@ -1719,34 +1746,34 @@ zip4_t20 = check_not_vedge "Checking there is no vertical edge between u1 x3 and
 |-}
 
 zip4_t21 :: AutomatedTest
-zip4_t21 = check_foequiv "Checking that u0 x1 and u0 x2 are equivalent after" zip4_mudg3 zip4_term2 zip4_term3
+zip4_t21 = check_foequiv zip4_sig "Checking that u0 x1 and u0 x2 are equivalent after" zip4_mudg3 zip4_term2 zip4_term3
 
 zip4_t22 :: AutomatedTest
-zip4_t22 = check_hfoedge "Checking there is a g horizontal edge between u0 x3 and u0 x1 after" zip4_mudg3 zip4_soterm2 [zip4_term4] zip4_term2
+zip4_t22 = check_hfoedge zip4_sig "Checking there is a g horizontal edge between u0 x3 and u0 x1 after" zip4_mudg3 zip4_soterm2 [zip4_term4] zip4_term2
 
 zip4_t23 :: AutomatedTest
-zip4_t23 = check_foequiv "Checking that u1 u0 x1 and u1 x3 are equivalent after" zip4_mudg3 zip4_term6 zip4_term8
+zip4_t23 = check_foequiv zip4_sig "Checking that u1 u0 x1 and u1 x3 are equivalent after" zip4_mudg3 zip4_term6 zip4_term8
 
 zip4_t24 :: AutomatedTest
-zip4_t24 = check_hfoedge "Checking there is a g horizontal edge between u1 u0 x3 and u1 u0 x1 after" zip4_mudg3 zip4_soterm2 [zip4_term7] zip4_term6
+zip4_t24 = check_hfoedge zip4_sig "Checking there is a g horizontal edge between u1 u0 x3 and u1 u0 x1 after" zip4_mudg3 zip4_soterm2 [zip4_term7] zip4_term6
 
 zip4_t25 :: AutomatedTest
-zip4_t25 = check_hfoedge "Checking there is a h horizontal edge between u1 x1 and u1 x3 after" zip4_mudg3 zip4_soterm3 [zip4_term5] zip4_term8
+zip4_t25 = check_hfoedge zip4_sig "Checking there is a h horizontal edge between u1 x1 and u1 x3 after" zip4_mudg3 zip4_soterm3 [zip4_term5] zip4_term8
 
 zip4_t26 :: AutomatedTest
-zip4_t26 = check_hfoedge "Checking there is a h horizontal edge between u2 u1 x1 and u2 u1 x3 after" zip4_mudg3 zip4_soterm3 [zip4_term10] zip4_term9
+zip4_t26 = check_hfoedge zip4_sig "Checking there is a h horizontal edge between u2 u1 x1 and u2 u1 x3 after" zip4_mudg3 zip4_soterm3 [zip4_term10] zip4_term9
 
 zip4_t27 :: AutomatedTest
-zip4_t27 = check_vedge "Checking there is a vertical edge between u0 x3 and u1 u0 x3 after" zip4_mudg3 zip4_term4 zip4_term7
+zip4_t27 = check_vedge zip4_sig "Checking there is a vertical edge between u0 x3 and u1 u0 x3 after" zip4_mudg3 zip4_term4 zip4_term7
 
 zip4_t28 :: AutomatedTest
-zip4_t28 = check_vedge "Checking there is a vertical edge between u0 x1 and u1 u0 x1 after" zip4_mudg3 zip4_term2 zip4_term6
+zip4_t28 = check_vedge zip4_sig "Checking there is a vertical edge between u0 x1 and u1 u0 x1 after" zip4_mudg3 zip4_term2 zip4_term6
 
 zip4_t29 :: AutomatedTest
-zip4_t29 = check_vedge "Checking there is a vertical edge between u1 x1 and u2 u1 x1 after" zip4_mudg3 zip4_term5 zip4_term10
+zip4_t29 = check_vedge zip4_sig "Checking there is a vertical edge between u1 x1 and u2 u1 x1 after" zip4_mudg3 zip4_term5 zip4_term10
 
 zip4_t30 :: AutomatedTest
-zip4_t30 = check_vedge "Checking there is a vertical edge between u1 x3 and u2 u1 x3 after" zip4_mudg3 zip4_term8 zip4_term9
+zip4_t30 = check_vedge zip4_sig "Checking there is a vertical edge between u1 x3 and u2 u1 x3 after" zip4_mudg3 zip4_term8 zip4_term9
 
 zip_tests4 :: String
 --zip_tests4 = combine_test_results [zip4_t1,zip4_t2,zip4_t3,zip4_t4,zip4_t5,zip4_t6,zip4_t7,zip4_t8,zip4_t9,zip4_t10,zip4_t11,zip4_t12,zip4_t13,zip4_t14,zip4_t15,zip4_t16,zip4_t17,zip4_t18,zip4_t19,zip4_t20,zip4_t21,zip4_t22,zip4_t23,zip4_t24,zip4_t25,zip4_t26,zip4_t27,zip4_t28,zip4_t29,zip4_t30]
@@ -1798,6 +1825,9 @@ simpproj1_term6 = read "pi1"
 simpproj1_tid6 :: SOMetaUnifRelSoId s
 simpproj1_tid6 = relbwEqDGSoId simpproj1_term6
 
+simpproj1_sig :: SOMetaSignature
+simpproj1_sig = SOSignature (Signature [] [read "f1[0]" --> read "f2[0]" --> read "f3[0]" --> read "f4[0]" --> EnumProc.Empty,EnumProc.Empty,EnumProc.Empty,read "f5[3]" --> EnumProc.Empty] EnumProc.Empty) EnumProc.Empty
+
 simpproj1_mudg1 :: StateT (RTestSOMetaUnifDGraph s) (ST s) _
 simpproj1_mudg1 = do
 	{
@@ -1816,52 +1846,52 @@ simpproj1_mudg2 :: StateT (RTestSOMetaUnifDGraph s) (ST s) _
 simpproj1_mudg2 = do {simpproj1_mudg1; on_vdgraph metaunif_so_simplify_projections; pass}
 
 simpproj1_t1 :: AutomatedTest
-simpproj1_t1 = check_hsoedge "Checking that the edge is there before" simpproj1_mudg1 simpproj1_term5 [simpproj1_term1,simpproj1_term2,simpproj1_term3] simpproj1_term4
+simpproj1_t1 = check_hsoedge simpproj1_sig "Checking that the edge is there before" simpproj1_mudg1 simpproj1_term5 [simpproj1_term1,simpproj1_term2,simpproj1_term3] simpproj1_term4
 
 simpproj1_t2 :: AutomatedTest
-simpproj1_t2 = check_not_soequiv "Checking that f1 and f2 are not equivalent before" simpproj1_mudg1 simpproj1_term1 simpproj1_term2
+simpproj1_t2 = check_not_soequiv simpproj1_sig "Checking that f1 and f2 are not equivalent before" simpproj1_mudg1 simpproj1_term1 simpproj1_term2
 
 simpproj1_t3 :: AutomatedTest
-simpproj1_t3 = check_not_soequiv "Checking that f1 and f3 are not equivalent before" simpproj1_mudg1 simpproj1_term1 simpproj1_term3
+simpproj1_t3 = check_not_soequiv simpproj1_sig "Checking that f1 and f3 are not equivalent before" simpproj1_mudg1 simpproj1_term1 simpproj1_term3
 
 simpproj1_t4 :: AutomatedTest
-simpproj1_t4 = check_not_soequiv "Checking that f1 and f4 are not equivalent before" simpproj1_mudg1 simpproj1_term1 simpproj1_term4
+simpproj1_t4 = check_not_soequiv simpproj1_sig "Checking that f1 and f4 are not equivalent before" simpproj1_mudg1 simpproj1_term1 simpproj1_term4
 
 simpproj1_t5 :: AutomatedTest
-simpproj1_t5 = check_not_soequiv "Checking that f2 and f3 are not equivalent before" simpproj1_mudg1 simpproj1_term2 simpproj1_term3
+simpproj1_t5 = check_not_soequiv simpproj1_sig "Checking that f2 and f3 are not equivalent before" simpproj1_mudg1 simpproj1_term2 simpproj1_term3
 
 simpproj1_t6 :: AutomatedTest
-simpproj1_t6 = check_not_soequiv "Checking that f2 and f4 are not equivalent before" simpproj1_mudg1 simpproj1_term2 simpproj1_term4
+simpproj1_t6 = check_not_soequiv simpproj1_sig "Checking that f2 and f4 are not equivalent before" simpproj1_mudg1 simpproj1_term2 simpproj1_term4
 
 simpproj1_t7 :: AutomatedTest
-simpproj1_t7 = check_not_soequiv "Checking that f3 and f4 are not equivalent before" simpproj1_mudg1 simpproj1_term3 simpproj1_term4
+simpproj1_t7 = check_not_soequiv simpproj1_sig "Checking that f3 and f4 are not equivalent before" simpproj1_mudg1 simpproj1_term3 simpproj1_term4
 
 simpproj1_t8 :: AutomatedTest
-simpproj1_t8 = check_soequiv "Checking that f5 and pi1 are equivalent before" simpproj1_mudg1 simpproj1_term5 simpproj1_term6
+simpproj1_t8 = check_soequiv simpproj1_sig "Checking that f5 and pi1 are equivalent before" simpproj1_mudg1 simpproj1_term5 simpproj1_term6
 
 simpproj1_t9 :: AutomatedTest
-simpproj1_t9 = check_not_hsoedge "Checking that the edge is not there after" simpproj1_mudg2 simpproj1_term5 [simpproj1_term1,simpproj1_term2,simpproj1_term3] simpproj1_term4
+simpproj1_t9 = check_not_hsoedge simpproj1_sig "Checking that the edge is not there after" simpproj1_mudg2 simpproj1_term5 [simpproj1_term1,simpproj1_term2,simpproj1_term3] simpproj1_term4
 
 simpproj1_t10 :: AutomatedTest
-simpproj1_t10 = check_not_soequiv "Checking that f1 and f2 are not equivalent after" simpproj1_mudg2 simpproj1_term1 simpproj1_term2
+simpproj1_t10 = check_not_soequiv simpproj1_sig "Checking that f1 and f2 are not equivalent after" simpproj1_mudg2 simpproj1_term1 simpproj1_term2
 
 simpproj1_t11 :: AutomatedTest
-simpproj1_t11 = check_not_soequiv "Checking that f1 and f3 are not equivalent after" simpproj1_mudg2 simpproj1_term1 simpproj1_term3
+simpproj1_t11 = check_not_soequiv simpproj1_sig "Checking that f1 and f3 are not equivalent after" simpproj1_mudg2 simpproj1_term1 simpproj1_term3
 
 simpproj1_t12 :: AutomatedTest
-simpproj1_t12 = check_not_soequiv "Checking that f1 and f4 are not equivalent after" simpproj1_mudg2 simpproj1_term1 simpproj1_term4
+simpproj1_t12 = check_not_soequiv simpproj1_sig "Checking that f1 and f4 are not equivalent after" simpproj1_mudg2 simpproj1_term1 simpproj1_term4
 
 simpproj1_t13 :: AutomatedTest
-simpproj1_t13 = check_not_soequiv "Checking that f2 and f3 are not equivalent after" simpproj1_mudg2 simpproj1_term2 simpproj1_term3
+simpproj1_t13 = check_not_soequiv simpproj1_sig "Checking that f2 and f3 are not equivalent after" simpproj1_mudg2 simpproj1_term2 simpproj1_term3
 
 simpproj1_t14 :: AutomatedTest
-simpproj1_t14 = check_soequiv "Checking that f2 and f4 are equivalent after" simpproj1_mudg2 simpproj1_term2 simpproj1_term4
+simpproj1_t14 = check_soequiv simpproj1_sig "Checking that f2 and f4 are equivalent after" simpproj1_mudg2 simpproj1_term2 simpproj1_term4
 
 simpproj1_t15 :: AutomatedTest
-simpproj1_t15 = check_not_soequiv "Checking that f3 and f4 are not equivalent after" simpproj1_mudg2 simpproj1_term3 simpproj1_term4
+simpproj1_t15 = check_not_soequiv simpproj1_sig "Checking that f3 and f4 are not equivalent after" simpproj1_mudg2 simpproj1_term3 simpproj1_term4
 
 simpproj1_t16 :: AutomatedTest
-simpproj1_t16 = check_soequiv "Checking that f5 and pi1 are equivalent after" simpproj1_mudg2 simpproj1_term5 simpproj1_term6
+simpproj1_t16 = check_soequiv simpproj1_sig "Checking that f5 and pi1 are equivalent after" simpproj1_mudg2 simpproj1_term5 simpproj1_term6
 
 simpproj_tests1 :: String
 simpproj_tests1 = combine_test_results [simpproj1_t1,simpproj1_t2,simpproj1_t3,simpproj1_t4,simpproj1_t5,simpproj1_t6,simpproj1_t7,simpproj1_t8,simpproj1_t9,simpproj1_t10,simpproj1_t11,simpproj1_t12,simpproj1_t13,simpproj1_t14,simpproj1_t15,simpproj1_t16]
@@ -1904,6 +1934,9 @@ simpproj2_term6 = read "pi1"
 simpproj2_tid6 :: SOMetaUnifRelSoId s
 simpproj2_tid6 = relbwEqDGSoId simpproj2_term6
 
+simpproj2_sig :: SOMetaSignature
+simpproj2_sig = SOSignature (Signature [] [read "f1[0]" --> read "f2[0]" --> read "f3[0]" --> read "f4[0]" --> EnumProc.Empty,EnumProc.Empty,EnumProc.Empty,read "f5[3]" --> EnumProc.Empty] EnumProc.Empty) EnumProc.Empty
+
 simpproj2_mudg1 :: StateT (RTestSOMetaUnifDGraph s) (ST s) _
 simpproj2_mudg1 = do
 	{
@@ -1922,52 +1955,52 @@ simpproj2_mudg2 :: StateT (RTestSOMetaUnifDGraph s) (ST s) _
 simpproj2_mudg2 = do {simpproj2_mudg1; on_vdgraph metaunif_fo_simplify_projections; pass}
 
 simpproj2_t1 :: AutomatedTest
-simpproj2_t1 = check_hfoedge "Checking that the edge is there before" simpproj2_mudg1 simpproj2_term5 [simpproj2_term1,simpproj2_term2,simpproj2_term3] simpproj2_term4
+simpproj2_t1 = check_hfoedge simpproj2_sig "Checking that the edge is there before" simpproj2_mudg1 simpproj2_term5 [simpproj2_term1,simpproj2_term2,simpproj2_term3] simpproj2_term4
 
 simpproj2_t2 :: AutomatedTest
-simpproj2_t2 = check_not_foequiv "Checking that f1 and f2 are not equivalent before" simpproj2_mudg1 simpproj2_term1 simpproj2_term2
+simpproj2_t2 = check_not_foequiv simpproj2_sig "Checking that f1 and f2 are not equivalent before" simpproj2_mudg1 simpproj2_term1 simpproj2_term2
 
 simpproj2_t3 :: AutomatedTest
-simpproj2_t3 = check_not_foequiv "Checking that f1 and f3 are not equivalent before" simpproj2_mudg1 simpproj2_term1 simpproj2_term3
+simpproj2_t3 = check_not_foequiv simpproj2_sig "Checking that f1 and f3 are not equivalent before" simpproj2_mudg1 simpproj2_term1 simpproj2_term3
 
 simpproj2_t4 :: AutomatedTest
-simpproj2_t4 = check_not_foequiv "Checking that f1 and f4 are not equivalent before" simpproj2_mudg1 simpproj2_term1 simpproj2_term4
+simpproj2_t4 = check_not_foequiv simpproj2_sig "Checking that f1 and f4 are not equivalent before" simpproj2_mudg1 simpproj2_term1 simpproj2_term4
 
 simpproj2_t5 :: AutomatedTest
-simpproj2_t5 = check_not_foequiv "Checking that f2 and f3 are not equivalent before" simpproj2_mudg1 simpproj2_term2 simpproj2_term3
+simpproj2_t5 = check_not_foequiv simpproj2_sig "Checking that f2 and f3 are not equivalent before" simpproj2_mudg1 simpproj2_term2 simpproj2_term3
 
 simpproj2_t6 :: AutomatedTest
-simpproj2_t6 = check_not_foequiv "Checking that f2 and f4 are not equivalent before" simpproj2_mudg1 simpproj2_term2 simpproj2_term4
+simpproj2_t6 = check_not_foequiv simpproj2_sig "Checking that f2 and f4 are not equivalent before" simpproj2_mudg1 simpproj2_term2 simpproj2_term4
 
 simpproj2_t7 :: AutomatedTest
-simpproj2_t7 = check_not_foequiv "Checking that f3 and f4 are not equivalent before" simpproj2_mudg1 simpproj2_term3 simpproj2_term4
+simpproj2_t7 = check_not_foequiv simpproj2_sig "Checking that f3 and f4 are not equivalent before" simpproj2_mudg1 simpproj2_term3 simpproj2_term4
 
 simpproj2_t8 :: AutomatedTest
-simpproj2_t8 = check_soequiv "Checking that f5 and pi1 are equivalent before" simpproj2_mudg1 simpproj2_term5 simpproj2_term6
+simpproj2_t8 = check_soequiv simpproj2_sig "Checking that f5 and pi1 are equivalent before" simpproj2_mudg1 simpproj2_term5 simpproj2_term6
 
 simpproj2_t9 :: AutomatedTest
-simpproj2_t9 = check_not_hfoedge "Checking that the edge is not there after" simpproj2_mudg2 simpproj2_term5 [simpproj2_term1,simpproj2_term2,simpproj2_term3] simpproj2_term4
+simpproj2_t9 = check_not_hfoedge simpproj2_sig "Checking that the edge is not there after" simpproj2_mudg2 simpproj2_term5 [simpproj2_term1,simpproj2_term2,simpproj2_term3] simpproj2_term4
 
 simpproj2_t10 :: AutomatedTest
-simpproj2_t10 = check_not_foequiv "Checking that f1 and f2 are not equivalent after" simpproj2_mudg2 simpproj2_term1 simpproj2_term2
+simpproj2_t10 = check_not_foequiv simpproj2_sig "Checking that f1 and f2 are not equivalent after" simpproj2_mudg2 simpproj2_term1 simpproj2_term2
 
 simpproj2_t11 :: AutomatedTest
-simpproj2_t11 = check_not_foequiv "Checking that f1 and f3 are not equivalent after" simpproj2_mudg2 simpproj2_term1 simpproj2_term3
+simpproj2_t11 = check_not_foequiv simpproj2_sig "Checking that f1 and f3 are not equivalent after" simpproj2_mudg2 simpproj2_term1 simpproj2_term3
 
 simpproj2_t12 :: AutomatedTest
-simpproj2_t12 = check_not_foequiv "Checking that f1 and f4 are not equivalent after" simpproj2_mudg2 simpproj2_term1 simpproj2_term4
+simpproj2_t12 = check_not_foequiv simpproj2_sig "Checking that f1 and f4 are not equivalent after" simpproj2_mudg2 simpproj2_term1 simpproj2_term4
 
 simpproj2_t13 :: AutomatedTest
-simpproj2_t13 = check_not_foequiv "Checking that f2 and f3 are not equivalent after" simpproj2_mudg2 simpproj2_term2 simpproj2_term3
+simpproj2_t13 = check_not_foequiv simpproj2_sig "Checking that f2 and f3 are not equivalent after" simpproj2_mudg2 simpproj2_term2 simpproj2_term3
 
 simpproj2_t14 :: AutomatedTest
-simpproj2_t14 = check_foequiv "Checking that f2 and f4 are equivalent after" simpproj2_mudg2 simpproj2_term2 simpproj2_term4
+simpproj2_t14 = check_foequiv simpproj2_sig "Checking that f2 and f4 are equivalent after" simpproj2_mudg2 simpproj2_term2 simpproj2_term4
 
 simpproj2_t15 :: AutomatedTest
-simpproj2_t15 = check_not_foequiv "Checking that f3 and f4 are not equivalent after" simpproj2_mudg2 simpproj2_term3 simpproj2_term4
+simpproj2_t15 = check_not_foequiv simpproj2_sig "Checking that f3 and f4 are not equivalent after" simpproj2_mudg2 simpproj2_term3 simpproj2_term4
 
 simpproj2_t16 :: AutomatedTest
-simpproj2_t16 = check_soequiv "Checking that f5 and pi1 are equivalent after" simpproj2_mudg2 simpproj2_term5 simpproj2_term6
+simpproj2_t16 = check_soequiv simpproj2_sig "Checking that f5 and pi1 are equivalent after" simpproj2_mudg2 simpproj2_term5 simpproj2_term6
 
 simpproj_tests2 :: String
 simpproj_tests2 = combine_test_results [simpproj2_t1,simpproj2_t2,simpproj2_t3,simpproj2_t4,simpproj2_t5,simpproj2_t6,simpproj2_t7,simpproj2_t8,simpproj2_t9,simpproj2_t10,simpproj2_t11,simpproj2_t12,simpproj2_t13,simpproj2_t14,simpproj2_t15,simpproj2_t16]
@@ -2026,6 +2059,9 @@ dump1_sotid4 = relbwEqDGSoId dump1_soterm4
 dump1_exp1 :: SOMetaUnifFOExp
 dump1_exp1 = read "F6[2](F4[2](F0[0](),F1[0]()),F5[2](F0[0](),F1[0]()))"
 
+dump1_sig :: SOMetaSignature
+dump1_sig = SOSignature (Signature [] [] EnumProc.Empty) (read "F0[0]" --> read "F1[0]" --> read "F2[0]" --> read "F3[2]" --> read "F4[2]" --> read "F5[2]" --> read "F6[2]" --> EnumProc.Empty)
+
 dump1_mudg1 :: StateT (RTestSOMetaUnifDGraph s) (ST s) _
 dump1_mudg1 = do
 	{
@@ -2045,22 +2081,22 @@ dump1_mudg2 :: StateT (RTestSOMetaUnifDGraph s) (ST s) _
 dump1_mudg2 = do {dump1_mudg1; on_vdgraph metaunif_fo_dump}
 
 dump1_t1 :: AutomatedTest
-dump1_t1 = check_hsoedge "Checking that the s.o. edge is there before" dump1_mudg1 dump1_soterm4 [dump1_soterm2,dump1_soterm3] dump1_soterm1
+dump1_t1 = check_hsoedge dump1_sig "Checking that the s.o. edge is there before" dump1_mudg1 dump1_soterm4 [dump1_soterm2,dump1_soterm3] dump1_soterm1
 
 dump1_t2 :: AutomatedTest
-dump1_t2 = check_hfoedge "Checking that the original f.o. edge is there before" dump1_mudg1 dump1_soterm1 [dump1_term1,dump1_term2] dump1_term3
+dump1_t2 = check_hfoedge dump1_sig "Checking that the original f.o. edge is there before" dump1_mudg1 dump1_soterm1 [dump1_term1,dump1_term2] dump1_term3
 
 dump1_t3 :: AutomatedTest
-dump1_t3 = check_not_foexp "Checking that the f.o. node does not match the resulting expression before" dump1_mudg1 dump1_exp1 dump1_term3
+dump1_t3 = check_not_foexp dump1_sig "Checking that the f.o. node does not match the resulting expression before" dump1_mudg1 dump1_exp1 dump1_term3
 
 dump1_t4 :: AutomatedTest
-dump1_t4 = check_hsoedge "Checking that the s.o. edge is there after" dump1_mudg2 dump1_soterm4 [dump1_soterm2,dump1_soterm3] dump1_soterm1
+dump1_t4 = check_hsoedge dump1_sig "Checking that the s.o. edge is there after" dump1_mudg2 dump1_soterm4 [dump1_soterm2,dump1_soterm3] dump1_soterm1
 
 dump1_t5 :: AutomatedTest
-dump1_t5 = check_not_hfoedge "Checking that the original f.o. edge is not there after" dump1_mudg2 dump1_soterm1 [dump1_term1,dump1_term2] dump1_term3
+dump1_t5 = check_not_hfoedge dump1_sig "Checking that the original f.o. edge is not there after" dump1_mudg2 dump1_soterm1 [dump1_term1,dump1_term2] dump1_term3
 
 dump1_t6 :: AutomatedTest
-dump1_t6 = check_foexp "Checking that the f.o. node matches the resulting expression after" dump1_mudg2 dump1_exp1 dump1_term3
+dump1_t6 = check_foexp dump1_sig "Checking that the f.o. node matches the resulting expression after" dump1_mudg2 dump1_exp1 dump1_term3
 
 dump1_tests :: String
 dump1_tests = combine_test_results [dump1_t1,dump1_t2,dump1_t3,dump1_t4,dump1_t5,dump1_t6]
@@ -2111,6 +2147,9 @@ dump2_sotid4 = relbwEqDGSoId dump2_soterm4
 dump2_exp1 :: SOMetaUnifSOExp
 dump2_exp1 = read "F6[2]{F4[2]{F0[0],F1[0]},F5[2]{F0[0],F1[0]}}"
 
+dump2_sig :: SOMetaSignature
+dump2_sig = SOSignature (Signature [] [] EnumProc.Empty) (read "F0[0]" --> read "F1[0]" --> read "F2[0]" --> read "F3[2]" --> read "F4[2]" --> read "F5[2]" --> read "F6[2]" --> EnumProc.Empty)
+
 dump2_mudg1 :: StateT (RTestSOMetaUnifDGraph s) (ST s) _
 dump2_mudg1 = do
 	{
@@ -2130,22 +2169,22 @@ dump2_mudg2 :: StateT (RTestSOMetaUnifDGraph s) (ST s) _
 dump2_mudg2 = do {dump2_mudg1; on_vdgraph metaunif_so_dump}
 
 dump2_t1 :: AutomatedTest
-dump2_t1 = check_hsoedge "Checking that the higher s.o. edge is there before" dump2_mudg1 dump2_soterm4 [dump2_soterm2,dump2_soterm3] dump2_soterm1
+dump2_t1 = check_hsoedge dump2_sig "Checking that the higher s.o. edge is there before" dump2_mudg1 dump2_soterm4 [dump2_soterm2,dump2_soterm3] dump2_soterm1
 
 dump2_t2 :: AutomatedTest
-dump2_t2 = check_hsoedge "Checking that the original lower s.o. edge is there before" dump2_mudg1 dump2_soterm1 [dump2_term1,dump2_term2] dump2_term3
+dump2_t2 = check_hsoedge dump2_sig "Checking that the original lower s.o. edge is there before" dump2_mudg1 dump2_soterm1 [dump2_term1,dump2_term2] dump2_term3
 
 dump2_t3 :: AutomatedTest
-dump2_t3 = check_not_soexp "Checking that the lower s.o. node does not match the resulting expression before" dump2_mudg1 dump2_exp1 dump2_term3
+dump2_t3 = check_not_soexp dump2_sig "Checking that the lower s.o. node does not match the resulting expression before" dump2_mudg1 dump2_exp1 dump2_term3
 
 dump2_t4 :: AutomatedTest
-dump2_t4 = check_hsoedge "Checking that the higher s.o. edge is there after" dump2_mudg2 dump2_soterm4 [dump2_soterm2,dump2_soterm3] dump2_soterm1
+dump2_t4 = check_hsoedge dump2_sig "Checking that the higher s.o. edge is there after" dump2_mudg2 dump2_soterm4 [dump2_soterm2,dump2_soterm3] dump2_soterm1
 
 dump2_t5 :: AutomatedTest
-dump2_t5 = check_not_hsoedge "Checking that the original lower s.o. edge is not there after" dump2_mudg2 dump2_soterm1 [dump2_term1,dump2_term2] dump2_term3
+dump2_t5 = check_not_hsoedge dump2_sig "Checking that the original lower s.o. edge is not there after" dump2_mudg2 dump2_soterm1 [dump2_term1,dump2_term2] dump2_term3
 
 dump2_t6 :: AutomatedTest
-dump2_t6 = check_soexp "Checking that the s.o. node matches the resulting expression after" dump2_mudg2 dump2_exp1 dump2_term3
+dump2_t6 = check_soexp dump2_sig "Checking that the s.o. node matches the resulting expression after" dump2_mudg2 dump2_exp1 dump2_term3
 
 dump2_tests :: String
 dump2_tests = combine_test_results [dump2_t1,dump2_t2,dump2_t3,dump2_t4,dump2_t5,dump2_t6]
@@ -2170,6 +2209,9 @@ sotconsistency1_term2 = read "f2[1]"
 sotconsistency1_tid2 :: SOMetaUnifRelSoId s
 sotconsistency1_tid2 = relbwEqDGSoId sotconsistency1_term2
 
+sotconsistency1_sig :: SOMetaSignature
+sotconsistency1_sig = SOSignature (Signature [] [EnumProc.Empty,read "f1[1]" --> read "f2[1]" --> EnumProc.Empty] EnumProc.Empty) EnumProc.Empty
+
 sotconsistency1_mudg1 :: StateT (RTestSOMetaUnifDGraph s) (ST s) Bool
 sotconsistency1_mudg1 = do
 	{
@@ -2179,13 +2221,13 @@ sotconsistency1_mudg1 = do
 	}
 
 sotconsistency1_mudg1_consistent :: Bool
-sotconsistency1_mudg1_consistent = getStateTSTValue sotconsistency1_mudg1 emptyRMUDG
+sotconsistency1_mudg1_consistent = getStateTSTValue sotconsistency1_mudg1 (emptyRMUDG sotconsistency1_sig)
 
 sotconsistency1_mudg2 :: StateT (RTestSOMetaUnifDGraph s) (ST s) Bool
 sotconsistency1_mudg2 = do {sotconsistency1_mudg1; on_dgraph (mergeEqDGSONodes sotconsistency1_tid1 sotconsistency1_tid2); on_vdgraph metaunif_check_sot_consistency}
 
 sotconsistency1_mudg2_consistent :: Bool
-sotconsistency1_mudg2_consistent = getStateTSTValue sotconsistency1_mudg2 emptyRMUDG
+sotconsistency1_mudg2_consistent = getStateTSTValue sotconsistency1_mudg2 (emptyRMUDG sotconsistency1_sig)
 
 sotconsistency1_t1 :: AutomatedTest
 sotconsistency1_t1 = AT "Checking the graph is consistent before." (if sotconsistency1_mudg1_consistent then (ATR True "The graph is indeed consistent.") else (ATR False "The graph is inconsistent, but it should not be."))
@@ -2209,6 +2251,9 @@ sotconsistency2_term2 = read "F2[1]"
 sotconsistency2_tid2 :: SOMetaUnifRelSoId s
 sotconsistency2_tid2 = relbwEqDGSoId sotconsistency2_term2
 
+sotconsistency2_sig :: SOMetaSignature
+sotconsistency2_sig = SOSignature (Signature [] [EnumProc.Empty,read "f1[1]" --> EnumProc.Empty] EnumProc.Empty) (read "F2[1]" --> EnumProc.Empty)
+
 sotconsistency2_mudg1 :: StateT (RTestSOMetaUnifDGraph s) (ST s) Bool
 sotconsistency2_mudg1 = do
 	{
@@ -2218,13 +2263,13 @@ sotconsistency2_mudg1 = do
 	}
 
 sotconsistency2_mudg1_consistent :: Bool
-sotconsistency2_mudg1_consistent = getStateTSTValue sotconsistency2_mudg1 emptyRMUDG
+sotconsistency2_mudg1_consistent = getStateTSTValue sotconsistency2_mudg1 (emptyRMUDG sotconsistency2_sig)
 
 sotconsistency2_mudg2 :: StateT (RTestSOMetaUnifDGraph s) (ST s) Bool
 sotconsistency2_mudg2 = do {sotconsistency2_mudg1; on_dgraph (mergeEqDGSONodes sotconsistency2_tid1 sotconsistency2_tid2); on_vdgraph metaunif_check_sot_consistency}
 
 sotconsistency2_mudg2_consistent :: Bool
-sotconsistency2_mudg2_consistent = getStateTSTValue sotconsistency2_mudg2 emptyRMUDG
+sotconsistency2_mudg2_consistent = getStateTSTValue sotconsistency2_mudg2 (emptyRMUDG sotconsistency2_sig)
 
 sotconsistency2_t1 :: AutomatedTest
 sotconsistency2_t1 = AT "Checking the graph is consistent before." (if sotconsistency2_mudg1_consistent then (ATR True "The graph is indeed consistent.") else (ATR False "The graph is inconsistent, but it should not be."))
@@ -2277,6 +2322,9 @@ head_arity1_term5 = read "f5[1]"
 head_arity1_tid5 :: SOMetaUnifRelSoId s
 head_arity1_tid5 = relbwEqDGSoId head_arity1_term5
 
+head_arity1_sig :: SOMetaSignature
+head_arity1_sig = SOSignature (Signature [] [EnumProc.Empty,read "f1[1]" --> read "f2[1]" --> read "f5[1]" --> EnumProc.Empty, EnumProc.Empty, read "f4[3]" --> EnumProc.Empty] EnumProc.Empty) (read "F3[4]" --> EnumProc.Empty)
+
 head_arity1_mudg1 :: StateT (RTestSOMetaUnifDGraph s) (ST s) Bool
 head_arity1_mudg1 = do
 	{
@@ -2290,7 +2338,7 @@ head_arity1_mudg1 = do
 	}
 
 head_arity1_mudg1_consistent :: Bool
-head_arity1_mudg1_consistent = getStateTSTValue head_arity1_mudg1 emptyRMUDG
+head_arity1_mudg1_consistent = getStateTSTValue head_arity1_mudg1 (emptyRMUDG head_arity1_sig)
 
 head_arity1_mudg2 :: StateT (RTestSOMetaUnifDGraph s) (ST s) Bool
 head_arity1_mudg2 = do
@@ -2301,7 +2349,7 @@ head_arity1_mudg2 = do
 	}
 
 head_arity1_mudg2_consistent :: Bool
-head_arity1_mudg2_consistent = getStateTSTValue head_arity1_mudg2 emptyRMUDG
+head_arity1_mudg2_consistent = getStateTSTValue head_arity1_mudg2 (emptyRMUDG head_arity1_sig)
 
 head_arity1_t1 :: AutomatedTest
 head_arity1_t1 = AT "Checking the graph is consistent before." (if head_arity1_mudg1_consistent then (ATR True "The graph is indeed consistent.") else (ATR False "The graph is inconsistent, but it should not be."))
@@ -2337,6 +2385,9 @@ target_arity1_term3 = read "f3[2]"
 target_arity1_tid3 :: SOMetaUnifRelSoId s
 target_arity1_tid3 = relbwEqDGSoId target_arity1_term3
 
+target_arity1_sig :: SOMetaSignature
+target_arity1_sig = SOSignature (Signature [] [EnumProc.Empty,read "f1[1]" --> read "f2[1]" --> EnumProc.Empty, read "f3[2]" --> EnumProc.Empty] EnumProc.Empty) EnumProc.Empty
+
 target_arity1_mudg1 :: StateT (RTestSOMetaUnifDGraph s) (ST s) Bool
 target_arity1_mudg1 = do
 	{
@@ -2347,7 +2398,7 @@ target_arity1_mudg1 = do
 	}
 
 target_arity1_mudg1_consistent :: Bool
-target_arity1_mudg1_consistent = getStateTSTValue target_arity1_mudg1 emptyRMUDG
+target_arity1_mudg1_consistent = getStateTSTValue target_arity1_mudg1 (emptyRMUDG target_arity1_sig)
 
 target_arity1_mudg2 :: StateT (RTestSOMetaUnifDGraph s) (ST s) Bool
 target_arity1_mudg2 = do
@@ -2358,7 +2409,7 @@ target_arity1_mudg2 = do
 	}
 
 target_arity1_mudg2_consistent :: Bool
-target_arity1_mudg2_consistent = getStateTSTValue target_arity1_mudg2 emptyRMUDG
+target_arity1_mudg2_consistent = getStateTSTValue target_arity1_mudg2 (emptyRMUDG target_arity1_sig)
 
 target_arity1_t1 :: AutomatedTest
 target_arity1_t1 = AT "Checking the graph is consistent before." (if target_arity1_mudg1_consistent then (ATR True "The graph is indeed consistent.") else (ATR False "The graph is inconsistent, but it should not be."))
@@ -2387,6 +2438,9 @@ target_arity2_term3 = read "F3[1]"
 target_arity2_tid3 :: SOMetaUnifRelSoId s
 target_arity2_tid3 = relbwEqDGSoId target_arity2_term3
 
+target_arity2_sig :: SOMetaSignature
+target_arity2_sig = SOSignature (Signature [] [EnumProc.Empty,read "f2[1]" --> EnumProc.Empty, read "f1[2]" --> EnumProc.Empty] EnumProc.Empty) (read "F3[1]" --> EnumProc.Empty)
+
 target_arity2_mudg1 :: StateT (RTestSOMetaUnifDGraph s) (ST s) Bool
 target_arity2_mudg1 = do
 	{
@@ -2397,7 +2451,7 @@ target_arity2_mudg1 = do
 	}
 
 target_arity2_mudg1_consistent :: Bool
-target_arity2_mudg1_consistent = getStateTSTValue target_arity2_mudg1 emptyRMUDG
+target_arity2_mudg1_consistent = getStateTSTValue target_arity2_mudg1 (emptyRMUDG target_arity2_sig)
 
 target_arity2_mudg2 :: StateT (RTestSOMetaUnifDGraph s) (ST s) Bool
 target_arity2_mudg2 = do
@@ -2408,7 +2462,7 @@ target_arity2_mudg2 = do
 	}
 
 target_arity2_mudg2_consistent :: Bool
-target_arity2_mudg2_consistent = getStateTSTValue target_arity2_mudg2 emptyRMUDG
+target_arity2_mudg2_consistent = getStateTSTValue target_arity2_mudg2 (emptyRMUDG target_arity2_sig)
 
 target_arity2_t1 :: AutomatedTest
 target_arity2_t1 = AT "Checking the graph is consistent before." (if target_arity2_mudg1_consistent then (ATR True "The graph is indeed consistent.") else (ATR False "The graph is inconsistent, but it should not be."))
@@ -2437,6 +2491,9 @@ target_arity3_term3 = read "F3[2]"
 target_arity3_tid3 :: SOMetaUnifRelSoId s
 target_arity3_tid3 = relbwEqDGSoId target_arity3_term3
 
+target_arity3_sig :: SOMetaSignature
+target_arity3_sig = SOSignature (Signature [] [EnumProc.Empty,read "f2[1]" --> EnumProc.Empty, read "f1[2]" --> EnumProc.Empty] EnumProc.Empty) (read "F3[2]" --> EnumProc.Empty)
+
 target_arity3_mudg1 :: StateT (RTestSOMetaUnifDGraph s) (ST s) Bool
 target_arity3_mudg1 = do
 	{
@@ -2447,7 +2504,7 @@ target_arity3_mudg1 = do
 	}
 
 target_arity3_mudg1_consistent :: Bool
-target_arity3_mudg1_consistent = getStateTSTValue target_arity3_mudg1 emptyRMUDG
+target_arity3_mudg1_consistent = getStateTSTValue target_arity3_mudg1 (emptyRMUDG target_arity3_sig)
 
 target_arity3_mudg2 :: StateT (RTestSOMetaUnifDGraph s) (ST s) Bool
 target_arity3_mudg2 = do
@@ -2458,7 +2515,7 @@ target_arity3_mudg2 = do
 	}
 
 target_arity3_mudg2_consistent :: Bool
-target_arity3_mudg2_consistent = getStateTSTValue target_arity3_mudg2 emptyRMUDG
+target_arity3_mudg2_consistent = getStateTSTValue target_arity3_mudg2 (emptyRMUDG target_arity3_sig)
 
 target_arity3_t1 :: AutomatedTest
 target_arity3_t1 = AT "Checking the graph is consistent before." (if target_arity3_mudg1_consistent then (ATR True "The graph is indeed consistent.") else (ATR False "The graph is inconsistent, but it should not be."))
@@ -2505,6 +2562,9 @@ target_arity4_term6 = read "F6[1]"
 target_arity4_tid6 :: SOMetaUnifRelSoId s
 target_arity4_tid6 = relbwEqDGSoId target_arity4_term6
 
+target_arity4_sig :: SOMetaSignature
+target_arity4_sig = SOSignature (Signature [] [EnumProc.Empty,read "f1[1]" --> read "f2[1]" --> read "f5[1]" --> EnumProc.Empty, read "f3[2]" --> EnumProc.Empty] EnumProc.Empty) (read "F4[3]" --> read "F6[1]" --> EnumProc.Empty)
+
 target_arity4_mudg1 :: StateT (RTestSOMetaUnifDGraph s) (ST s) Bool
 target_arity4_mudg1 = do
 	{
@@ -2518,7 +2578,7 @@ target_arity4_mudg1 = do
 	}
 
 target_arity4_mudg1_consistent :: Bool
-target_arity4_mudg1_consistent = getStateTSTValue target_arity4_mudg1 emptyRMUDG
+target_arity4_mudg1_consistent = getStateTSTValue target_arity4_mudg1 (emptyRMUDG target_arity4_sig)
 
 target_arity4_mudg2 :: StateT (RTestSOMetaUnifDGraph s) (ST s) Bool
 target_arity4_mudg2 = do
@@ -2530,7 +2590,7 @@ target_arity4_mudg2 = do
 	}
 
 target_arity4_mudg2_consistent :: Bool
-target_arity4_mudg2_consistent = getStateTSTValue target_arity4_mudg2 emptyRMUDG
+target_arity4_mudg2_consistent = getStateTSTValue target_arity4_mudg2 (emptyRMUDG target_arity4_sig)
 
 target_arity4_t1 :: AutomatedTest
 target_arity4_t1 = AT "Checking the graph is consistent before." (if target_arity4_mudg1_consistent then (ATR True "The graph is indeed consistent.") else (ATR False "The graph is inconsistent, but it should not be."))
@@ -2587,6 +2647,9 @@ occurs_check1_term6 = read "F6[1]"
 occurs_check1_tid6 :: SOMetaUnifRelSoId s
 occurs_check1_tid6 = relbwEqDGSoId occurs_check1_term6
 
+occurs_check1_sig :: SOMetaSignature
+occurs_check1_sig = SOSignature (Signature [] [] EnumProc.Empty) (read "F1[1]" --> read "F2[1]" --> read "F3[1]" --> read "F4[1]" --> read "F5[1]" --> read "F6[1]" --> EnumProc.Empty)
+
 occurs_check1_mudg1 :: StateT (RTestSOMetaUnifDGraph s) (ST s) Bool
 occurs_check1_mudg1 = do
 	{
@@ -2603,7 +2666,7 @@ occurs_check1_mudg1 = do
 	}
 
 occurs_check1_mudg1_consistent :: Bool
-occurs_check1_mudg1_consistent = getStateTSTValue occurs_check1_mudg1 emptyRMUDG
+occurs_check1_mudg1_consistent = getStateTSTValue occurs_check1_mudg1 (emptyRMUDG occurs_check1_sig)
 
 occurs_check1_mudg2 :: StateT (RTestSOMetaUnifDGraph s) (ST s) Bool
 occurs_check1_mudg2 = do
@@ -2614,7 +2677,7 @@ occurs_check1_mudg2 = do
 	}
 
 occurs_check1_mudg2_consistent :: Bool
-occurs_check1_mudg2_consistent = getStateTSTValue occurs_check1_mudg2 emptyRMUDG
+occurs_check1_mudg2_consistent = getStateTSTValue occurs_check1_mudg2 (emptyRMUDG occurs_check1_sig)
 
 occurs_check1_mudg3 :: StateT (RTestSOMetaUnifDGraph s) (ST s) Bool
 occurs_check1_mudg3 = do
@@ -2625,7 +2688,7 @@ occurs_check1_mudg3 = do
 	}
 
 occurs_check1_mudg3_consistent :: Bool
-occurs_check1_mudg3_consistent = getStateTSTValue occurs_check1_mudg3 emptyRMUDG
+occurs_check1_mudg3_consistent = getStateTSTValue occurs_check1_mudg3 (emptyRMUDG occurs_check1_sig)
 
 occurs_check1_mudg4 :: StateT (RTestSOMetaUnifDGraph s) (ST s) Bool
 occurs_check1_mudg4 = do
@@ -2636,7 +2699,7 @@ occurs_check1_mudg4 = do
 	}
 
 occurs_check1_mudg4_consistent :: Bool
-occurs_check1_mudg4_consistent = getStateTSTValue occurs_check1_mudg4 emptyRMUDG
+occurs_check1_mudg4_consistent = getStateTSTValue occurs_check1_mudg4 (emptyRMUDG occurs_check1_sig)
 
 occurs_check1_mudg5 :: StateT (RTestSOMetaUnifDGraph s) (ST s) Bool
 occurs_check1_mudg5 = do
@@ -2647,7 +2710,7 @@ occurs_check1_mudg5 = do
 	}
 
 occurs_check1_mudg5_consistent :: Bool
-occurs_check1_mudg5_consistent = getStateTSTValue occurs_check1_mudg5 emptyRMUDG
+occurs_check1_mudg5_consistent = getStateTSTValue occurs_check1_mudg5 (emptyRMUDG occurs_check1_sig)
 
 occurs_check1_mudg6 :: StateT (RTestSOMetaUnifDGraph s) (ST s) Bool
 occurs_check1_mudg6 = do
@@ -2658,7 +2721,7 @@ occurs_check1_mudg6 = do
 	}
 
 occurs_check1_mudg6_consistent :: Bool
-occurs_check1_mudg6_consistent = getStateTSTValue occurs_check1_mudg6 emptyRMUDG
+occurs_check1_mudg6_consistent = getStateTSTValue occurs_check1_mudg6 (emptyRMUDG occurs_check1_sig)
 
 occurs_check1_mudg7 :: StateT (RTestSOMetaUnifDGraph s) (ST s) Bool
 occurs_check1_mudg7 = do
@@ -2669,7 +2732,7 @@ occurs_check1_mudg7 = do
 	}
 
 occurs_check1_mudg7_consistent :: Bool
-occurs_check1_mudg7_consistent = getStateTSTValue occurs_check1_mudg7 emptyRMUDG
+occurs_check1_mudg7_consistent = getStateTSTValue occurs_check1_mudg7 (emptyRMUDG occurs_check1_sig)
 
 occurs_check1_mudg8 :: StateT (RTestSOMetaUnifDGraph s) (ST s) Bool
 occurs_check1_mudg8 = do
@@ -2680,7 +2743,7 @@ occurs_check1_mudg8 = do
 	}
 
 occurs_check1_mudg8_consistent :: Bool
-occurs_check1_mudg8_consistent = getStateTSTValue occurs_check1_mudg8 emptyRMUDG
+occurs_check1_mudg8_consistent = getStateTSTValue occurs_check1_mudg8 (emptyRMUDG occurs_check1_sig)
 
 occurs_check1_mudg9 :: StateT (RTestSOMetaUnifDGraph s) (ST s) Bool
 occurs_check1_mudg9 = do
@@ -2691,7 +2754,7 @@ occurs_check1_mudg9 = do
 	}
 
 occurs_check1_mudg9_consistent :: Bool
-occurs_check1_mudg9_consistent = getStateTSTValue occurs_check1_mudg9 emptyRMUDG
+occurs_check1_mudg9_consistent = getStateTSTValue occurs_check1_mudg9 (emptyRMUDG occurs_check1_sig)
 
 occurs_check1_t1 :: AutomatedTest
 occurs_check1_t1 = AT "Checking the graph is consistent before." (if occurs_check1_mudg1_consistent then (ATR True "The graph is indeed consistent.") else (ATR False "The graph is inconsistent, but it should not be."))
@@ -2728,6 +2791,50 @@ occurs_check1_tests = combine_test_results [occurs_check1_t1,occurs_check1_t2,oc
 occurs_check_test :: IO ()
 occurs_check_test = putStr "EXAMPLE 1\n\n" >> putStr occurs_check1_tests
 
+
+
+factorize1_term1 :: SOMetaTermDependant
+factorize1_term1 = read "u0 x0"
+
+factorize1_tid1 :: SOMetaUnifRelFoId s
+factorize1_tid1 = relbwEqDGFoId factorize1_term1
+
+factorize1_term2 :: SOMetaTermDependant
+factorize1_term2 = read "u0 x1"
+
+factorize1_tid2 :: SOMetaUnifRelFoId s
+factorize1_tid2 = relbwEqDGFoId factorize1_term2
+
+factorize1_term3 :: SOMetaTermDependant
+factorize1_term3 = read "u0 x2"
+
+factorize1_tid3 :: SOMetaUnifRelFoId s
+factorize1_tid3 = relbwEqDGFoId factorize1_term3
+
+factorize1_soterm1 :: SOMetatermF
+factorize1_soterm1 = read "f1[1]"
+
+factorize1_sotid1 :: SOMetaUnifRelSoId s
+factorize1_sotid1 = relbwEqDGSoId factorize1_soterm1
+
+factorize1_sig :: SOMetaSignature
+factorize1_sig = SOSignature (Signature [] [EnumProc.Empty, read "f1[1]" --> EnumProc.Empty] (read "x0" --> read "x1" --> read "x2" --> EnumProc.Empty)) EnumProc.Empty
+
+factorize1_mudg1 :: RSOMetaUnifDGraph
+factorize1_mudg1 = RESUnifVDGraph (snd <$> runStateT (mzoom lens_esunifdgraph_dgraph (do
+	{
+		newEqDGFOEdge factorize1_sotid1 [factorize1_tid1] factorize1_tid3;
+		newEqDGFOEdge factorize1_sotid1 [factorize1_tid2] factorize1_tid3
+	})) (emptyVDGraph factorize1_sig))
+
+factorize1_as1 :: AnswerSet RSOMetaUnifDGraph SOMetaUnifSysSolution
+factorize1_as1 = ImplicitAS factorize1_mudg1
+
+factorize1_as2 :: AnswerSet RSOMetaUnifDGraph SOMetaUnifSysSolution
+factorize1_as2 = metaunif_prenormalize factorize1_as1
+
+factorize1_as3 :: AnswerSet RSOMetaUnifDGraph SOMetaUnifSysSolution
+factorize1_as3 = metaunif_seminormalize factorize1_as1
 
 
 

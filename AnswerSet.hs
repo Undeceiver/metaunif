@@ -36,6 +36,12 @@ data AnswerSet s a = SingleAS a | ExplicitAS (EnumProc (AnswerSet s a)) | Implic
 emptyAS :: AnswerSet s a
 emptyAS = ExplicitAS Empty
 
+-- Checks if the AnswerSet is obviously empty. It may still be empty depending on the implicit representation, but this function only checks if it can be said to be empty regardless of the implicit checking.
+nullAS :: AnswerSet s a -> Bool
+nullAS (SingleAS _) = False
+nullAS (ExplicitAS en) = all nullAS en
+nullAS (ImplicitAS _) = False
+
 -- Make the answer set explicit, and therefore the implicit structure type becomes irrelevant. Useful when we need to convert types for when we know there are no more implicit things we can usefully do with it.
 makeExplicit :: ExecOrder t => t -> AnswerSet s1 a -> AnswerSet s2 a
 makeExplicit _ (SingleAS a) = SingleAS a

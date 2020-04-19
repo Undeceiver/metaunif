@@ -49,6 +49,38 @@ unshow str = (\_ -> str)
 instance Show Preshow where
 	show f = f ()
 
+-- Type used to determine existence/uniqueness. Similar to maybe, but not quite the same.
+data ExistUnique t = Inexistent | Distinct | Exist {fromExist :: t}
+
+isInexistent :: ExistUnique t -> Bool
+isInexistent Inexistent = True
+isInexistent _ = False
+
+isDistinct :: ExistUnique t -> Bool
+isDistinct Distinct = True
+isDistinct _ = False
+
+isExist :: ExistUnique t -> Bool
+isExist (Exist _ ) = True
+isExist _ = False
+
+instance Functor ExistUnique where
+	fmap f Inexistent = Inexistent
+	fmap f Distinct = Distinct
+	fmap f (Exist x) = Exist (f x)
+
+instance Applicative ExistUnique where
+	Inexistent <*> _ = Inexistent
+	Distinct <*> _ = Distinct
+	_ <*> Inexistent = Inexistent
+	_ <*> Distinct = Distinct
+	(Exist f) <*> (Exist x) = Exist (f x)
+
+instance Monad ExistUnique where
+	Inexistent >>= _ = Inexistent
+	Distinct >>= _ = Distinct
+	(Exist x) >>= f = f x
+
 -- Amazingly, some list utilities.
 -- I've seen this implemented in similar libraries to this one.
 (!!?) :: [a] -> Int -> Maybe a
@@ -196,6 +228,9 @@ m_all = traverse_collect (all id)
 
 m_concat :: (Applicative m, Traversable t) => (a -> m [b]) -> t a -> m [b]
 m_concat = traverse_collect concat
+
+m_filter :: Monad m => (a -> m Bool) -> [a] -> m [a]
+m_filter f l = traverse_collect ((Prelude.map fromJust) . (Prelude.filter isJust)) (\a -> do {b <- f a; if b then (return (Just a)) else (return Nothing)}) l
 
 type JState s = State s ()
 jstate :: (s -> s) -> JState s

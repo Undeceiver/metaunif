@@ -347,10 +347,10 @@ instance Read SOMetaTermDependant where
 				[(TDDirect (fst r),(snd r))])
 		}
 
-type SOMetaUnifDGraph s = ESUnifVDGraph s CTermF OFunction OVariable SOMVariable UnifVariable
+type SOMetaUnifDGraph s = ESUnifVDGraph s CTermF OPredicate OFunction OVariable SOMVariable UnifVariable
 type SOMetaUnifRelFoId s = ESUnifRelFoId s CTermF OFunction OVariable SOMVariable UnifVariable
 type SOMetaUnifRelSoId s = ESUnifRelSoId s CTermF OFunction OVariable SOMVariable UnifVariable
-type RSOMetaUnifDGraph = RESUnifVDGraph CTermF OFunction OVariable SOMVariable UnifVariable
+type RSOMetaUnifDGraph = RESUnifVDGraph CTermF OPredicate OFunction OVariable SOMVariable UnifVariable
 type SOMetaUnifSysSolution = UnifSysSolution OFunction SOMVariable
 
 metaunif_vertical_commute :: StateT (SOMetaUnifDGraph s) (ST s) ()
@@ -424,6 +424,18 @@ metaunif_validate_occurs_check_so = validate_occurs_check_so
 
 metaunif_validate_occurs_check_fo :: RSOMetaUnifDGraph -> AnswerSet RSOMetaUnifDGraph SOMetaUnifSysSolution
 metaunif_validate_occurs_check_fo = validate_occurs_check_fo
+
+metaunif_prenormalize :: AnswerSet RSOMetaUnifDGraph SOMetaUnifSysSolution -> AnswerSet RSOMetaUnifDGraph SOMetaUnifSysSolution
+metaunif_prenormalize = depgraph_prenormalize
+
+metaunif_seminormalize :: AnswerSet RSOMetaUnifDGraph SOMetaUnifSysSolution -> AnswerSet RSOMetaUnifDGraph SOMetaUnifSysSolution
+metaunif_seminormalize = depgraph_seminormalize
+
+metaunif_quasinormalize :: AnswerSet RSOMetaUnifDGraph SOMetaUnifSysSolution -> AnswerSet RSOMetaUnifDGraph SOMetaUnifSysSolution
+metaunif_quasinormalize = depgraph_quasinormalize
+
+metaunif_normalize :: AnswerSet RSOMetaUnifDGraph SOMetaUnifSysSolution -> AnswerSet RSOMetaUnifDGraph SOMetaUnifSysSolution
+metaunif_normalize = depgraph_normalize
 
 
 type SOMetaUnifFOExp = FOTermDependantExp CTermF OFunction OVariable SOMVariable UnifVariable
