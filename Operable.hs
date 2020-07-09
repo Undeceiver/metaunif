@@ -28,6 +28,7 @@ import Control.Monad.State
 import Control.Monad.Morph
 import Data.PQueue.Min
 import Data.Tuple
+import Debug.Trace
 
 -- Less priority means it gets executed first.
 -- An important decision that we made is to inherit the unspecified order for elements which are in the same equivalence class. That is, not necessarily respecting insertion order when running operations.
@@ -98,7 +99,8 @@ runNextStateTOp = StateT (\(Operating s q) -> do
 	})
 
 runAllStateTOps :: StateTOperation m op s => StateT (Operating op s) m ()
-runAllStateTOps = StateT (\(Operating s q) -> if (Data.PQueue.Min.null q) then (return ((),Operating s q)) else ((runStateT runNextStateTOp (Operating s q)) >>= (\((),ss) -> runStateT runAllStateTOps ss)))
+runAllStateTOps = StateT (\(Operating s q) -> if (Data.PQueue.Min.null q) then (return ((),Operating s q)) else (trace "RUNNING AN OP" (runStateT runNextStateTOp (Operating s q)) >>= (\((),ss) -> runStateT runAllStateTOps ss)))
+--runAllStateTOps = StateT (\(Operating s q) -> if (Data.PQueue.Min.null q) then (return ((),Operating s q)) else (runStateT runNextStateTOp (Operating s q)) >>= (\((),ss) -> runStateT runAllStateTOps ss))
 
 runStateTOps :: StateTOperation m op s => [op] -> StateT s m ()
 runStateTOps ops = StateT (f_runStateTOps ops)

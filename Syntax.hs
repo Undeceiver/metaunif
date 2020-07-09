@@ -930,6 +930,9 @@ fofuncs = funcs . fosig
 fovars :: SOSignature pd fn v sov -> EnumProc v
 fovars = vars. fosig 
 
+enum_constfofuncs :: HasArity fn => Int -> SOSignature pd fn v sov -> EnumProc (GroundSOT fn)
+enum_constfofuncs aty sig = (Fix . SOF . ConstF) <$> (econcat (Prelude.map ((funcs (fosig sig)) !!) [0..aty]))
+
 enum_fofuncs :: HasArity fn => Int -> SOSignature pd fn v sov -> EnumProc (GroundSOT fn)
 enum_fofuncs aty = (enum_funcs aty) . fosig
 

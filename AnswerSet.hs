@@ -15,6 +15,7 @@ import HaskellPlus
 import EnumProc
 import Algorithm
 import Data.Bifunctor
+import Debug.Trace
 
 class Implicit (s :: *) (t :: *) | s -> t where
 	checkImplicit :: s -> t -> Computation Bool
@@ -60,11 +61,20 @@ checkPAS p as = uns_produce_next (eany (\a -> return (p a)) (diagEnumAS as))
 
 enumAS :: AnswerSet s a -> Computation a
 enumAS (SingleAS a) = comp a
-enumAS (ExplicitAS en) = (algcomp . ecomp) (fmap enumAS en)
+-- This below incurs in infinite recursion when we have infinitely nested answer sets!
+--enumAS (ExplicitAS en) = (algcomp . ecomp) (fmap enumAS en)
+enumAS (ExplicitAS en) = (cunfactor enumAS) ... (ecomp en)
 enumAS (ImplicitAS s) = enumImplicit s
 
 diagEnumAS :: AnswerSet s a -> EnumProc a
 diagEnumAS as = (enumAS as) \$ ()
+
+implicitOnly :: AnswerSet s a -> Computation s
+implicitOnly (SingleAS a) = error "The answer set contains explicit answers!"
+-- This below incurs in infinite recursion when we have infinitely nested answer sets!
+--implicitOnly (ExplicitAS en) = (algcomp . ecomp) (fmap implicitOnly en)
+implicitOnly (ExplicitAS en) = (cunfactor implicitOnly) ... (ecomp en)
+implicitOnly (ImplicitAS s) = comp s
 
 explicitAS :: EnumProc a -> AnswerSet s a
 explicitAS en = ExplicitAS (fmap SingleAS en)

@@ -257,6 +257,9 @@ gen_diagonalize_rec True heag depth width fl f en prev (x:xs) = eager depth f1 x
 instance ExecOrder Diagonalize where
 	execorder (Diagonalize veag heag depth width fl) = gen_diagonalize veag heag depth width fl
 
+default_diag :: Diagonalize
+default_diag = Diagonalize False False 1 1 False
+
 (\$) :: (a .-> b) -> a -> EnumProc b
 f \$ a = runorder (Diagonalize False False 1 1 False) f a
 infix 0 \$
