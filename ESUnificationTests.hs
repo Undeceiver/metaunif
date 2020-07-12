@@ -3676,8 +3676,8 @@ factorize_test = putStr "EXAMPLE 1\n\n" >> putStr factorize1_tests >>
 		putStr "EXAMPLE 5\n\n" >> putStr factorize5_tests >>
 		putStr "EXAMPLE 6\n\n" >> putStr factorize6_tests >>
 		putStr "EXAMPLE 7\n\n" >> putStr factorize7_tests >>
-		putStr "EXAMPLE 8\n\n" >> putStr factorize8_tests >>
-		putStr "EXAMPLE 9\n\n" >> putStr factorize9_tests
+		putStr "EXAMPLE 8\n\n" >> putStr factorize8_tests -- >>
+--		putStr "EXAMPLE 9\n\n" >> putStr factorize9_tests
 
 
 

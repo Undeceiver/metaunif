@@ -883,6 +883,20 @@ prop_deleteEqDGSOEdge soe = do
 		}
 	}
 
+prop_doDeleteEqDGSOEdge :: ESMGUConstraintsU t pd fn v sov uv => Int -> StateT (ESUnifVDGraph s t pd fn v sov uv) (ST s) [ESUnifDGOp s t pd fn v sov uv]
+prop_doDeleteEqDGSOEdge soe = do
+	{
+		-- Check that the edge still exists!
+		eex <- mzoom lens_esunifdgraph_dgraph (checkEqDGSOEdge soe);
+		if (not eex) then (return []) else do
+		{
+			ops <- justprop_doDeleteEqDGSOEdge soe;
+			mzoom lens_esunifdgraph_dgraph (doDeleteEqDGSOEdge soe);
+			return ops
+		}
+	}
+
+
 prop_deleteEqDGFOEdge :: ESMGUConstraintsU t pd fn v sov uv => Int -> StateT (ESUnifVDGraph s t pd fn v sov uv) (ST s) [ESUnifDGOp s t pd fn v sov uv]
 prop_deleteEqDGFOEdge foe = do
 	{
@@ -895,6 +909,20 @@ prop_deleteEqDGFOEdge foe = do
 			return ops
 		}
 	}
+
+prop_doDeleteEqDGFOEdge :: ESMGUConstraintsU t pd fn v sov uv => Int -> StateT (ESUnifVDGraph s t pd fn v sov uv) (ST s) [ESUnifDGOp s t pd fn v sov uv]
+prop_doDeleteEqDGFOEdge foe = do
+	{
+		-- Check that the edge still exists!
+		eex <- mzoom lens_esunifdgraph_dgraph (checkEqDGFOEdge foe);
+		if (not eex) then (return []) else do
+		{
+			ops <- justprop_doDeleteEqDGFOEdge foe;
+			mzoom lens_esunifdgraph_dgraph (doDeleteEqDGFOEdge foe);
+			return ops
+		}
+	}
+
 
 prop_newAnonEqDGFOEdge :: ESMGUConstraintsU t pd fn v sov uv => ESUnifRelSoId s t fn v sov uv -> [ESUnifRelFoId s t fn v sov uv] -> StateT (ESUnifVDGraph s t pd fn v sov uv) (ST s) (ESUnifRelFoId s t fn v sov uv,[ESUnifDGOp s t pd fn v sov uv])
 prop_newAnonEqDGFOEdge h ss = do
@@ -951,6 +979,9 @@ prop_newAnonEqDGSOEdge h ss = do
 justprop_deleteEqDGFOEdge :: ESMGUConstraintsU t pd fn v sov uv => Int -> StateT (ESUnifVDGraph s t pd fn v sov uv) (ST s) [ESUnifDGOp s t pd fn v sov uv]
 justprop_deleteEqDGFOEdge foe = return []
 
+justprop_doDeleteEqDGFOEdge :: ESMGUConstraintsU t pd fn v sov uv => Int -> StateT (ESUnifVDGraph s t pd fn v sov uv) (ST s) [ESUnifDGOp s t pd fn v sov uv]
+justprop_doDeleteEqDGFOEdge foe = return []
+
 justprop_deleteEqDGSOEdge :: ESMGUConstraintsU t pd fn v sov uv => Int -> StateT (ESUnifVDGraph s t pd fn v sov uv) (ST s) [ESUnifDGOp s t pd fn v sov uv]
 justprop_deleteEqDGSOEdge soe = do
 	{
@@ -966,6 +997,23 @@ justprop_deleteEqDGSOEdge soe = do
 		}
 		else (return [])
 	}
+
+justprop_doDeleteEqDGSOEdge :: ESMGUConstraintsU t pd fn v sov uv => Int -> StateT (ESUnifVDGraph s t pd fn v sov uv) (ST s) [ESUnifDGOp s t pd fn v sov uv]
+justprop_doDeleteEqDGSOEdge soe = do
+	{
+		-- If the target now only has one incoming edge, dump all edges for which it is a head.
+		-- I don't particularly like the fragility of this trigger, but it works for now.
+		t <- mzoom lens_esunifdgraph_dgraph (eqDGSOEdge_target soe);
+		ines <- mzoom lens_esunifdgraph_dgraph (st_searchInEqDGSOEdges [] [] t);
+		if ((length ines) == 1) then do
+		{
+			hfoes <- mzoom lens_esunifdgraph_dgraph (st_searchHEqDGFOEdges [] [] t);
+			hsoes <- mzoom lens_esunifdgraph_dgraph (st_searchHEqDGSOEdges [] [] t);
+			return ((Prelude.map ESUFODump hfoes) ++ (Prelude.map ESUSODump hsoes))
+		}
+		else (return [])
+	}
+
 
 justprop_mergeEqDGSONodes :: ESMGUConstraintsU t pd fn v sov uv => ESUnifRelSoId s t fn v sov uv -> ESUnifRelSoId s t fn v sov uv -> StateT (ESUnifVDGraph s t pd fn v sov uv) (ST s) [ESUnifDGOp s t pd fn v sov uv]
 justprop_mergeEqDGSONodes n1 n2 = do
@@ -1298,7 +1346,7 @@ factorize_type fc = runST (do
 	})
 
 factorize_candidate :: ESMGUConstraintsU t pd fn v sov uv => FactorizeCandidate t fn v sov uv -> RESUnifVDGraph t pd fn v sov uv -> AnswerSet (RESUnifVDGraph t pd fn v sov uv) (UnifSysSolution fn sov)
-factorize_candidate fc resuvdg = trace "AND AGAIN" (st_as_commute_esuvdg (do
+factorize_candidate fc resuvdg = st_as_commute_esuvdg (do
 	{		
 		esuvdg <- fromRESUnifVDGraph resuvdg;
 		rfc <- fromFC fc;
@@ -1390,7 +1438,7 @@ factorize_candidate fc resuvdg = trace "AND AGAIN" (st_as_commute_esuvdg (do
 				return (ExplicitAS (ImplicitAS <$> ren))
 			}
 		}
-	}))
+	})
 
 factorize_get_least :: ESMGUConstraintsU t pd fn v sov uv => RESUnifVDGraph t pd fn v sov uv -> FactorizeCandidate t fn v sov uv
 factorize_get_least resuvdg = FC (do
@@ -1977,8 +2025,8 @@ esu_vertical_commute_fo_edge :: ESMGUConstraintsU t pd fn v sov uv => ESUnifVFoE
 esu_vertical_commute_fo_edge e = do
 	{
 		let {s = esunifvfoedge_source e; t = esunifvfoedge_target e};
-		sines <- mzoom lens_esunifdgraph_dgraph (st_searchInEqDGFOEdges [] [] s);
-		soutes <- mzoom lens_esunifdgraph_dgraph (st_searchOutEqDGFOEdges [] [] s);
+		sines <- mzoom lens_esunifdgraph_dgraph (st_searchAllInEqDGFOEdges [] [] s);
+		soutes <- mzoom lens_esunifdgraph_dgraph (st_searchAllOutEqDGFOEdges [] [] s);
 		result1 <- concat <$> (traverse (esu_vertical_commute_fo_edge_hedge e) sines);
 		result2 <- (return result1) >>=++ (concat <$> (traverse (esu_vertical_commute_fo_edge_hedge e) soutes));
 
@@ -1991,7 +2039,7 @@ esu_vertical_commute_fo_edge_hedge :: ESMGUConstraintsU t pd fn v sov uv => ESUn
 esu_vertical_commute_fo_edge_hedge ve he = do
 	{
 		-- First verify that the horizontal edge still exists in the graph!
-		eex <- mzoom lens_esunifdgraph_dgraph (checkEqDGFOEdge he);
+		eex <- mzoom lens_esunifdgraph_dgraph (checkAllEqDGFOEdge he);
 		if (not eex) then (return []) else do
 		{
 			sss <- mzoom lens_esunifdgraph_dgraph (eqDGFOEdge_sources he);
@@ -1999,7 +2047,7 @@ esu_vertical_commute_fo_edge_hedge ve he = do
 			h <- mzoom lens_esunifdgraph_dgraph (eqDGFOEdge_head he);		
 			st <- mzoom lens_esunifdgraph_dgraph (eqDGFOEdge_target he);
 			tt <- divideOverVFoEdge ve st;
-			ex <- mzoom lens_esunifdgraph_dgraph (st_checkEqDGFOEdge h tss tt);
+			ex <- mzoom lens_esunifdgraph_dgraph (st_checkAllEqDGFOEdge h tss tt);
 			if ex then (return [])
 			else do
 			{
@@ -2089,7 +2137,7 @@ esu_sozip_soe soe = do
 				if (rsoe == rpe) then (return []) else do
 				{
 					sresult1 <- prop_mergeEqDGSONodes et pet;
-					sresult2 <- (return sresult1) >>=++ (prop_deleteEqDGSOEdge rpe);
+					sresult2 <- (return sresult1) >>=++ (prop_doDeleteEqDGSOEdge rpe);
 
 					return sresult2
 				}
@@ -2143,7 +2191,7 @@ esu_fozip_foe foe = do
 				if (rfoe == rpe) then (return []) else do
 				{
 					sresult1 <- prop_mergeEqDGFONodes et pet;
-					sresult2 <- (return sresult1) >>=++ (prop_deleteEqDGFOEdge rpe);
+					sresult2 <- (return sresult1) >>=++ (prop_doDeleteEqDGFOEdge rpe);
 
 					return sresult2
 				}

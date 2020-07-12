@@ -99,8 +99,8 @@ runNextStateTOp = StateT (\(Operating s q) -> do
 	})
 
 runAllStateTOps :: StateTOperation m op s => StateT (Operating op s) m ()
-runAllStateTOps = StateT (\(Operating s q) -> if (Data.PQueue.Min.null q) then (return ((),Operating s q)) else (trace "RUNNING AN OP" (runStateT runNextStateTOp (Operating s q)) >>= (\((),ss) -> runStateT runAllStateTOps ss)))
---runAllStateTOps = StateT (\(Operating s q) -> if (Data.PQueue.Min.null q) then (return ((),Operating s q)) else (runStateT runNextStateTOp (Operating s q)) >>= (\((),ss) -> runStateT runAllStateTOps ss))
+--runAllStateTOps = StateT (\(Operating s q) -> if (Data.PQueue.Min.null q) then (return ((),Operating s q)) else (trace "RUNNING AN OP" (runStateT runNextStateTOp (Operating s q)) >>= (\((),ss) -> runStateT runAllStateTOps ss)))
+runAllStateTOps = StateT (\(Operating s q) -> if (Data.PQueue.Min.null q) then (return ((),Operating s q)) else (runStateT runNextStateTOp (Operating s q)) >>= (\((),ss) -> runStateT runAllStateTOps ss))
 
 runStateTOps :: StateTOperation m op s => [op] -> StateT s m ()
 runStateTOps ops = StateT (f_runStateTOps ops)

@@ -144,6 +144,10 @@ newtype FlippedBifunctor (b :: k1 -> k2 -> *) (t :: k2) (f :: k1) = FlippedBifun
 fromFlippedBifunctor :: FlippedBifunctor b t f -> b f t
 fromFlippedBifunctor (FlippedBifunctor x) = x
 
+newtype Factorized3F1 (f :: k1 -> k2 -> k3 -> *) (b :: k2) (c :: k3) (a :: k1) = Factorized3F1 (f a b c)
+fromFactorized3F1 :: Factorized3F1 f b c a -> f a b c
+fromFactorized3F1 (Factorized3F1 x) = x
+
 instance Bifunctor b => Bifunctor (FlippedBifunctor b) where
 	bimap f g (FlippedBifunctor x) = FlippedBifunctor (bimap g f x)
 
@@ -603,7 +607,6 @@ getStateTSTState stst x = snd (runST (runStateT stst x))
 
 getStateTSTValue :: (forall s. StateT (a s) (ST s) b) -> (forall s. a s) -> b
 getStateTSTValue stst x = runST (fst <$> (runStateT stst x))
-
 
 
 
