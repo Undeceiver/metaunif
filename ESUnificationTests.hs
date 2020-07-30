@@ -764,6 +764,9 @@ on_vdgraph = mzoom lens_RTestSOMetaUnifDGraph
 on_dgraph :: StateT (ESUnifDGraph s CTermF OFunction OVariable SOMVariable UnifVariable) (ST s) a -> StateT (RTestSOMetaUnifDGraph s) (ST s) a
 on_dgraph = mzoom (lens_RTestSOMetaUnifDGraph . lens_esunifdgraph_dgraph)
 
+to_rsomudg :: SOMetaSignature -> (forall s. StateT (RTestSOMetaUnifDGraph s) (ST s) a) -> RSOMetaUnifDGraph
+to_rsomudg sig mudg = RESUnifVDGraph ((fromMudg . snd) <$> runStateT mudg (emptyRMUDG sig))
+
 show_mudg :: SOMetaSignature -> (forall s. StateT (RTestSOMetaUnifDGraph s) (ST s) a) -> IO ()
 --show_mudg s = putStr (runST ((show_eqdgraph . esunifdgraph . fromESUnifNDGraph . fromMudg . snd) <$> (runStateT s emptyRMUDG)))
 show_mudg sig s = putStr (runST (fst <$> (runStateT (s >> (mzoom lens_RTestSOMetaUnifDGraph show_esuvdg)) (emptyRMUDG sig))))
@@ -835,6 +838,9 @@ check_all_resuvdg :: Int -> String -> (forall a. String -> (forall s. StateT (RT
 check_all_resuvdg maxen title ftest as = case filtered of {EnumProc.Empty -> AT title (ATR True ("All of the first " ++ (show maxen) ++ " results produced passed the check.")); Produce at _ -> AT title (ATR False ("Found a result amongst the first " ++ (show maxen) ++ " produced that did not pass the check."))} where imp = etake maxen ((implicitOnly as) \$ ()); impat = (\resuvdg -> ftest title (StateT (\rtest -> (((),) . RTestSOMetaUnifDGraph) <$> (fromRESUnifVDGraph resuvdg)))) <$> imp; filtered = uns_ecollapse (efilter (\(AT title (ATR res str)) -> not res) impat)
 
 
+
+
+
 -- Vertical commute tests
 
 
@@ -873,7 +879,7 @@ vcommute1_sig :: SOMetaSignature
 vcommute1_sig = SOSignature (Signature [] [EnumProc.Empty,read "f1[1]" --> EnumProc.Empty] (read "x0" --> read "x1" --> EnumProc.Empty)) EnumProc.Empty
 
 vcommute1_mudg1 :: StateT (RTestSOMetaUnifDGraph s) (ST s) _
-vcommute1_mudg1 = do {on_dgraph (newEqDGFOEdge vcommute1_sotid1 [vcommute1_tid1] vcommute1_tid2); on_vdgraph (addVFoEdge vcommute1_tid2 vcommute1_tid3)}
+vcommute1_mudg1 = do {on_dgraph (newEqDGFOEdge vcommute1_sotid1 [vcommute1_tid1] vcommute1_tid2); on_vdgraph (addVFoEdge vcommute1_tid2 vcommute1_tid3 (read "u1")); pass}
 
 vcommute1_mudg2 :: StateT (RTestSOMetaUnifDGraph s) (ST s) _
 vcommute1_mudg2 = do {vcommute1_mudg1; on_vdgraph metaunif_vertical_commute}
@@ -953,7 +959,7 @@ vcommute2_sig :: SOMetaSignature
 vcommute2_sig = SOSignature (Signature [] [EnumProc.Empty,EnumProc.Empty,read "f1[2]" --> EnumProc.Empty] (read "x0" --> read "x1" --> read "x2" --> EnumProc.Empty)) EnumProc.Empty
 
 vcommute2_mudg1 :: StateT (RTestSOMetaUnifDGraph s) (ST s) _
-vcommute2_mudg1 = do {on_dgraph (newEqDGFOEdge vcommute2_sotid1 [vcommute2_tid1,vcommute2_tid2] vcommute2_tid3); on_vdgraph (addVFoEdge vcommute2_tid3 vcommute2_tid4)}
+vcommute2_mudg1 = do {on_dgraph (newEqDGFOEdge vcommute2_sotid1 [vcommute2_tid1,vcommute2_tid2] vcommute2_tid3); on_vdgraph (addVFoEdge vcommute2_tid3 vcommute2_tid4 (read "u1")); pass}
 
 vcommute2_mudg2 :: StateT (RTestSOMetaUnifDGraph s) (ST s) _
 vcommute2_mudg2 = do {vcommute2_mudg1; on_vdgraph metaunif_vertical_commute}
@@ -1056,7 +1062,7 @@ vcommute3_sig :: SOMetaSignature
 vcommute3_sig = SOSignature (Signature [] [EnumProc.Empty,read "f1[1]" --> read "f2[1]" --> EnumProc.Empty] (read "x0" --> read "x1" --> read "x2" --> EnumProc.Empty)) EnumProc.Empty
 
 vcommute3_mudg1 :: StateT (RTestSOMetaUnifDGraph s) (ST s) _
-vcommute3_mudg1 = do {on_dgraph (newEqDGFOEdge vcommute3_sotid1 [vcommute3_tid1] vcommute3_tid2); on_dgraph (newEqDGFOEdge vcommute3_sotid2 [vcommute3_tid5] vcommute3_tid1); on_vdgraph (addVFoEdge vcommute3_tid2 vcommute3_tid3)}
+vcommute3_mudg1 = do {on_dgraph (newEqDGFOEdge vcommute3_sotid1 [vcommute3_tid1] vcommute3_tid2); on_dgraph (newEqDGFOEdge vcommute3_sotid2 [vcommute3_tid5] vcommute3_tid1); on_vdgraph (addVFoEdge vcommute3_tid2 vcommute3_tid3 (read "u1")); pass}
 
 vcommute3_mudg2 :: StateT (RTestSOMetaUnifDGraph s) (ST s) _
 vcommute3_mudg2 = do {vcommute3_mudg1; on_vdgraph metaunif_vertical_commute}
@@ -1133,7 +1139,7 @@ vcommute4_sig :: SOMetaSignature
 vcommute4_sig = SOSignature (Signature [] [EnumProc.Empty,read "f1[1]" --> EnumProc.Empty] (read "x0" --> read "x1" --> EnumProc.Empty)) EnumProc.Empty
 
 vcommute4_mudg1 :: StateT (RTestSOMetaUnifDGraph s) (ST s) _
-vcommute4_mudg1 = do {on_dgraph (newEqDGFOEdge vcommute4_sotid1 [vcommute4_tid1] vcommute4_tid2); on_vdgraph (addVFoEdge vcommute4_tid1 vcommute4_tid4)}
+vcommute4_mudg1 = do {on_dgraph (newEqDGFOEdge vcommute4_sotid1 [vcommute4_tid1] vcommute4_tid2); on_vdgraph (addVFoEdge vcommute4_tid1 vcommute4_tid4 (read "u1")); pass}
 
 vcommute4_mudg2 :: StateT (RTestSOMetaUnifDGraph s) (ST s) _
 vcommute4_mudg2 = do {vcommute4_mudg1; on_vdgraph metaunif_vertical_commute}
@@ -1217,7 +1223,7 @@ valign1_sig :: SOMetaSignature
 valign1_sig = SOSignature (Signature [] [] (read "x0" --> read "x1" --> EnumProc.Empty)) EnumProc.Empty
 
 valign1_mudg1 :: StateT (RTestSOMetaUnifDGraph s) (ST s) _
-valign1_mudg1 = do {on_vdgraph (addVFoEdge valign1_tid3 valign1_tid1); on_dgraph (newEqDGFONode valign1_term6); on_dgraph (newEqDGFONode valign1_term2); return ()}
+valign1_mudg1 = do {on_vdgraph (addVFoEdge valign1_tid3 valign1_tid1 (read "u1")); on_dgraph (newEqDGFONode valign1_term6); on_dgraph (newEqDGFONode valign1_term2); return ()}
 
 valign1_mudg2 :: StateT (RTestSOMetaUnifDGraph s) (ST s) _
 valign1_mudg2 = do {valign1_mudg1; on_vdgraph metaunif_vertical_align; return ()}

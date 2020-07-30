@@ -475,10 +475,50 @@ type ESMGUConstraintsU t pd fn v sov uv = (ESMGUConstraints t pd fn v sov, Show 
 type ESUnifDGraph s t fn v sov uv = EqDGraph s (TermDependant t fn v sov uv) (SOTerm fn sov)
 type ESUnifRelFoId s t fn v sov uv = EqDGRelFoId s (TermDependant t fn v sov uv) (SOTerm fn sov)
 type ESUnifRelSoId s t fn v sov uv = EqDGRelSoId s (TermDependant t fn v sov uv) (SOTerm fn sov)
-data ESUnifVFoEdge s t fn v sov uv = ESUnifVFoEdge {esunifvfoedge_source :: ESUnifRelFoId s t fn v sov uv, esunifvfoedge_target :: ESUnifRelFoId s t fn v sov uv}
+data ESUnifVFoEdge s t fn v sov uv = ESUnifVFoEdge {esunifvfoedge_source :: ESUnifRelFoId s t fn v sov uv, esunifvfoedge_target :: ESUnifRelFoId s t fn v sov uv, esunifvfoedge_level :: uv}
 
 eqUnifVFoEdge :: ESMGUConstraintsU t pd fn v sov uv => ESUnifVFoEdge s t fn v sov uv -> ESUnifVFoEdge s t fn v sov uv -> StateT (ESUnifVDGraph s t pd fn v sov uv) (ST s) Bool
 eqUnifVFoEdge e1 e2 = (mzoom (lens_esunifdgraph_dgraph) (eqSTRelativeEqDGFoIds s1 s2)) >>= (\v1 -> if v1 then (mzoom (lens_esunifdgraph_dgraph) (eqSTRelativeEqDGFoIds t1 t2)) else (return False)) where s1 = esunifvfoedge_source e1; t1 = esunifvfoedge_target e1; s2 = esunifvfoedge_source e2; t2 = esunifvfoedge_target e2
+
+-- Nothing indicates that it's at the base (no unifier) level.
+getEqDGLevel :: ESMGUConstraintsU t pd fn v sov uv => ESUnifRelFoId s t fn v sov uv -> StateT (ESUnifVDGraph s t pd fn v sov uv) (ST s) (Maybe uv)
+getEqDGLevel n = do
+	{
+		mb_td <- mzoom lens_esunifdgraph_dgraph (getSTRelativeEqDGFoCoId n);
+		case mb_td of
+		{
+			Just (TDDirect _) -> return Nothing;
+			Just (TDUnif uv _) -> return (Just uv);
+			Nothing -> do
+			{
+				-- If it does not have dependants, then it must have incoming horizontal edges. Anything else is absolutely incorrect, and should never happen. We signal it with an error.
+				-- We assume that all sources of all incoming horizontal edges have the same level, so we just pick an arbitrary one.
+				ines <- mzoom lens_esunifdgraph_dgraph (st_searchInEqDGFOEdges [] [] n);
+				case ines of
+				{
+					[] -> error "Trying to get the unifier level of a node with no dependants and no incoming horizontal edges!!";
+					_ -> do
+					{
+						sss <- concat <$> mzoom lens_esunifdgraph_dgraph (traverse eqDGFOEdge_sources ines);
+						case sss of
+						{
+							-- Extreme case: No sources. So it is a constant function. We determine the level based on incoming vertical edges.
+							[] -> do
+							{
+								invs <- inVFoEdges n;
+								case invs of
+								{
+									[] -> return Nothing;
+									((ESUnifVFoEdge _ _ uv):_) -> return (Just uv)
+								}
+							};
+							(s:_) -> getEqDGLevel s
+						}
+					}
+				}
+			} 
+		}
+	}
 
 -- The levels are assumed ordered and correctly indexed, so that 0-indexed level contains elements with no unifier variables, 1-indexed level contains elements with only the first unifier variable, and so on.
 data ESUnifVDGraph s t pd fn v sov uv = ESUnifVDGraph {esunifdgraph :: ESUnifDGraph s t fn v sov uv, esunifdgraph_vfoedges :: [ESUnifVFoEdge s t fn v sov uv], esunifdgraph_sosig :: SOSignature pd fn v sov}
@@ -517,18 +557,18 @@ f_show_esuvdg_vedge dg e = do {let {s = esunifvfoedge_source e; t = esunifvfoedg
 -- Dealing with vertical edges
 -- The edge is added anyway. If it already existed, this is a mistake, but it should be dealt with at a higher level.
 -- Note that we ensure that the nodes exist in the graph when doing this.
-addVFoEdge :: ESMGUConstraintsU t pd fn v sov uv => ESUnifRelFoId s t fn v sov uv -> ESUnifRelFoId s t fn v sov uv -> StateT (ESUnifVDGraph s t pd fn v sov uv) (ST s) ()
-addVFoEdge s t = mzoom lens_esunifdgraph_dgraph (do {mb_sfot <- getSTRelativeEqDGFoCoId s; mb_tfot <- getSTRelativeEqDGFoCoId t; if (isJust mb_sfot) then (newEqDGFONode (fromJustErr "addVFoEdge sfot" mb_sfot)) else pass; if (isJust mb_tfot) then (newEqDGFONode (fromJustErr "addVFoEdge tfot" mb_tfot)) else pass}) >> (StateT (f_addVFoEdge s t))
+addVFoEdge :: ESMGUConstraintsU t pd fn v sov uv => ESUnifRelFoId s t fn v sov uv -> ESUnifRelFoId s t fn v sov uv -> uv -> StateT (ESUnifVDGraph s t pd fn v sov uv) (ST s) (ESUnifVFoEdge s t fn v sov uv)
+addVFoEdge s t uv = mzoom lens_esunifdgraph_dgraph (do {mb_sfot <- getSTRelativeEqDGFoCoId s; mb_tfot <- getSTRelativeEqDGFoCoId t; if (isJust mb_sfot) then (newEqDGFONode (fromJustErr "addVFoEdge sfot" mb_sfot)) else pass; if (isJust mb_tfot) then (newEqDGFONode (fromJustErr "addVFoEdge tfot" mb_tfot)) else pass}) >> (StateT (f_addVFoEdge s t uv))
 
-f_addVFoEdge :: ESUnifRelFoId s t fn v sov uv -> ESUnifRelFoId s t fn v sov uv -> (ESUnifVDGraph s t pd fn v sov uv -> ST s ((), ESUnifVDGraph s t pd fn v sov uv))
-f_addVFoEdge s t esuvdg = return ((), lens_esunifdgraph_vfoedges ..~ ((ESUnifVFoEdge s t):) $ esuvdg)
+f_addVFoEdge :: ESUnifRelFoId s t fn v sov uv -> ESUnifRelFoId s t fn v sov uv -> uv -> (ESUnifVDGraph s t pd fn v sov uv -> ST s (ESUnifVFoEdge s t fn v sov uv, ESUnifVDGraph s t pd fn v sov uv))
+f_addVFoEdge s t uv esuvdg = return (ve, lens_esunifdgraph_vfoedges ..~ (ve:) $ esuvdg) where ve = ESUnifVFoEdge s t uv
 
 -- When we delete, we delete all copies of that edge. There should only really be one, but you can never be safe enough.
 deleteVFoEdge :: ESMGUConstraintsU t pd fn v sov uv => ESUnifRelFoId s t fn v sov uv -> ESUnifRelFoId s t fn v sov uv -> StateT (ESUnifVDGraph s t pd fn v sov uv) (ST s) ()
 deleteVFoEdge s t = StateT (f_deleteVFoEdge s t)
 
 f_deleteVFoEdge :: ESMGUConstraintsU t pd fn v sov uv => ESUnifRelFoId s t fn v sov uv -> ESUnifRelFoId s t fn v sov uv -> (ESUnifVDGraph s t pd fn v sov uv -> ST s ((),ESUnifVDGraph s t pd fn v sov uv))
-f_deleteVFoEdge s t esudg = tocombine <$> (runStateT st_res esudg) where fe = ESUnifVFoEdge s t; es = esunifdgraph_vfoedges esudg; tofold = (\e -> \rstes -> rstes >>= (\res -> (\rb -> if rb then res else (e:res)) <$> (eqUnifVFoEdge e fe))); st_res = Prelude.foldr tofold (return []) es; tocombine = (\(rres,resudg) -> ((),lens_esunifdgraph_vfoedges .~ rres $ resudg))
+f_deleteVFoEdge s t esudg = tocombine <$> (runStateT st_res esudg) where fe = ESUnifVFoEdge s t (error "The unifier variable should be irrelevant when deleting a vertical edge"); es = esunifdgraph_vfoedges esudg; tofold = (\e -> \rstes -> rstes >>= (\res -> (\rb -> if rb then res else (e:res)) <$> (eqUnifVFoEdge e fe))); st_res = Prelude.foldr tofold (return []) es; tocombine = (\(rres,resudg) -> ((),lens_esunifdgraph_vfoedges .~ rres $ resudg))
 
 
 -- Check if a vertical edge exists.
@@ -536,13 +576,35 @@ checkVFoEdge :: ESMGUConstraintsU t pd fn v sov uv => ESUnifRelFoId s t fn v sov
 checkVFoEdge s t = StateT (f_checkVFoEdge s t)
 
 f_checkVFoEdge :: ESMGUConstraintsU t pd fn v sov uv => ESUnifRelFoId s t fn v sov uv -> ESUnifRelFoId s t fn v sov uv -> (ESUnifVDGraph s t pd fn v sov uv -> ST s (Bool,ESUnifVDGraph s t pd fn v sov uv))
-f_checkVFoEdge s t esudg = runStateT st_rb esudg where fe = ESUnifVFoEdge s t; es = esunifdgraph_vfoedges esudg; tofold = (\e -> \rstb -> rstb >>= (\rb -> if rb then (return True) else (eqUnifVFoEdge e fe))); st_rb = Prelude.foldr tofold (return False) es
+f_checkVFoEdge s t esudg = runStateT st_rb esudg where fe = ESUnifVFoEdge s t (error "The unifier variable should be irrelevant when checking a vertical edge"); es = esunifdgraph_vfoedges esudg; tofold = (\e -> \rstb -> rstb >>= (\rb -> if rb then (return True) else (eqUnifVFoEdge e fe))); st_rb = Prelude.foldr tofold (return False) es
 
 outVFoEdges :: ESMGUConstraintsU t pd fn v sov uv => ESUnifRelFoId s t fn v sov uv -> StateT (ESUnifVDGraph s t pd fn v sov uv) (ST s) [ESUnifVFoEdge s t fn v sov uv]
 outVFoEdges s = StateT (f_outVFoEdges s)
 
 f_outVFoEdges :: ESMGUConstraintsU t pd fn v sov uv => ESUnifRelFoId s t fn v sov uv -> (ESUnifVDGraph s t pd fn v sov uv -> ST s ([ESUnifVFoEdge s t fn v sov uv],ESUnifVDGraph s t pd fn v sov uv))
 f_outVFoEdges s esudg = runStateT (monadfilter tofilter es) esudg where es = esunifdgraph_vfoedges esudg; tofilter = (\e -> mzoom lens_esunifdgraph_dgraph (eqSTRelativeEqDGFoIds (esunifvfoedge_source e) s))
+
+singleOutVFoEdge :: ESMGUConstraintsU t pd fn v sov uv => uv -> ESUnifRelFoId s t fn v sov uv -> StateT (ESUnifVDGraph s t pd fn v sov uv) (ST s) (ESUnifVFoEdge s t fn v sov uv)
+singleOutVFoEdge uv s = do
+	{
+		esudg <- get;
+		let {es = esunifdgraph_vfoedges esudg};
+		let {tofilter = (\e -> (mzoom lens_esunifdgraph_dgraph (eqSTRelativeEqDGFoIds (esunifvfoedge_source e) s)) >>=& (return ((esunifvfoedge_level e) == uv)))};
+
+		ves <- monadfilter tofilter es;
+		
+		-- If there is more than one edge, something is wrong
+		if ((length ves) > 1) then (error "More than one outgoing vertical edge with the same unifier level found!") else
+		if (Prelude.null ves) then do
+		{
+			-- It is empty: Create it.
+			t <- mzoom lens_esunifdgraph_dgraph newAnonEqDGFONode;
+			ve <- addVFoEdge s t uv;
+
+			return ve
+		}
+		else (return (head ves))		
+	}
 
 inVFoEdges :: ESMGUConstraintsU t pd fn v sov uv => ESUnifRelFoId s t fn v sov uv -> StateT (ESUnifVDGraph s t pd fn v sov uv) (ST s) [ESUnifVFoEdge s t fn v sov uv]
 inVFoEdges t = StateT (f_inVFoEdges t)
@@ -555,13 +617,31 @@ f_inVFoEdges t esudg = runStateT (monadfilter tofilter es) esudg where es = esun
 factorizeVFoEdge :: ESMGUConstraintsU t pd fn v sov uv => ESUnifVFoEdge s t fn v sov uv -> StateT (ESUnifVDGraph s t pd fn v sov uv) (ST s) uv
 factorizeVFoEdge e = do
 	{
-		mb_tfot <- mzoom lens_esunifdgraph_dgraph (getSTRelativeEqDGFoCoId (esunifvfoedge_target e));
-		let {tfot = fromJustErr "Found a vertical edge whose target has no elements!" mb_tfot};
-		return (case tfot of {TDUnif uv _ -> uv})
+		let {t = esunifvfoedge_target e};
+		mb_uv <- getEqDGLevel t;
+
+		let {uv = fromJustErr "Found a vertical edge whose target is at the base level!" mb_uv};
+		return uv;
 	}
 
 divideOverVFoEdge :: ESMGUConstraintsU t pd fn v sov uv => ESUnifVFoEdge s t fn v sov uv -> ESUnifRelFoId s t fn v sov uv -> StateT (ESUnifVDGraph s t pd fn v sov uv) (ST s) (ESUnifRelFoId s t fn v sov uv)
-divideOverVFoEdge e sid = do {mb_std <- mzoom lens_esunifdgraph_dgraph (getSTRelativeEqDGFoCoId sid); uv <- factorizeVFoEdge e; let {std = fromJustErr "Trying to divide by a node with no elements!" mb_std}; return (relbwEqDGFoId (TDUnif uv std))}
+divideOverVFoEdge e sid = do
+	{
+		mb_std <- mzoom lens_esunifdgraph_dgraph (getSTRelativeEqDGFoCoId sid);
+		uv <- factorizeVFoEdge e;
+
+		case mb_std of
+		{
+			Just std -> return (relbwEqDGFoId (TDUnif uv std));
+			Nothing -> do
+			{
+				ve <- singleOutVFoEdge uv sid;
+				let {t = esunifvfoedge_target ve};
+
+				return t
+			}
+		}
+	}
 
 divideDepOverVFoEdge :: ESMGUConstraintsU t pd fn v sov uv => ESUnifVFoEdge s t fn v sov uv -> TermDependant t fn v sov uv -> StateT (ESUnifVDGraph s t pd fn v sov uv) (ST s) (TermDependant t fn v sov uv)
 divideDepOverVFoEdge e fot = do {uv <- factorizeVFoEdge e; return (TDUnif uv fot)}
@@ -816,29 +896,22 @@ prop_newEqDGSOEdge h ss t = do
 		return result5
 	}
 
-prop_addVFoEdge :: ESMGUConstraintsU t pd fn v sov uv => ESUnifRelFoId s t fn v sov uv -> ESUnifRelFoId s t fn v sov uv -> StateT (ESUnifVDGraph s t pd fn v sov uv) (ST s) [ESUnifDGOp s t pd fn v sov uv]
-prop_addVFoEdge s t = do
+prop_addVFoEdge :: ESMGUConstraintsU t pd fn v sov uv => ESUnifRelFoId s t fn v sov uv -> ESUnifRelFoId s t fn v sov uv -> uv -> StateT (ESUnifVDGraph s t pd fn v sov uv) (ST s) [ESUnifDGOp s t pd fn v sov uv]
+prop_addVFoEdge s t uv = do
 	{
 		let {result = []};
 
-		-- First, check that the source and the target have elements. If they don't, don't do anything!
-		mb_sfot <- mzoom lens_esunifdgraph_dgraph (getSTRelativeEqDGFoCoId s);
-		mb_tfot <- mzoom lens_esunifdgraph_dgraph (getSTRelativeEqDGFoCoId t);
+		-- This may create the source and target nodes!
+		result2 <- ((return result) >>=++ (justprop_newEqDGFONode s));
 
-		if ((isNothing mb_sfot) || (isNothing mb_tfot)) then (return []) else do
+		result3 <- ((return result2) >>=++ (justprop_newEqDGFONode t));
+
+		exist <- checkVFoEdge s t;
+		if exist then (return []) else (do
 		{
-			-- This may create the source and target nodes!
-			result2 <- ((return result) >>=++ (justprop_newEqDGFONode s));
-
-			result3 <- ((return result2) >>=++ (justprop_newEqDGFONode t));
-
-			exist <- checkVFoEdge s t;
-			if exist then (return []) else (do
-			{
-				addVFoEdge s t;
-				(return result3) >>=++ (justprop_addVFoEdge s t);
-			})
-		}
+			addVFoEdge s t uv;
+			(return result3) >>=++ (justprop_addVFoEdge s t uv);
+		})		
 	}
 
 prop_mergeEqDGFONodes :: ESMGUConstraintsU t pd fn v sov uv => ESUnifRelFoId s t fn v sov uv -> ESUnifRelFoId s t fn v sov uv -> StateT (ESUnifVDGraph s t pd fn v sov uv) (ST s) [ESUnifDGOp s t pd fn v sov uv]
@@ -1057,8 +1130,8 @@ justprop_mergeEqDGFONodes n1 n2 = do
 		return result3
 	}
 
-justprop_addVFoEdge :: ESMGUConstraintsU t pd fn v sov uv => ESUnifRelFoId s t fn v sov uv -> ESUnifRelFoId s t fn v sov uv -> StateT (ESUnifVDGraph s t pd fn v sov uv) (ST s) [ESUnifDGOp s t pd fn v sov uv]
-justprop_addVFoEdge s t = return [ESUVCommuteFo (ESUnifVFoEdge s t), ESUVCommuteEqFo (ESUnifVFoEdge s t)]
+justprop_addVFoEdge :: ESMGUConstraintsU t pd fn v sov uv => ESUnifRelFoId s t fn v sov uv -> ESUnifRelFoId s t fn v sov uv -> uv -> StateT (ESUnifVDGraph s t pd fn v sov uv) (ST s) [ESUnifDGOp s t pd fn v sov uv]
+justprop_addVFoEdge s t uv = return [ESUVCommuteFo (ESUnifVFoEdge s t uv), ESUVCommuteEqFo (ESUnifVFoEdge s t uv)]
 
 justprop_newEqDGFONode :: ESMGUConstraintsU t pd fn v sov uv => ESUnifRelFoId s t fn v sov uv -> StateT (ESUnifVDGraph s t pd fn v sov uv) (ST s) [ESUnifDGOp s t pd fn v sov uv]
 justprop_newEqDGFONode foid = return [ESUVAlign foid]
@@ -2092,24 +2165,23 @@ esu_vertical_commute_fo_edge_hedge ve he = do
 		if (not eex) then (return []) else do
 		{
 			sss <- mzoom lens_esunifdgraph_dgraph (eqDGFOEdge_sources he);
-			tss <- sequence (Prelude.map (divideOverVFoEdge ve) sss);
-			h <- mzoom lens_esunifdgraph_dgraph (eqDGFOEdge_head he);		
 			st <- mzoom lens_esunifdgraph_dgraph (eqDGFOEdge_target he);
+			tss <- sequence (Prelude.map (divideOverVFoEdge ve) sss);
+			h <- mzoom lens_esunifdgraph_dgraph (eqDGFOEdge_head he);					
 			tt <- divideOverVFoEdge ve st;
 			ex <- mzoom lens_esunifdgraph_dgraph (st_checkAllEqDGFOEdge h tss tt);
+			uv <- factorizeVFoEdge ve;
 			if ex then (return [])
 			else do
 			{
-				--mzoom lens_esunifdgraph_dgraph (newEqDGFOEdge h tss tt);
 				result <- prop_newEqDGFOEdge h tss tt;
 				let {zipped = zip sss tss};
-				--traverse (uncurry addVFoEdge) zipped;
-				--return (Prelude.map (ESUVCommuteFo . (uncurry ESUnifVFoEdge)) zipped)
-				result2 <- (return result) >>=++ (concat <$> traverse (uncurry prop_addVFoEdge) zipped);
+				
+				result2 <- (return result) >>=++ (concat <$> traverse (\(s,t) -> prop_addVFoEdge s t uv) zipped);
 
-				result3 <- (return result2) >>=++ (prop_addVFoEdge st tt);
+				result3 <- (return result2) >>=++ (prop_addVFoEdge st tt uv);
 
-				return result3
+				return result3				
 			}
 		}
 	}
@@ -2168,14 +2240,12 @@ esu_vertical_align_fot fot = do
 			let {rtd = fromJustErr "This should never happen. esu_vertical_align_fot" mb_rtd};
 			if (not (is_tdunif rtd)) then (return []) else do
 			{
-				let {intd = from_tdunif rtd; intd_id = relbwEqDGFoId intd};
+				let {(TDUnif uv intd) = rtd; intd_id = relbwEqDGFoId intd};
 				exist <- checkVFoEdge intd_id fot;
 				if exist then (return [])
 				else do
 				{
-					--addVFoEdge intd_id fot;
-					--return [ESUVAlign intd_id, ESUVCommuteFo (ESUnifVFoEdge intd_id fot)]
-					prop_addVFoEdge intd_id fot
+					prop_addVFoEdge intd_id fot uv
 				}
 			}	
 		}
@@ -2307,13 +2377,63 @@ separate_sot_dependant_exp (UTerm (SOF (CompF h ss))) = SOEdgeExp h (Prelude.map
 separate_sot_dependant_exp sot = SOTDExp sot
 
 
--- TODO: Be able to add an entire expression to a graph, creating all intermediate nodes. This would absolutely de-normalize the graph, though, gotta keep that in mind!
 grab_fonode :: ESMGUConstraintsU t pd fn v sov uv => TermDependant t fn v sov uv -> StateT (ESUnifVDGraph s t pd fn v sov uv) (ST s) (ESUnifRelFoId s t fn v sov uv)
 grab_fonode td = do
 	{
 		-- Decompose the term dependant, and normalize the first-order term
 		let {(us,t) = decompose_td td; nt = normalize t};
-		undefined
+		case nt of
+		{
+			-- Base case => Dependant
+			SOMetawrap (UVar v) -> do
+			{
+				let {rtd = compose_td us nt};
+				return (relbwEqDGFoId rtd)
+			};
+			-- Recursive case => Create edges
+			SOMetawrap (UTerm t) -> do
+			{
+				let {(h,sts) = unbuild_term t; usts = Prelude.map ((compose_td us) . SOMetawrap) sts};
+				hid <- grab_sonode h;
+				stids <- traverse grab_fonode usts;
+				tid <- mzoom lens_esunifdgraph_dgraph (newAnonEqDGFOEdge hid stids);
+
+				return tid
+			}
+		}
+	}
+
+grab_sonode :: ESMGUConstraintsU t pd fn v sov uv => SOTerm fn sov -> StateT (ESUnifVDGraph s t pd fn v sov uv) (ST s) (ESUnifRelSoId s t fn v sov uv)
+grab_sonode sot = do
+	{
+		let {nsot = normalize sot};
+		case nsot of
+		{
+			-- Base case => Variable
+			UVar v -> do
+			{
+				return (relbwEqDGSoId nsot)
+			};
+			-- Base case => Function symbol
+			UTerm (SOF (ConstF fn)) -> do
+			{
+				return (relbwEqDGSoId nsot)
+			};
+			-- Base case => Projection
+			UTerm (SOF (Proj idx)) -> do
+			{
+				return (relbwEqDGSoId nsot)
+			};
+			-- Recursive case => Create edges
+			UTerm (SOF (CompF h ss)) -> do
+			{
+				hid <- grab_sonode h;
+				sids <- traverse grab_sonode ss;
+				tid <- mzoom lens_esunifdgraph_dgraph (newAnonEqDGSOEdge hid sids);
+
+				return tid
+			}
+		}
 	}
 
 

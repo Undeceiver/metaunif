@@ -388,7 +388,8 @@ instance HasArity fn => Normalizable (GroundSOT fn) (GroundSOT fn) where
 instance (HasArity fn, HasArity sov) => Normalizable (SOTerm fn sov) (SOTerm fn sov) where
 	inject_normal = id
 	normalize (UVar v) = UVar v
-	normalize (UTerm (SOF (ConstF f))) = UTerm (SOF (CompF (UTerm (SOF (ConstF f))) (fmap (UTerm . SOF . Proj) [0..((arity f) - 1)])))
+	--normalize (UTerm (SOF (ConstF f))) = UTerm (SOF (CompF (UTerm (SOF (ConstF f))) (fmap (UTerm . SOF . Proj) [0..((arity f) - 1)])))
+	normalize (UTerm (SOF (ConstF f))) = UTerm (SOF (ConstF f))
 	normalize (UTerm (SOF (Proj idx))) = UTerm (SOF (Proj idx))
 	normalize (UTerm (SOF (CompF h args))) = case (normalize h) of
 													{
