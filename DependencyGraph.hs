@@ -195,29 +195,29 @@ lens_sot f (DGSOEdge id h ss t) = fmap (\rt -> DGSOEdge id h ss rt) (f t)
 
 
 
-show_dgraph :: (Int -> String) -> (Int -> String) -> DGraph -> String
-show_dgraph foshow soshow (DGraph fonodes foedges sonodes soedges) = (concat . (fmap (show_dgraph_sonode soshow (DGraph fonodes foedges sonodes soedges) . fromJust) . (Data.List.filter isJust)) $ sonodes) ++ "\n\n" ++ (concat . (fmap (show_dgraph_fonode foshow soshow (DGraph fonodes foedges sonodes soedges) . fromJust) . (Data.List.filter isJust)) $ fonodes)
+show_dgraph :: (Int -> String) -> (Int -> String) -> (Int -> String) -> (Int -> String) -> DGraph -> String
+show_dgraph foshow soshow efoshow esoshow (DGraph fonodes foedges sonodes soedges) = (concat . (fmap (show_dgraph_sonode soshow esoshow (DGraph fonodes foedges sonodes soedges) . fromJust) . (Data.List.filter isJust)) $ sonodes) ++ "\n\n" ++ (concat . (fmap (show_dgraph_fonode foshow soshow efoshow (DGraph fonodes foedges sonodes soedges) . fromJust) . (Data.List.filter isJust)) $ fonodes)
 
-show_dgraph_sonode :: (Int -> String) -> DGraph -> DGSONode -> String
-show_dgraph_sonode soshow dg (DGSONode id eout ein efh esh) = (soshow id) ++ ":\n\n\tOut:\n" ++ (concat . (fmap (show_dgraph_soedge_out soshow dg . fromJust . getDGSOEdge dg)) $ eout) ++ "\n\tIn:\n" ++ (concat . (fmap (show_dgraph_soedge_in soshow dg . fromJust . getDGSOEdge dg)) $ ein) ++ "\n"
+show_dgraph_sonode :: (Int -> String) -> (Int -> String) -> DGraph -> DGSONode -> String
+show_dgraph_sonode soshow esoshow dg (DGSONode id eout ein efh esh) = (soshow id) ++ ":\n\n\tOut:\n" ++ (concat . (fmap (show_dgraph_soedge_out soshow esoshow dg . fromJust . getDGSOEdge dg)) $ eout) ++ "\n\tIn:\n" ++ (concat . (fmap (show_dgraph_soedge_in soshow esoshow dg . fromJust . getDGSOEdge dg)) $ ein) ++ "\n"
 
-show_dgraph_soedge_out :: (Int -> String) -> DGraph -> DGSOEdge -> String
-show_dgraph_soedge_out soshow dg (DGSOEdge id h ss t) = "\t\t--" ++ (soshow h) ++ "->" ++ (soshow t) ++ "\n"
+show_dgraph_soedge_out :: (Int -> String) -> (Int -> String) -> DGraph -> DGSOEdge -> String
+show_dgraph_soedge_out soshow esoshow dg (DGSOEdge id h ss t) = "\t\t" ++ (esoshow id) ++ "--" ++ (soshow h) ++ "->" ++ (soshow t) ++ "\n"
 
-show_dgraph_soedge_in :: (Int -> String) -> DGraph -> DGSOEdge -> String
-show_dgraph_soedge_in soshow dg (DGSOEdge id h ss t) = "\t\t<-" ++ (soshow h) ++ "--[" ++ (concat (intersperse "," (soshow <$> ss))) ++ "]\n"
+show_dgraph_soedge_in :: (Int -> String) -> (Int -> String) -> DGraph -> DGSOEdge -> String
+show_dgraph_soedge_in soshow esoshow dg (DGSOEdge id h ss t) = "\t\t" ++ (esoshow id) ++ "<-" ++ (soshow h) ++ "--[" ++ (concat (intersperse "," (soshow <$> ss))) ++ "]\n"
 
-show_dgraph_fonode :: (Int -> String) -> (Int -> String) -> DGraph -> DGFONode -> String
-show_dgraph_fonode foshow soshow dg (DGFONode id eout ein) = (foshow id) ++ ":\n\n\tOut:\n" ++ (concat . (fmap (show_dgraph_foedge_out foshow soshow dg . fromJust . getDGFOEdge dg)) $ eout) ++ "\n\tIn:\n" ++ (concat . (fmap (show_dgraph_foedge_in foshow soshow dg . fromJust . getDGFOEdge dg)) $ ein) ++ "\n"
+show_dgraph_fonode :: (Int -> String) -> (Int -> String) -> (Int -> String) -> DGraph -> DGFONode -> String
+show_dgraph_fonode foshow soshow efoshow dg (DGFONode id eout ein) = (foshow id) ++ ":\n\n\tOut:\n" ++ (concat . (fmap (show_dgraph_foedge_out foshow soshow efoshow dg . fromJust . getDGFOEdge dg)) $ eout) ++ "\n\tIn:\n" ++ (concat . (fmap (show_dgraph_foedge_in foshow soshow efoshow dg . fromJust . getDGFOEdge dg)) $ ein) ++ "\n"
 
-show_dgraph_foedge_out :: (Int -> String) -> (Int -> String) -> DGraph -> DGFOEdge -> String
-show_dgraph_foedge_out foshow soshow dg (DGFOEdge id h ss t) = "\t\t--" ++ (soshow h) ++ "->" ++ (foshow t) ++ "\n"
+show_dgraph_foedge_out :: (Int -> String) -> (Int -> String) -> (Int -> String) -> DGraph -> DGFOEdge -> String
+show_dgraph_foedge_out foshow soshow efoshow dg (DGFOEdge id h ss t) = "\t\t" ++ (efoshow id) ++ "--" ++ (soshow h) ++ "->" ++ (foshow t) ++ "\n"
 
-show_dgraph_foedge_in :: (Int -> String) -> (Int -> String) -> DGraph -> DGFOEdge -> String
-show_dgraph_foedge_in foshow soshow dg (DGFOEdge id h ss t) = "\t\t<-" ++ (soshow h) ++ "--[" ++ (concat (intersperse "," (foshow <$> ss))) ++ "]\n"
+show_dgraph_foedge_in :: (Int -> String) -> (Int -> String) -> (Int -> String) -> DGraph -> DGFOEdge -> String
+show_dgraph_foedge_in foshow soshow efoshow dg (DGFOEdge id h ss t) = "\t\t" ++ (efoshow id) ++ "<-" ++ (soshow h) ++ "--[" ++ (concat (intersperse "," (foshow <$> ss))) ++ "]\n"
 
 instance Show DGraph where
-	show = show_dgraph show show
+	show = show_dgraph show show (\_ -> "") (\_ -> "")
 
 
 
@@ -427,7 +427,7 @@ lens_eqdg_sored f (EqDGraph dgraph fopoints fonodes foelements sopoints sonodes 
 
 
 show_eqdgraph :: (Show fot, Show sot) => EqDGraph s fot sot -> String
-show_eqdgraph eqdg = (show_dgraph foshow soshow (eqdgraph eqdg)) where foshow = (\foi -> (show foi) ++ "(FO):: " ++ (show (findWithDefault [] foi (eqdg_foelements eqdg)))); soshow = (\soi -> (show soi) ++ "(SO):: " ++ (show (findWithDefault [] soi (eqdg_soelements eqdg))))
+show_eqdgraph eqdg = (show_dgraph foshow soshow efoshow esoshow (eqdgraph eqdg)) where foshow = (\foi -> (show foi) ++ "(FO):: " ++ (show (findWithDefault [] foi (eqdg_foelements eqdg)))); soshow = (\soi -> (show soi) ++ "(SO):: " ++ (show (findWithDefault [] soi (eqdg_soelements eqdg)))); efoshow = (\foei -> if (findWithDefault False foei (eqdg_redundant_foedges eqdg)) then "[R]" else "[NR]"); esoshow = (\soei -> if (findWithDefault False soei (eqdg_redundant_soedges eqdg)) then "[R]" else "[NR]")
 
 -- All of the functions dealing with EqDGraphs are stateful, so that we can optimize the equivalence class handling. They are going to be used in a stateful way anyway.
 emptyEqDG :: EqDGraph s fot sot

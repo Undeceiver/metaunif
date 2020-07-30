@@ -687,6 +687,13 @@ instance ESMGUConstraintsU t pd fn v sov uv => StateTOperation (ST s) (ESUnifDGO
 
 newtype RESUnifVDGraph t pd fn v sov uv = RESUnifVDGraph {fromRESUnifVDGraph :: forall s. ST s (ESUnifVDGraph s t pd fn v sov uv)}
 
+-- NOTE THAT THIS STATET IGNORES ANY PREVIOUS STATE!!!
+unRESUnifVDGraph :: ESMGUConstraintsU t pd fn v sov uv => RESUnifVDGraph t pd fn v sov uv -> (forall s. StateT (ESUnifVDGraph s t pd fn v sov uv) (ST s) ())
+unRESUnifVDGraph resuvdg = StateT (\_ -> do {esuvdg <- (fromRESUnifVDGraph resuvdg); return ((),esuvdg)})
+
+doRESUnifVDGraph :: ESMGUConstraintsU t pd fn v sov uv => (forall s. StateT (ESUnifVDGraph s t pd fn v sov uv) (ST s) a) -> RESUnifVDGraph t pd fn v sov uv
+doRESUnifVDGraph st = RESUnifVDGraph (snd <$> (runStateT st (emptyVDGraph sig))) where sig = runST (fst <$> (runStateT (do {st; esuvdg <- get; return (esunifdgraph_sosig esuvdg)}) (emptyVDGraph undefined)))
+
 instance ESMGUConstraintsU t pd fn v sov uv => Show (RESUnifVDGraph t pd fn v sov uv) where
 	show resuvdg = runST (do
 		{
@@ -1198,7 +1205,7 @@ getStateTSTESUnifVDGraphState st resuvdg = RESUnifVDGraph (do {esuvdg <- fromRES
 -- MultiFactorize means all heads are variables. We choose one variable and enumerate potential heads for it (including projection).
 data FactorizeCandidateS s t fn v sov uv = NoFactorize | ZeroFactorizeFO (ESUnifRelFoId s t fn v sov uv) | ZeroFactorizeSO (ESUnifRelSoId s t fn v sov uv) | HalfFactorizeF (ESUnifRelSoId s t fn v sov uv) | HalfFactorizeP Int | SingleFactorizeFO (ESUnifRelFoId s t fn v sov uv) sov | SingleFactorizeSO (ESUnifRelSoId s t fn v sov uv) sov | MultiFactorize sov Int
 newtype FactorizeCandidate t fn v sov uv = FC {fromFC :: forall s. ST s (FactorizeCandidateS s t fn v sov uv)} -- deriving (Ord,Eq)
-data FactorizeType = NoFactorizeT | ZeroFactorizeT | HalfFactorizeT | SingleFactorizeT | MultiFactorizeT
+data FactorizeType = NoFactorizeT | ZeroFactorizeT | HalfFactorizeT | SingleFactorizeT | MultiFactorizeT deriving Show
 
 -- The Eq and Ord instances of FactorizeCandidate refer to their relative priority in solving. So there may be "equal" factorize candidates that are not actually equal in what they mean! They just have equal priority.
 instance Eq (FactorizeCandidateS s t fn v sov uv) where	
@@ -1750,13 +1757,12 @@ validate_occurs_check_fo resuvdg = if consistent then (ImplicitAS resuvdg) else 
 occurs_check_fo :: ESMGUConstraintsU t pd fn v sov uv => StateT (ESUnifVDGraph s t pd fn v sov uv) (ST s) Bool
 occurs_check_fo = do
 	{
-		leaves <- mzoom lens_esunifdgraph_dgraph find_eqdgraph_foleaves;
 		esuvdg <- get;
 		let {nodes = Prelude.map (DirectId . EqDGFoId . dgid . fromJust) (Prelude.filter isJust (esuvdg ^. (lens_esunifdgraph_dgraph . lens_eqdgraph . lens_fonodes)))};
-		cycle_up <- traverse_collect mb_concat (check_cycle_up_fot []) leaves;
+		cycle_up <- traverse_collect mb_concat (check_cycle_up_fot []) nodes;
 		let {j_cycle_up = fromJust cycle_up};
 		
-		if (isNothing cycle_up) then (return False) else (m_all (\x -> mzoom lens_esunifdgraph_dgraph (m_any (eqSTRelativeEqDGFoIds x) j_cycle_up)) nodes)
+		if (isNothing cycle_up) then (return False) else (return True)
 	}
 
 check_cycle_up_fot :: ESMGUConstraintsU t pd fn v sov uv => [ESUnifRelFoId s t fn v sov uv] -> ESUnifRelFoId s t fn v sov uv -> StateT (ESUnifVDGraph s t pd fn v sov uv) (ST s) (Maybe [ESUnifRelFoId s t fn v sov uv])
@@ -1781,13 +1787,12 @@ validate_occurs_check_so resuvdg = if consistent then (ImplicitAS resuvdg) else 
 occurs_check_so :: ESMGUConstraintsU t pd fn v sov uv => StateT (ESUnifVDGraph s t pd fn v sov uv) (ST s) Bool
 occurs_check_so = do
 	{
-		leaves <- mzoom lens_esunifdgraph_dgraph find_eqdgraph_soleaves;
 		esuvdg <- get;
 		let {nodes = Prelude.map (DirectId . EqDGSoId . dgid . fromJust) (Prelude.filter isJust (esuvdg ^. (lens_esunifdgraph_dgraph . lens_eqdgraph . lens_sonodes)))};
-		cycle_up <- traverse_collect mb_concat (check_cycle_up_sot []) leaves;
+		cycle_up <- traverse_collect mb_concat (check_cycle_up_sot []) nodes;
 		let {j_cycle_up = fromJust cycle_up};
 		
-		if (isNothing cycle_up) then (return False) else (m_all (\x -> mzoom lens_esunifdgraph_dgraph (m_any (eqSTRelativeEqDGSoIds x) j_cycle_up)) nodes)
+		if (isNothing cycle_up) then (return False) else (return True)
 	}
 
 check_cycle_up_sot :: ESMGUConstraintsU t pd fn v sov uv => [ESUnifRelSoId s t fn v sov uv] -> ESUnifRelSoId s t fn v sov uv -> StateT (ESUnifVDGraph s t pd fn v sov uv) (ST s) (Maybe [ESUnifRelSoId s t fn v sov uv])
