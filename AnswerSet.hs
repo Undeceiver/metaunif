@@ -83,6 +83,7 @@ explicitAS en = ExplicitAS (fmap SingleAS en)
 (SingleAS x) ?>>= f = tofun f x
 (ExplicitAS en) ?>>= f = ExplicitAS (fmap (?>>= f) en)
 (ImplicitAS s) ?>>= f = composeImplicit s f
+infixl 7 ?>>=
 
 -- Note that the Bifunctor instance is naive in that it considers the effects of the function on implicits and the function on explicits independent.
 -- That is, the function on explicits will never be applied when the elements are expressed implicitly.

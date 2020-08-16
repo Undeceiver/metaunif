@@ -465,9 +465,6 @@ type SOMetaclause = Clause CAtomPF CTermF SOPredicate OPredicate OFunction OVari
 type SOMetaCNF = CNF CAtomPF CTermF SOPredicate OPredicate OFunction OVariable SOAMVariable SOMVariable -- = [SOMetaclause]
 type SOMetaSignature = SOSignature OPredicate OFunction OVariable SOMVariable
 
-type SOMetaMGU = ESMGU CTermF OPredicate OFunction OVariable SOMVariable
-type SOMetaNMGU = NESMGU CTermF OPredicate OFunction OVariable SOMVariable
-
 type SOMetaQVar = CESQVar SOAMVariable SOMVariable
 type SOMetaQSol = CESQSol OPredicate OFunction
 type SOMetaQParcSol = ParcCESQSol OPredicate OFunction SOAMVariable SOMVariable

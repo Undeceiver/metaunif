@@ -2638,43 +2638,43 @@ target_arity_test = putStr "EXAMPLE 1\n\n" >> putStr target_arity1_tests >>
 
 
 occurs_check1_term1 :: SOMetatermF
-occurs_check1_term1 = read "F1[1]"
+occurs_check1_term1 = read "f1[1]"
 
 occurs_check1_tid1 :: SOMetaUnifRelSoId s
 occurs_check1_tid1 = relbwEqDGSoId occurs_check1_term1
 
 occurs_check1_term2 :: SOMetatermF
-occurs_check1_term2 = read "F2[1]"
+occurs_check1_term2 = read "f2[1]"
 
 occurs_check1_tid2 :: SOMetaUnifRelSoId s
 occurs_check1_tid2 = relbwEqDGSoId occurs_check1_term2
 
 occurs_check1_term3 :: SOMetatermF
-occurs_check1_term3 = read "F3[1]"
+occurs_check1_term3 = read "f3[1]"
 
 occurs_check1_tid3 :: SOMetaUnifRelSoId s
 occurs_check1_tid3 = relbwEqDGSoId occurs_check1_term3
 
 occurs_check1_term4 :: SOMetatermF
-occurs_check1_term4 = read "F4[1]"
+occurs_check1_term4 = read "f4[1]"
 
 occurs_check1_tid4 :: SOMetaUnifRelSoId s
 occurs_check1_tid4 = relbwEqDGSoId occurs_check1_term4
 
 occurs_check1_term5 :: SOMetatermF
-occurs_check1_term5 = read "F5[1]"
+occurs_check1_term5 = read "f5[1]"
 
 occurs_check1_tid5 :: SOMetaUnifRelSoId s
 occurs_check1_tid5 = relbwEqDGSoId occurs_check1_term5
 
 occurs_check1_term6 :: SOMetatermF
-occurs_check1_term6 = read "F6[1]"
+occurs_check1_term6 = read "f6[1]"
 
 occurs_check1_tid6 :: SOMetaUnifRelSoId s
 occurs_check1_tid6 = relbwEqDGSoId occurs_check1_term6
 
 occurs_check1_sig :: SOMetaSignature
-occurs_check1_sig = SOSignature (Signature [] [] EnumProc.Empty) (read "F1[1]" --> read "F2[1]" --> read "F3[1]" --> read "F4[1]" --> read "F5[1]" --> read "F6[1]" --> EnumProc.Empty)
+occurs_check1_sig = SOSignature (Signature [] [EnumProc.Empty, read "f1[1]" --> read "f2[1]" --> read "f3[1]" --> read "f4[1]" --> read "f5[1]" --> read "f6[1]" --> EnumProc.Empty] EnumProc.Empty) EnumProc.Empty
 
 occurs_check1_mudg1 :: StateT (RTestSOMetaUnifDGraph s) (ST s) Bool
 occurs_check1_mudg1 = do
@@ -3588,6 +3588,10 @@ factorize8_t17 = check_any_resuvdg factorize_tests_n "Checking that u0 x3 is som
 factorize8_tests :: String
 factorize8_tests = combine_test_results [factorize8_t1,factorize8_t2,factorize8_t3,factorize8_t4,factorize8_t5,factorize8_t6,factorize8_t7,factorize8_t8,factorize8_t9,factorize8_t10,factorize8_t11,factorize8_t12,factorize8_t13,factorize8_t14,factorize8_t15,factorize8_t16,factorize8_t17]
 
+-- This number is low because of the performance properties of the algorithm.
+factorize9_tests_n :: Int
+factorize9_tests_n = 5
+
 factorize9_term1 :: SOMetaTermDependant
 factorize9_term1 = read "u0 x0"
 
@@ -3630,8 +3634,17 @@ factorize9_soterm4 = read "F1[1]"
 factorize9_sotid4 :: SOMetaUnifRelSoId s
 factorize9_sotid4 = relbwEqDGSoId factorize9_soterm4
 
+factorize9_exp1 :: SOMetaUnifSOExp
+factorize9_exp1 = read "f1[1]{F3[2]}"
+
+factorize9_exp2 :: SOMetaUnifSOExp
+factorize9_exp2 = read "pi0"
+
+factorize9_exp3 :: SOMetaUnifSOExp
+factorize9_exp3 = read "f2[1]{F3[2]}"
+
 factorize9_sig :: SOMetaSignature
-factorize9_sig = SOSignature (Signature [] [EnumProc.Empty, read "f1[1]" --> EnumProc.Empty, read "f2[2]" --> EnumProc.Empty] (read "x0" --> read "x1" --> read "x2" --> EnumProc.Empty)) (read "F0[2]" --> read "F1[1]" --> EnumProc.Empty)
+factorize9_sig = SOSignature (Signature [] [EnumProc.Empty, read "f1[1]" --> read "f2[1]" --> EnumProc.Empty, read "f3[2]" --> EnumProc.Empty] (read "x0" --> read "x1" --> read "x2" --> EnumProc.Empty)) (read "F0[2]" --> read "F1[1]" --> EnumProc.Empty)
 
 factorize9_mudg1 :: RSOMetaUnifDGraph
 factorize9_mudg1 = RESUnifVDGraph (snd <$> runStateT (mzoom lens_esunifdgraph_dgraph (do
@@ -3668,10 +3681,593 @@ factorize9_t4 :: AutomatedTest
 factorize9_t4 = check_exactly_as "Checking there is exactly one solution after quasinormalizing" 1 factorize9_as4
 
 factorize9_t5 :: AutomatedTest
-factorize9_t5 = check_min_as "Checking there are more than 100 solutions after normalizing" 100 factorize9_as5
+factorize9_t5 = check_min_as "Checking there are at least five solutions after normalizing" 5 factorize9_as5
+
+-- These tests are fairly specific and informed by the algorithm results themselves, but this is unavoidable given the performance issues of the algorithm.
+factorize9_t6 :: AutomatedTest
+factorize9_t6 = check_all_resuvdg factorize9_tests_n "Checking that F0 is never equivalent to f{F3[2]} after quasinormalizing" (\title -> \st -> check_not_soexp factorize9_sig title st factorize9_exp1 factorize9_soterm3) factorize9_as4
+
+factorize9_t7 :: AutomatedTest
+factorize9_t7 = check_all_resuvdg factorize9_tests_n "Checking that F0 is never equivalent to pi0 after quasinormalizing" (\title -> \st -> check_not_soexp factorize9_sig title st factorize9_exp2 factorize9_soterm3) factorize9_as4
+
+factorize9_t8 :: AutomatedTest
+factorize9_t8 = check_any_resuvdg factorize9_tests_n "Checking that F0 is sometimes equivalent to f{F3[2]} after normalizing" (\title -> \st -> check_soexp factorize9_sig title st factorize9_exp1 factorize9_soterm3) factorize9_as5
+
+factorize9_t9 :: AutomatedTest
+factorize9_t9 = check_any_resuvdg factorize9_tests_n "Checking that F0 is sometimes not equivalent to f{F3[2]} after normalizing" (\title -> \st -> check_not_soexp factorize9_sig title st factorize9_exp1 factorize9_soterm3) factorize9_as5
+
+factorize9_t10 :: AutomatedTest
+factorize9_t10 = check_any_resuvdg factorize9_tests_n "Checking that F0 is sometimes equivalent to pi0 after normalizing" (\title -> \st -> check_soexp factorize9_sig title st factorize9_exp2 factorize9_soterm3) factorize9_as5
+
+factorize9_t11 :: AutomatedTest
+factorize9_t11 = check_any_resuvdg factorize9_tests_n "Checking that F0 is sometimes not equivalent to pi0 after normalizing" (\title -> \st -> check_not_soexp factorize9_sig title st factorize9_exp2 factorize9_soterm3) factorize9_as5
+
+factorize9_t12 :: AutomatedTest
+factorize9_t12 = check_all_resuvdg factorize9_tests_n "Checking that F0 is never equivalent to g{F3[2]} after quasinormalizing" (\title -> \st -> check_not_soexp factorize9_sig title st factorize9_exp3 factorize9_soterm3) factorize9_as4
+
+factorize9_t13 :: AutomatedTest
+factorize9_t13 = check_any_resuvdg factorize9_tests_n "Checking that F0 is sometimes equivalent to g{F3[2]} after normalizing" (\title -> \st -> check_soexp factorize9_sig title st factorize9_exp3 factorize9_soterm3) factorize9_as5
+
+factorize9_t14 :: AutomatedTest
+factorize9_t14 = check_any_resuvdg factorize9_tests_n "Checking that F0 is sometimes not equivalent to g{F3[2]} after normalizing" (\title -> \st -> check_not_soexp factorize9_sig title st factorize9_exp3 factorize9_soterm3) factorize9_as5
 
 factorize9_tests :: String
-factorize9_tests = combine_test_results [factorize9_t1,factorize9_t2,factorize9_t3,factorize9_t4,factorize9_t5]
+factorize9_tests = combine_test_results [factorize9_t1,factorize9_t2,factorize9_t3,factorize9_t4,factorize9_t5,factorize9_t6,factorize9_t7,factorize9_t8,factorize9_t9,factorize9_t10,factorize9_t11,factorize9_t12,factorize9_t13,factorize9_t14]
+
+factorize10_tests_n :: Int
+factorize10_tests_n = 20
+
+factorize10_term1 :: SOMetaTermDependant
+factorize10_term1 = read "u0 x0"
+
+factorize10_tid1 :: SOMetaUnifRelFoId s
+factorize10_tid1 = relbwEqDGFoId factorize10_term1
+
+factorize10_term2 :: SOMetaTermDependant
+factorize10_term2 = read "u0 x1"
+
+factorize10_tid2 :: SOMetaUnifRelFoId s
+factorize10_tid2 = relbwEqDGFoId factorize10_term2
+
+factorize10_term3 :: SOMetaTermDependant
+factorize10_term3 = read "u0 x2"
+
+factorize10_tid3 :: SOMetaUnifRelFoId s
+factorize10_tid3 = relbwEqDGFoId factorize10_term3
+
+factorize10_term4 :: SOMetaTermDependant
+factorize10_term4 = read "u0 x3"
+
+factorize10_tid4 :: SOMetaUnifRelFoId s
+factorize10_tid4 = relbwEqDGFoId factorize10_term4
+
+factorize10_term5 :: SOMetaTermDependant
+factorize10_term5 = read "u0 x4"
+
+factorize10_tid5 :: SOMetaUnifRelFoId s
+factorize10_tid5 = relbwEqDGFoId factorize10_term5
+
+factorize10_term6 :: SOMetaTermDependant
+factorize10_term6 = read "u0 x5"
+
+factorize10_tid6 :: SOMetaUnifRelFoId s
+factorize10_tid6 = relbwEqDGFoId factorize10_term6
+
+factorize10_term7 :: SOMetaTermDependant
+factorize10_term7 = read "u0 x6"
+
+factorize10_tid7 :: SOMetaUnifRelFoId s
+factorize10_tid7 = relbwEqDGFoId factorize10_term7
+
+factorize10_term8 :: SOMetaTermDependant
+factorize10_term8 = read "u0 x7"
+
+factorize10_tid8 :: SOMetaUnifRelFoId s
+factorize10_tid8 = relbwEqDGFoId factorize10_term8
+
+factorize10_term9 :: SOMetaTermDependant
+factorize10_term9 = read "u0 x8"
+
+factorize10_tid9 :: SOMetaUnifRelFoId s
+factorize10_tid9 = relbwEqDGFoId factorize10_term9
+
+factorize10_soterm1 :: SOMetatermF
+factorize10_soterm1 = read "f1[1]"
+
+factorize10_sotid1 :: SOMetaUnifRelSoId s
+factorize10_sotid1 = relbwEqDGSoId factorize10_soterm1
+
+factorize10_soterm2 :: SOMetatermF
+factorize10_soterm2 = read "F0[1]"
+
+factorize10_sotid2 :: SOMetaUnifRelSoId s
+factorize10_sotid2 = relbwEqDGSoId factorize10_soterm2
+
+factorize10_soterm3 :: SOMetatermF
+factorize10_soterm3 = read "F1[1]"
+
+factorize10_sotid3 :: SOMetaUnifRelSoId s
+factorize10_sotid3 = relbwEqDGSoId factorize10_soterm3
+
+factorize10_soterm4 :: SOMetatermF
+factorize10_soterm4 = read "F2[1]"
+
+factorize10_sotid4 :: SOMetaUnifRelSoId s
+factorize10_sotid4 = relbwEqDGSoId factorize10_soterm4
+
+factorize10_soterm5 :: SOMetatermF
+factorize10_soterm5 = read "F3[1]"
+
+factorize10_sotid5 :: SOMetaUnifRelSoId s
+factorize10_sotid5 = relbwEqDGSoId factorize10_soterm5
+
+factorize10_soterm6 :: SOMetatermF
+factorize10_soterm6 = read "F4[1]"
+
+factorize10_sotid6 :: SOMetaUnifRelSoId s
+factorize10_sotid6 = relbwEqDGSoId factorize10_soterm6
+
+factorize10_exp1 :: SOMetaUnifSOExp
+factorize10_exp1 = read "f1[1]{F7[1]}"
+
+factorize10_exp2 :: SOMetaUnifSOExp
+factorize10_exp2 = read "pi0"
+
+factorize10_sig :: SOMetaSignature
+factorize10_sig = SOSignature (Signature [] [EnumProc.Empty, read "f1[1]" --> EnumProc.Empty] (read "x0" --> read "x1" --> read "x2" --> read "x3" --> read "x4" --> read "x5" --> read "x6" --> read "x7" --> read "x8" --> EnumProc.Empty)) (read "F0[1]" --> read "F1[1]" --> read "F2[1]" --> read "F3[1]" --> read "F4[1]" --> EnumProc.Empty)
+
+factorize10_mudg1 :: RSOMetaUnifDGraph
+factorize10_mudg1 = RESUnifVDGraph (snd <$> runStateT (mzoom lens_esunifdgraph_dgraph (do
+	{
+		newEqDGFOEdge factorize10_sotid2 [factorize10_tid1] factorize10_tid3;
+		newEqDGFOEdge factorize10_sotid3 [factorize10_tid2] factorize10_tid3;
+		newEqDGFOEdge factorize10_sotid4 [factorize10_tid3] factorize10_tid5;
+		newEqDGFOEdge factorize10_sotid1 [factorize10_tid4] factorize10_tid5;
+		newEqDGFOEdge factorize10_sotid5 [factorize10_tid8] factorize10_tid6;
+		newEqDGFOEdge factorize10_sotid6 [factorize10_tid9] factorize10_tid6;
+		newEqDGFOEdge factorize10_sotid1 [factorize10_tid5] factorize10_tid7;
+		newEqDGFOEdge factorize10_sotid1 [factorize10_tid6] factorize10_tid7
+	})) (emptyVDGraph factorize10_sig))
+
+factorize10_as1 :: AnswerSet RSOMetaUnifDGraph SOMetaUnifSysSolution
+factorize10_as1 = ImplicitAS factorize10_mudg1
+
+factorize10_as2 :: AnswerSet RSOMetaUnifDGraph SOMetaUnifSysSolution
+factorize10_as2 = metaunif_prenormalize factorize10_as1
+
+factorize10_as3 :: AnswerSet RSOMetaUnifDGraph SOMetaUnifSysSolution
+factorize10_as3 = metaunif_seminormalize factorize10_as1
+
+factorize10_as4 :: AnswerSet RSOMetaUnifDGraph SOMetaUnifSysSolution
+factorize10_as4 = metaunif_quasinormalize factorize10_as1
+
+factorize10_as5 :: AnswerSet RSOMetaUnifDGraph SOMetaUnifSysSolution
+factorize10_as5 = metaunif_normalize factorize10_as1
+
+factorize10_t1 :: AutomatedTest
+factorize10_t1 = check_exactly_as "Checking there is exactly one solution before" 1 factorize10_as1
+
+factorize10_t2 :: AutomatedTest
+factorize10_t2 = check_exactly_as "Checking there is exactly one solution after prenormalizing" 1 factorize10_as2
+
+factorize10_t3 :: AutomatedTest
+factorize10_t3 = check_exactly_as "Checking there is exactly one solution after seminormalizing" 1 factorize10_as3
+
+factorize10_t4 :: AutomatedTest
+factorize10_t4 = check_min_as "Checking there are at least two solutions after quasinormalizing" 2 factorize10_as4
+
+factorize10_t5 :: AutomatedTest
+factorize10_t5 = check_min_as "Checking there are at least five solutions after normalizing" 5 factorize10_as5
+
+-- These tests are fairly specific and informed by the algorithm results themselves, but this is unavoidable given the performance issues of the algorithm.
+factorize10_t6 :: AutomatedTest
+factorize10_t6 = check_all_resuvdg factorize10_tests_n "Checking that F0 is never equivalent to f{F7[1]} after seminormalizing" (\title -> \st -> check_not_soexp factorize10_sig title st factorize10_exp1 factorize10_soterm2) factorize10_as3
+
+factorize10_t7 :: AutomatedTest
+factorize10_t7 = check_all_resuvdg factorize10_tests_n "Checking that F0 is never equivalent to pi0 after seminormalizing" (\title -> \st -> check_not_soexp factorize10_sig title st factorize10_exp2 factorize10_soterm2) factorize10_as3
+
+factorize10_t8 :: AutomatedTest
+factorize10_t8 = check_any_resuvdg factorize10_tests_n "Checking that F0 is sometimes equivalent to f{F7[2]} after quasinormalizing" (\title -> \st -> check_soexp factorize10_sig title st factorize10_exp1 factorize10_soterm2) factorize10_as4
+
+factorize10_t9 :: AutomatedTest
+factorize10_t9 = check_any_resuvdg factorize10_tests_n "Checking that F0 is sometimes not equivalent to f{F7[2]} after quasinormalizing" (\title -> \st -> check_not_soexp factorize10_sig title st factorize10_exp1 factorize10_soterm2) factorize10_as4
+
+factorize10_t10 :: AutomatedTest
+factorize10_t10 = check_any_resuvdg factorize10_tests_n "Checking that F0 is sometimes equivalent to pi0 after quasinormalizing" (\title -> \st -> check_soexp factorize10_sig title st factorize10_exp2 factorize10_soterm2) factorize10_as4
+
+factorize10_t11 :: AutomatedTest
+factorize10_t11 = check_any_resuvdg factorize10_tests_n "Checking that F0 is sometimes not equivalent to pi0 after quasinormalizing" (\title -> \st -> check_not_soexp factorize10_sig title st factorize10_exp2 factorize10_soterm2) factorize10_as4
+
+factorize10_t12 :: AutomatedTest
+factorize10_t12 = check_any_resuvdg factorize10_tests_n "Checking that F0 is sometimes equivalent to f{F7[2]} after normalizing" (\title -> \st -> check_soexp factorize10_sig title st factorize10_exp1 factorize10_soterm2) factorize10_as5
+
+factorize10_t13 :: AutomatedTest
+factorize10_t13 = check_any_resuvdg factorize10_tests_n "Checking that F0 is sometimes not equivalent to f{F7[2]} after normalizing" (\title -> \st -> check_not_soexp factorize10_sig title st factorize10_exp1 factorize10_soterm2) factorize10_as5
+
+factorize10_t14 :: AutomatedTest
+factorize10_t14 = check_any_resuvdg factorize10_tests_n "Checking that F0 is sometimes equivalent to pi0 after normalizing" (\title -> \st -> check_soexp factorize10_sig title st factorize10_exp2 factorize10_soterm2) factorize10_as5
+
+factorize10_t15 :: AutomatedTest
+factorize10_t15 = check_any_resuvdg factorize10_tests_n "Checking that F0 is sometimes not equivalent to pi0 after normalizing" (\title -> \st -> check_not_soexp factorize10_sig title st factorize10_exp2 factorize10_soterm2) factorize10_as5
+
+factorize10_tests :: String
+factorize10_tests = combine_test_results [factorize10_t1,factorize10_t2,factorize10_t3,factorize10_t4,factorize10_t5,factorize10_t6,factorize10_t7,factorize10_t8,factorize10_t9,factorize10_t10,factorize10_t11,factorize10_t12,factorize10_t13,factorize10_t14,factorize10_t15]
+
+factorize11_tests_n :: Int
+factorize11_tests_n = 1000
+
+factorize11_soterm1 :: SOMetatermF
+factorize11_soterm1 = read "f1[1]"
+
+factorize11_sotid1 :: SOMetaUnifRelSoId s
+factorize11_sotid1 = relbwEqDGSoId factorize11_soterm1
+
+factorize11_soterm2 :: SOMetatermF
+factorize11_soterm2 = read "F0[1]"
+
+factorize11_sotid2 :: SOMetaUnifRelSoId s
+factorize11_sotid2 = relbwEqDGSoId factorize11_soterm2
+
+factorize11_soterm3 :: SOMetatermF
+factorize11_soterm3 = read "pi0"
+
+factorize11_sotid3 :: SOMetaUnifRelSoId s
+factorize11_sotid3 = relbwEqDGSoId factorize11_soterm3
+
+factorize11_sig :: SOMetaSignature
+factorize11_sig = SOSignature (Signature [] [EnumProc.Empty, read "f1[1]" --> EnumProc.Empty] EnumProc.Empty) (read "F0[1]" --> EnumProc.Empty)
+
+factorize11_mudg1 :: RSOMetaUnifDGraph
+factorize11_mudg1 = RESUnifVDGraph (snd <$> runStateT (mzoom lens_esunifdgraph_dgraph (do
+	{
+		newEqDGSOEdge factorize11_sotid2 [factorize11_sotid1] factorize11_sotid1		
+	})) (emptyVDGraph factorize11_sig))
+
+factorize11_as1 :: AnswerSet RSOMetaUnifDGraph SOMetaUnifSysSolution
+factorize11_as1 = ImplicitAS factorize11_mudg1
+
+factorize11_as2 :: AnswerSet RSOMetaUnifDGraph SOMetaUnifSysSolution
+factorize11_as2 = metaunif_prenormalize factorize11_as1
+
+factorize11_as3 :: AnswerSet RSOMetaUnifDGraph SOMetaUnifSysSolution
+factorize11_as3 = metaunif_seminormalize factorize11_as1
+
+factorize11_as4 :: AnswerSet RSOMetaUnifDGraph SOMetaUnifSysSolution
+factorize11_as4 = metaunif_quasinormalize factorize11_as1
+
+factorize11_as5 :: AnswerSet RSOMetaUnifDGraph SOMetaUnifSysSolution
+factorize11_as5 = metaunif_normalize factorize11_as1
+
+factorize11_t1 :: AutomatedTest
+factorize11_t1 = check_exactly_as "Checking there is exactly one solution before" 1 factorize11_as1
+
+factorize11_t2 :: AutomatedTest
+factorize11_t2 = check_exactly_as "Checking there is exactly one solution after prenormalizing" 1 factorize11_as2
+
+factorize11_t3 :: AutomatedTest
+factorize11_t3 = check_exactly_as "Checking there is exactly one solution after seminormalizing" 1 factorize11_as3
+
+factorize11_t4 :: AutomatedTest
+factorize11_t4 = check_exactly_as "Checking there is exactly one solution after quasinormalizing" 1 factorize11_as4
+
+factorize11_t5 :: AutomatedTest
+factorize11_t5 = check_exactly_as "Checking there is exactly one solution after normalizing" 1 factorize11_as5
+
+factorize11_t6 :: AutomatedTest
+factorize11_t6 = check_all_resuvdg factorize11_tests_n "Checking that F0 is never equivalent to pi0 before" (\title -> \st -> check_not_soequiv factorize11_sig title st factorize11_soterm2 factorize11_soterm3) factorize11_as1
+
+factorize11_t7 :: AutomatedTest
+factorize11_t7 = check_all_resuvdg factorize11_tests_n "Checking that F0 is never equivalent to pi0 after prenormalizing" (\title -> \st -> check_not_soequiv factorize11_sig title st factorize11_soterm2 factorize11_soterm3) factorize11_as2
+
+factorize11_t8 :: AutomatedTest
+factorize11_t8 = check_all_resuvdg factorize11_tests_n "Checking that F0 is never equivalent to pi0 after seminormalizing" (\title -> \st -> check_not_soequiv factorize11_sig title st factorize11_soterm2 factorize11_soterm3) factorize11_as3
+
+factorize11_t9 :: AutomatedTest
+factorize11_t9 = check_all_resuvdg factorize11_tests_n "Checking that F0 is always equivalent to pi0 after quasinormalizing" (\title -> \st -> check_soequiv factorize11_sig title st factorize11_soterm2 factorize11_soterm3) factorize11_as4
+
+factorize11_t10 :: AutomatedTest
+factorize11_t10 = check_all_resuvdg factorize11_tests_n "Checking that F0 is always equivalent to pi0 after normalizing" (\title -> \st -> check_soequiv factorize11_sig title st factorize11_soterm2 factorize11_soterm3) factorize11_as5
+
+factorize11_tests :: String
+factorize11_tests = combine_test_results [factorize11_t1,factorize11_t2,factorize11_t3,factorize11_t4,factorize11_t5,factorize11_t6,factorize11_t7,factorize11_t8,factorize11_t9,factorize11_t10]
+
+factorize12_tests_n :: Int
+factorize12_tests_n = 1000
+
+factorize12_soterm1 :: SOMetatermF
+factorize12_soterm1 = read "f1[1]"
+
+factorize12_sotid1 :: SOMetaUnifRelSoId s
+factorize12_sotid1 = relbwEqDGSoId factorize12_soterm1
+
+factorize12_soterm2 :: SOMetatermF
+factorize12_soterm2 = read "F0[1]"
+
+factorize12_sotid2 :: SOMetaUnifRelSoId s
+factorize12_sotid2 = relbwEqDGSoId factorize12_soterm2
+
+factorize12_soterm3 :: SOMetatermF
+factorize12_soterm3 = read "f2[1]"
+
+factorize12_sotid3 :: SOMetaUnifRelSoId s
+factorize12_sotid3 = relbwEqDGSoId factorize12_soterm3
+
+factorize12_sig :: SOMetaSignature
+factorize12_sig = SOSignature (Signature [] [EnumProc.Empty, read "f1[1]" --> read "f2[1]" --> EnumProc.Empty] EnumProc.Empty) (read "F0[1]" --> EnumProc.Empty)
+
+factorize12_mudg1 :: RSOMetaUnifDGraph
+factorize12_mudg1 = RESUnifVDGraph (snd <$> runStateT (mzoom lens_esunifdgraph_dgraph (do
+	{
+		newEqDGSOEdge factorize12_sotid2 [factorize12_sotid3] factorize12_sotid1		
+	})) (emptyVDGraph factorize12_sig))
+
+factorize12_as1 :: AnswerSet RSOMetaUnifDGraph SOMetaUnifSysSolution
+factorize12_as1 = ImplicitAS factorize12_mudg1
+
+factorize12_as2 :: AnswerSet RSOMetaUnifDGraph SOMetaUnifSysSolution
+factorize12_as2 = metaunif_prenormalize factorize12_as1
+
+factorize12_as3 :: AnswerSet RSOMetaUnifDGraph SOMetaUnifSysSolution
+factorize12_as3 = metaunif_seminormalize factorize12_as1
+
+factorize12_as4 :: AnswerSet RSOMetaUnifDGraph SOMetaUnifSysSolution
+factorize12_as4 = metaunif_quasinormalize factorize12_as1
+
+factorize12_as5 :: AnswerSet RSOMetaUnifDGraph SOMetaUnifSysSolution
+factorize12_as5 = metaunif_normalize factorize12_as1
+
+factorize12_t1 :: AutomatedTest
+factorize12_t1 = check_exactly_as "Checking there is exactly one solution before" 1 factorize12_as1
+
+factorize12_t2 :: AutomatedTest
+factorize12_t2 = check_exactly_as "Checking there is exactly one solution after prenormalizing" 1 factorize12_as2
+
+factorize12_t3 :: AutomatedTest
+factorize12_t3 = check_exactly_as "Checking there is exactly one solution after seminormalizing" 1 factorize12_as3
+
+factorize12_t4 :: AutomatedTest
+factorize12_t4 = check_exactly_as "Checking there are no solutions after quasinormalizing" 0 factorize12_as4
+
+factorize12_t5 :: AutomatedTest
+factorize12_t5 = check_exactly_as "Checking there are no solutions after normalizing" 0 factorize12_as5
+
+factorize12_tests :: String
+factorize12_tests = combine_test_results [factorize12_t1,factorize12_t2,factorize12_t3,factorize12_t4,factorize12_t5]
+
+factorize13_tests_n :: Int
+factorize13_tests_n = 1000
+
+factorize13_soterm1 :: SOMetatermF
+factorize13_soterm1 = read "f1[1]"
+
+factorize13_sotid1 :: SOMetaUnifRelSoId s
+factorize13_sotid1 = relbwEqDGSoId factorize13_soterm1
+
+factorize13_soterm2 :: SOMetatermF
+factorize13_soterm2 = read "F0[1]"
+
+factorize13_sotid2 :: SOMetaUnifRelSoId s
+factorize13_sotid2 = relbwEqDGSoId factorize13_soterm2
+
+factorize13_soterm3 :: SOMetatermF
+factorize13_soterm3 = read "pi0"
+
+factorize13_sotid3 :: SOMetaUnifRelSoId s
+factorize13_sotid3 = relbwEqDGSoId factorize13_soterm3
+
+factorize13_sig :: SOMetaSignature
+factorize13_sig = SOSignature (Signature [] [EnumProc.Empty, read "f1[1]" --> EnumProc.Empty] EnumProc.Empty) (read "F0[1]" --> EnumProc.Empty)
+
+factorize13_mudg1 :: RSOMetaUnifDGraph
+factorize13_mudg1 = RESUnifVDGraph (snd <$> runStateT (mzoom lens_esunifdgraph_dgraph (do
+	{
+		newEqDGSOEdge factorize13_sotid1 [factorize13_sotid2] factorize13_sotid1		
+	})) (emptyVDGraph factorize13_sig))
+
+factorize13_as1 :: AnswerSet RSOMetaUnifDGraph SOMetaUnifSysSolution
+factorize13_as1 = ImplicitAS factorize13_mudg1
+
+factorize13_as2 :: AnswerSet RSOMetaUnifDGraph SOMetaUnifSysSolution
+factorize13_as2 = metaunif_prenormalize factorize13_as1
+
+factorize13_as3 :: AnswerSet RSOMetaUnifDGraph SOMetaUnifSysSolution
+factorize13_as3 = metaunif_seminormalize factorize13_as1
+
+factorize13_as4 :: AnswerSet RSOMetaUnifDGraph SOMetaUnifSysSolution
+factorize13_as4 = metaunif_quasinormalize factorize13_as1
+
+factorize13_as5 :: AnswerSet RSOMetaUnifDGraph SOMetaUnifSysSolution
+factorize13_as5 = metaunif_normalize factorize13_as1
+
+factorize13_t1 :: AutomatedTest
+factorize13_t1 = check_exactly_as "Checking there is exactly one solution before" 1 factorize13_as1
+
+factorize13_t2 :: AutomatedTest
+factorize13_t2 = check_exactly_as "Checking there is exactly one solution after prenormalizing" 1 factorize13_as2
+
+factorize13_t3 :: AutomatedTest
+factorize13_t3 = check_exactly_as "Checking there is exactly one solution after seminormalizing" 1 factorize13_as3
+
+factorize13_t4 :: AutomatedTest
+factorize13_t4 = check_exactly_as "Checking there is exactly one solution after quasinormalizing" 1 factorize13_as4
+
+factorize13_t5 :: AutomatedTest
+factorize13_t5 = check_exactly_as "Checking there is exactly one solution after normalizing" 1 factorize13_as5
+
+factorize13_t6 :: AutomatedTest
+factorize13_t6 = check_all_resuvdg factorize13_tests_n "Checking that F0 is never equivalent to pi0 before" (\title -> \st -> check_not_soequiv factorize13_sig title st factorize13_soterm2 factorize13_soterm3) factorize13_as1
+
+factorize13_t7 :: AutomatedTest
+factorize13_t7 = check_all_resuvdg factorize13_tests_n "Checking that F0 is never equivalent to pi0 after prenormalizing" (\title -> \st -> check_not_soequiv factorize13_sig title st factorize13_soterm2 factorize13_soterm3) factorize13_as2
+
+factorize13_t8 :: AutomatedTest
+factorize13_t8 = check_all_resuvdg factorize13_tests_n "Checking that F0 is never equivalent to pi0 after seminormalizing" (\title -> \st -> check_not_soequiv factorize13_sig title st factorize13_soterm2 factorize13_soterm3) factorize13_as3
+
+factorize13_t9 :: AutomatedTest
+factorize13_t9 = check_all_resuvdg factorize13_tests_n "Checking that F0 is always equivalent to pi0 after quasinormalizing" (\title -> \st -> check_soequiv factorize13_sig title st factorize13_soterm2 factorize13_soterm3) factorize13_as4
+
+factorize13_t10 :: AutomatedTest
+factorize13_t10 = check_all_resuvdg factorize13_tests_n "Checking that F0 is always equivalent to pi0 after normalizing" (\title -> \st -> check_soequiv factorize13_sig title st factorize13_soterm2 factorize13_soterm3) factorize13_as5
+
+factorize13_tests :: String
+factorize13_tests = combine_test_results [factorize13_t1,factorize13_t2,factorize13_t3,factorize13_t4,factorize13_t5,factorize13_t6,factorize13_t7,factorize13_t8,factorize13_t9,factorize13_t10]
+
+factorize14_tests_n :: Int
+factorize14_tests_n = 1000
+
+factorize14_soterm1 :: SOMetatermF
+factorize14_soterm1 = read "f1[1]"
+
+factorize14_sotid1 :: SOMetaUnifRelSoId s
+factorize14_sotid1 = relbwEqDGSoId factorize14_soterm1
+
+factorize14_soterm2 :: SOMetatermF
+factorize14_soterm2 = read "F0[1]"
+
+factorize14_sotid2 :: SOMetaUnifRelSoId s
+factorize14_sotid2 = relbwEqDGSoId factorize14_soterm2
+
+factorize14_soterm3 :: SOMetatermF
+factorize14_soterm3 = read "F1[1]"
+
+factorize14_sotid3 :: SOMetaUnifRelSoId s
+factorize14_sotid3 = relbwEqDGSoId factorize14_soterm3
+
+factorize14_soterm4 :: SOMetatermF
+factorize14_soterm4 = read "pi0"
+
+factorize14_sotid4 :: SOMetaUnifRelSoId s
+factorize14_sotid4 = relbwEqDGSoId factorize14_soterm4
+
+factorize14_exp1 :: SOMetaUnifSOExp
+factorize14_exp1 = read "f1[1]{pi0}"
+
+factorize14_sig :: SOMetaSignature
+factorize14_sig = SOSignature (Signature [] [EnumProc.Empty, read "f1[1]" --> EnumProc.Empty] EnumProc.Empty) (read "F0[1]" --> read "F1[1]" --> EnumProc.Empty)
+
+factorize14_mudg1 :: RSOMetaUnifDGraph
+factorize14_mudg1 = RESUnifVDGraph (snd <$> runStateT (mzoom lens_esunifdgraph_dgraph (do
+	{
+		newEqDGSOEdge factorize14_sotid2 [factorize14_sotid3] factorize14_sotid1		
+	})) (emptyVDGraph factorize14_sig))
+
+factorize14_as1 :: AnswerSet RSOMetaUnifDGraph SOMetaUnifSysSolution
+factorize14_as1 = ImplicitAS factorize14_mudg1
+
+factorize14_as2 :: AnswerSet RSOMetaUnifDGraph SOMetaUnifSysSolution
+factorize14_as2 = metaunif_prenormalize factorize14_as1
+
+factorize14_as3 :: AnswerSet RSOMetaUnifDGraph SOMetaUnifSysSolution
+factorize14_as3 = metaunif_seminormalize factorize14_as1
+
+factorize14_as4 :: AnswerSet RSOMetaUnifDGraph SOMetaUnifSysSolution
+factorize14_as4 = metaunif_quasinormalize factorize14_as1
+
+factorize14_as5 :: AnswerSet RSOMetaUnifDGraph SOMetaUnifSysSolution
+factorize14_as5 = metaunif_normalize factorize14_as1
+
+factorize14_t1 :: AutomatedTest
+factorize14_t1 = check_exactly_as "Checking there is exactly one solution before" 1 factorize14_as1
+
+factorize14_t2 :: AutomatedTest
+factorize14_t2 = check_exactly_as "Checking there is exactly one solution after prenormalizing" 1 factorize14_as2
+
+factorize14_t3 :: AutomatedTest
+factorize14_t3 = check_exactly_as "Checking there is exactly one solution after seminormalizing" 1 factorize14_as3
+
+factorize14_t4 :: AutomatedTest
+factorize14_t4 = check_exactly_as "Checking there are exactly two solutions after quasinormalizing" 2 factorize14_as4
+
+factorize14_t5 :: AutomatedTest
+factorize14_t5 = check_exactly_as "Checking there are exactly two solutions after normalizing" 2 factorize14_as5
+
+factorize14_t6 :: AutomatedTest
+factorize14_t6 = check_all_resuvdg factorize14_tests_n "Checking that F0 is never equivalent to pi0 before" (\title -> \st -> check_not_soequiv factorize14_sig title st factorize14_soterm2 factorize14_soterm4) factorize14_as1
+
+factorize14_t7 :: AutomatedTest
+factorize14_t7 = check_all_resuvdg factorize14_tests_n "Checking that F0 is never equivalent to f before" (\title -> \st -> check_not_soexp factorize14_sig title st factorize14_exp1 factorize14_soterm2) factorize14_as1
+
+factorize14_t8 :: AutomatedTest
+factorize14_t8 = check_all_resuvdg factorize14_tests_n "Checking that F1 is never equivalent to pi0 before" (\title -> \st -> check_not_soequiv factorize14_sig title st factorize14_soterm3 factorize14_soterm4) factorize14_as1
+
+factorize14_t9 :: AutomatedTest
+factorize14_t9 = check_all_resuvdg factorize14_tests_n "Checking that F1 is never equivalent to f before" (\title -> \st -> check_not_soexp factorize14_sig title st factorize14_exp1 factorize14_soterm3) factorize14_as1
+
+factorize14_t10 :: AutomatedTest
+factorize14_t10 = check_all_resuvdg factorize14_tests_n "Checking that F0 is never equivalent to pi0 after prenormalizing" (\title -> \st -> check_not_soequiv factorize14_sig title st factorize14_soterm2 factorize14_soterm4) factorize14_as2
+
+factorize14_t11 :: AutomatedTest
+factorize14_t11 = check_all_resuvdg factorize14_tests_n "Checking that F0 is never equivalent to f after prenormalizing" (\title -> \st -> check_not_soexp factorize14_sig title st factorize14_exp1 factorize14_soterm2) factorize14_as2
+
+factorize14_t12 :: AutomatedTest
+factorize14_t12 = check_all_resuvdg factorize14_tests_n "Checking that F1 is never equivalent to pi0 after prenormalizing" (\title -> \st -> check_not_soequiv factorize14_sig title st factorize14_soterm3 factorize14_soterm4) factorize14_as2
+
+factorize14_t13 :: AutomatedTest
+factorize14_t13 = check_all_resuvdg factorize14_tests_n "Checking that F1 is never equivalent to f after prenormalizing" (\title -> \st -> check_not_soexp factorize14_sig title st factorize14_exp1 factorize14_soterm3) factorize14_as2
+
+factorize14_t14 :: AutomatedTest
+factorize14_t14 = check_all_resuvdg factorize14_tests_n "Checking that F0 is never equivalent to pi0 after seminormalizing" (\title -> \st -> check_not_soequiv factorize14_sig title st factorize14_soterm2 factorize14_soterm4) factorize14_as3
+
+factorize14_t15 :: AutomatedTest
+factorize14_t15 = check_all_resuvdg factorize14_tests_n "Checking that F0 is never equivalent to f after seminormalizing" (\title -> \st -> check_not_soexp factorize14_sig title st factorize14_exp1 factorize14_soterm2) factorize14_as3
+
+factorize14_t16 :: AutomatedTest
+factorize14_t16 = check_all_resuvdg factorize14_tests_n "Checking that F1 is never equivalent to pi0 after seminormalizing" (\title -> \st -> check_not_soequiv factorize14_sig title st factorize14_soterm3 factorize14_soterm4) factorize14_as3
+
+factorize14_t17 :: AutomatedTest
+factorize14_t17 = check_all_resuvdg factorize14_tests_n "Checking that F1 is never equivalent to f after seminormalizing" (\title -> \st -> check_not_soexp factorize14_sig title st factorize14_exp1 factorize14_soterm3) factorize14_as3
+
+factorize14_t18 :: AutomatedTest
+factorize14_t18 = check_any_resuvdg factorize14_tests_n "Checking that F0 is sometimes equivalent to pi0 after quasinormalizing" (\title -> \st -> check_soequiv factorize14_sig title st factorize14_soterm2 factorize14_soterm4) factorize14_as4
+
+factorize14_t19 :: AutomatedTest
+factorize14_t19 = check_any_resuvdg factorize14_tests_n "Checking that F0 is sometimes not equivalent to pi0 after quasinormalizing" (\title -> \st -> check_not_soequiv factorize14_sig title st factorize14_soterm2 factorize14_soterm4) factorize14_as4
+
+factorize14_t20 :: AutomatedTest
+factorize14_t20 = check_any_resuvdg factorize14_tests_n "Checking that F0 is sometimes equivalent to f after quasinormalizing" (\title -> \st -> check_soexp factorize14_sig title st factorize14_exp1 factorize14_soterm2) factorize14_as4
+
+factorize14_t21 :: AutomatedTest
+factorize14_t21 = check_any_resuvdg factorize14_tests_n "Checking that F0 is sometimes not equivalent to f after quasinormalizing" (\title -> \st -> check_not_soexp factorize14_sig title st factorize14_exp1 factorize14_soterm2) factorize14_as4
+
+factorize14_t22 :: AutomatedTest
+factorize14_t22 = check_any_resuvdg factorize14_tests_n "Checking that F1 is sometimes equivalent to pi0 after quasinormalizing" (\title -> \st -> check_soequiv factorize14_sig title st factorize14_soterm3 factorize14_soterm4) factorize14_as4
+
+factorize14_t23 :: AutomatedTest
+factorize14_t23 = check_any_resuvdg factorize14_tests_n "Checking that F1 is sometimes not equivalent to pi0 after quasinormalizing" (\title -> \st -> check_not_soequiv factorize14_sig title st factorize14_soterm3 factorize14_soterm4) factorize14_as4
+
+factorize14_t24 :: AutomatedTest
+factorize14_t24 = check_any_resuvdg factorize14_tests_n "Checking that F0 is sometimes equivalent to f after quasinormalizing" (\title -> \st -> check_soexp factorize14_sig title st factorize14_exp1 factorize14_soterm3) factorize14_as4
+
+factorize14_t25 :: AutomatedTest
+factorize14_t25 = check_any_resuvdg factorize14_tests_n "Checking that F0 is sometimes not equivalent to f after quasinormalizing" (\title -> \st -> check_not_soexp factorize14_sig title st factorize14_exp1 factorize14_soterm3) factorize14_as4
+
+factorize14_t26 :: AutomatedTest
+factorize14_t26 = check_any_resuvdg factorize14_tests_n "Checking that F0 is sometimes equivalent to pi0 after normalizing" (\title -> \st -> check_soequiv factorize14_sig title st factorize14_soterm2 factorize14_soterm4) factorize14_as5
+
+factorize14_t27 :: AutomatedTest
+factorize14_t27 = check_any_resuvdg factorize14_tests_n "Checking that F0 is sometimes not equivalent to pi0 after normalizing" (\title -> \st -> check_not_soequiv factorize14_sig title st factorize14_soterm2 factorize14_soterm4) factorize14_as5
+
+factorize14_t28 :: AutomatedTest
+factorize14_t28 = check_any_resuvdg factorize14_tests_n "Checking that F0 is sometimes equivalent to f after normalizing" (\title -> \st -> check_soexp factorize14_sig title st factorize14_exp1 factorize14_soterm2) factorize14_as5
+
+factorize14_t29 :: AutomatedTest
+factorize14_t29 = check_any_resuvdg factorize14_tests_n "Checking that F0 is sometimes not equivalent to f after normalizing" (\title -> \st -> check_not_soexp factorize14_sig title st factorize14_exp1 factorize14_soterm2) factorize14_as5
+
+factorize14_t30 :: AutomatedTest
+factorize14_t30 = check_any_resuvdg factorize14_tests_n "Checking that F1 is sometimes equivalent to pi0 after normalizing" (\title -> \st -> check_soequiv factorize14_sig title st factorize14_soterm3 factorize14_soterm4) factorize14_as5
+
+factorize14_t31 :: AutomatedTest
+factorize14_t31 = check_any_resuvdg factorize14_tests_n "Checking that F1 is sometimes not equivalent to pi0 after normalizing" (\title -> \st -> check_not_soequiv factorize14_sig title st factorize14_soterm3 factorize14_soterm4) factorize14_as5
+
+factorize14_t32 :: AutomatedTest
+factorize14_t32 = check_any_resuvdg factorize14_tests_n "Checking that F0 is sometimes equivalent to f after normalizing" (\title -> \st -> check_soexp factorize14_sig title st factorize14_exp1 factorize14_soterm3) factorize14_as5
+
+factorize14_t33 :: AutomatedTest
+factorize14_t33 = check_any_resuvdg factorize14_tests_n "Checking that F0 is sometimes not equivalent to f after normalizing" (\title -> \st -> check_not_soexp factorize14_sig title st factorize14_exp1 factorize14_soterm3) factorize14_as5
+
+factorize14_tests :: String
+factorize14_tests = combine_test_results [factorize14_t1,factorize14_t2,factorize14_t3,factorize14_t4,factorize14_t5,factorize14_t6,factorize14_t7,factorize14_t8,factorize14_t9,factorize14_t10,factorize14_t11,factorize14_t12,factorize14_t13,factorize14_t14,factorize14_t15,factorize14_t16,factorize14_t17,factorize14_t18,factorize14_t19,factorize14_t20,factorize14_t21,factorize14_t22,factorize14_t23,factorize14_t24,factorize14_t25,factorize14_t26,factorize14_t27,factorize14_t28,factorize14_t29,factorize14_t30,factorize14_t31,factorize14_t32,factorize14_t33]
+
 
 
 factorize_test :: IO ()
@@ -3682,8 +4278,13 @@ factorize_test = putStr "EXAMPLE 1\n\n" >> putStr factorize1_tests >>
 		putStr "EXAMPLE 5\n\n" >> putStr factorize5_tests >>
 		putStr "EXAMPLE 6\n\n" >> putStr factorize6_tests >>
 		putStr "EXAMPLE 7\n\n" >> putStr factorize7_tests >>
-		putStr "EXAMPLE 8\n\n" >> putStr factorize8_tests -- >>
---		putStr "EXAMPLE 9\n\n" >> putStr factorize9_tests
+		putStr "EXAMPLE 8\n\n" >> putStr factorize8_tests >>
+		putStr "EXAMPLE 9\n\n" >> putStr factorize9_tests >>
+		putStr "EXAMPLE 10\n\n" >> putStr factorize10_tests >>
+		putStr "EXAMPLE 11\n\n" >> putStr factorize11_tests >>
+		putStr "EXAMPLE 12\n\n" >> putStr factorize12_tests >>
+		putStr "EXAMPLE 13\n\n" >> putStr factorize13_tests >>
+		putStr "EXAMPLE 14\n\n" >> putStr factorize14_tests
 
 
 

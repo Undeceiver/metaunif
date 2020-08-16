@@ -29,6 +29,7 @@ import Control.Monad.Morph
 import Data.PQueue.Min
 import Data.Tuple
 import Debug.Trace
+import GlobalTrace
 
 -- Less priority means it gets executed first.
 -- An important decision that we made is to inherit the unspecified order for elements which are in the same equivalence class. That is, not necessarily respecting insertion order when running operations.
@@ -91,11 +92,15 @@ class (Ord op, Monad m) => StateTOperation m op s | op -> s where
 runNextStateTOp :: StateTOperation m op s => StateT (Operating op s) m ()
 runNextStateTOp = StateT (\(Operating s q) -> do
 	{
+		gtraceM False "RUNNING OPERATION";
+		gtraceM False ("Size before: " ++ (show (Data.PQueue.Min.size q)));
 		let {mb_rs = Data.PQueue.Min.minView q};
 		let {(nextop,rq) = fromJust mb_rs};
 		(rops,rs) <- runStateT (runStateTOp nextop) s;
 		let {rrq = Data.List.foldr Data.PQueue.Min.insert rq rops};
-		if (isNothing mb_rs) then (return ((),Operating s q)) else (return ((),Operating rs rrq))
+		r <- (if (isNothing mb_rs) then (return ((),Operating s q)) else (return ((),Operating rs rrq)));
+		gtraceM False ("Size after: " ++ (show (Data.PQueue.Min.size rrq)));
+		return r
 	})
 
 runAllStateTOps :: StateTOperation m op s => StateT (Operating op s) m ()
