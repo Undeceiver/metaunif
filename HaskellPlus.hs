@@ -30,6 +30,7 @@ import Control.Applicative
 import Control.Monad.State
 import Control.Monad.ST
 import Data.Functor.Compose
+import Data.UnionFind.ST
 
 -- Here I put functions/types that I feel should be part of Haskell but aren't. It is likely that at least half of them ACTUALLY are part of Haskell, but I wasn't smart enough to find them.
 
@@ -610,3 +611,18 @@ getStateTSTValue stst x = runST (fst <$> (runStateT stst x))
 
 
 
+
+trim_char :: Char -> String -> String
+trim_char c = f . f
+   where f = reverse . dropWhile (== c)
+
+trim :: String -> String
+trim = trim_char ' '
+
+
+check_union :: Point s a -> Point s a -> ST s ()
+check_union lpt rpt = do
+	{
+		r <- equivalent lpt rpt;
+		if r then (return ()) else (Data.UnionFind.ST.union lpt rpt)
+	}

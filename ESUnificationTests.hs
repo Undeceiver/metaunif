@@ -4299,3 +4299,14 @@ dgraphop_test = putStr "VERTICAL COMMUTE TESTS\n\n" >> vcommute_test >>
 		putStr "TARGET ARITY TESTS\n\n" >> target_arity_test >>
 		putStr "OCCURS CHECK TESTS\n\n" >> occurs_check_test >>
 		putStr "FACTORIZATION TESTS\n\n" >> factorize_test
+
+
+
+unifsys1_sig :: SOMetaSignature
+unifsys1_sig = SOSignature (Signature [] [EnumProc.Empty, read "f0[1]" --> EnumProc.Empty] (read "x0" --> read "x1" --> EnumProc.Empty)) (read "F0[1]" --> EnumProc.Empty)
+
+unifsys1_eq1 :: SOMetaUnifEquation
+unifsys1_eq1 = read "u0 x0 = u0 F0[1](x1)"
+
+unifsys1_sys :: SOMetaUnifSystem
+unifsys1_sys = USys unifsys1_sig [unifsys1_eq1]

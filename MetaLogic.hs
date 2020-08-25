@@ -31,6 +31,7 @@ import Syntax
 import ObjectLogic
 import Data.Functor.Fixedpoint
 import Data.List
+import Data.Maybe
 import QueryLogic
 import CESQLogic
 import ESUnification
@@ -352,6 +353,14 @@ type SOMetaUnifRelFoId s = ESUnifRelFoId s CTermF OFunction OVariable SOMVariabl
 type SOMetaUnifRelSoId s = ESUnifRelSoId s CTermF OFunction OVariable SOMVariable UnifVariable
 type RSOMetaUnifDGraph = RESUnifVDGraph CTermF OPredicate OFunction OVariable SOMVariable UnifVariable
 type SOMetaUnifSysSolution = UnifSysSolution OFunction SOMVariable
+type SOMetaUnifEquation = UnifEquation CTermF OFunction OVariable SOMVariable UnifVariable
+type SOMetaUnifSystem = FullUnifSystem CTermF OPredicate OFunction OVariable SOMVariable UnifVariable
+
+-- This could be done better using readsPrec
+instance Read SOMetaUnifEquation where
+	readsPrec _ xs = if (isNothing mb_eqidx) then (error "The equation has no '=' symbol!") else [(TermUnif (read (trim pre)) (read (trim post)),[])]
+		where mb_eqidx = Data.List.findIndex (== '=') xs; eqidx = fromJust mb_eqidx; (pre,(_:post)) = Data.List.splitAt eqidx xs
+
 
 metaunif_vertical_commute :: StateT (SOMetaUnifDGraph s) (ST s) ()
 metaunif_vertical_commute = esu_vertical_commute
