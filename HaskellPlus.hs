@@ -410,10 +410,12 @@ class Normalizable a n | a -> n, n -> a where
 (~~) :: (Normalizable a n, Eq n) => a -> a -> Bool
 x1 ~~ x2 = (normalize x1) == (normalize x2)
 
-newtype NormalizedFunctor (f :: * -> *) (t :: *) = NormalizedFunctor {fromNormalizedFunctor :: f t}
+newtype NormalizedFunctor (f :: * -> *) (t :: *) = NormalizedFunctor {fromNormalizedFunctor :: f t} deriving Eq
 instance (Functor f, Normalizable a b) => Normalizable (NormalizedFunctor f a) (NormalizedFunctor f b) where
 	inject_normal = NormalizedFunctor . (fmap inject_normal) . fromNormalizedFunctor
 	normalize = NormalizedFunctor. (fmap normalize) . fromNormalizedFunctor
+
+
 
 -- Mapping a set of results to a set of arguments in something that is similar to a functional.
 type (v := r) = Map v r
@@ -626,3 +628,14 @@ check_union lpt rpt = do
 		r <- equivalent lpt rpt;
 		if r then (return ()) else (Data.UnionFind.ST.union lpt rpt)
 	}
+
+
+
+errAt :: String -> [a] -> Int -> a
+errAt str [] _ = error str
+errAt str (x:xs) i | i <= 0 = x
+errAt str (x:xs) i = errAt str xs (i-1)
+
+headErr :: String -> [a] -> a
+headErr str [] = error str
+headErr str (x:xs) = x

@@ -139,6 +139,29 @@ show_unifsolution ((v,gt):ts) sots = (show v) ++ " -> " ++ (show gt) ++ "\n" ++ 
 -- TODO: Note that we will need to extend this to add predicate variables.
 type UnifSysSolution fn sov = sov := GroundSOT fn
 
+check_ueq_usol :: ESMGUConstraintsU t pd fn v sov uv => UnifSysSolution fn sov -> UnifEquation t fn v sov uv -> Bool
+check_ueq_usol usol ueq = ltd == rtd where (TermUnif ltd rtd) = apply_usol usol ueq
+
+check_usys_usol :: ESMGUConstraintsU t pd fn v sov uv => UnifSysSolution fn sov -> UnifSystem t fn v sov uv -> Bool
+check_usys_usol usol usys = all (check_ueq_usol usol) usys
+
+instance ESMGUConstraintsU t pd fn v sov uv => Substitutable (TermDependant t fn v sov uv) sov (SOTerm fn sov) where
+	subst sov sot (TDDirect somw) = TDDirect (subst sov sot somw)
+	subst sov sot (TDUnif uv td) = TDUnif uv (subst sov sot td)
+
+instance ESMGUConstraintsU t pd fn v sov uv => Substitutable (TermDependant t fn v sov uv) sov (GroundSOT fn) where
+	subst sov sot (TDDirect somw) = TDDirect (subst sov sot somw)
+	subst sov sot (TDUnif uv td) = TDUnif uv (subst sov sot td)
+
+instance ESMGUConstraintsU t pd fn v sov uv => Substitutable (UnifEquation t fn v sov uv) sov (SOTerm fn sov) where
+	subst sov sot (TermUnif ltd rtd) = TermUnif (subst sov sot ltd) (subst sov sot rtd)
+
+instance ESMGUConstraintsU t pd fn v sov uv => Substitutable (UnifEquation t fn v sov uv) sov (GroundSOT fn) where
+	subst sov sot (TermUnif ltd rtd) = TermUnif (subst sov sot ltd) (subst sov sot rtd)
+
+apply_usol :: Substitutable t sov (GroundSOT fn) => UnifSysSolution fn sov -> t -> t
+apply_usol = subst_all
+
 -- A system of equations is a highly implicit solution to a system of unification equations
 instance ESMGUConstraintsU t pd fn v sov uv => Implicit (FullUnifSystem t pd fn v sov uv) (UnifSysSolution fn sov) where
 	checkImplicit usys usol = checkImplicit resuvdg usol where sig = us_sig usys; resuvdg = doRESUnifVDGraph sig (dgraph_from_usys sig (us_eqs usys))
@@ -476,9 +499,9 @@ extract_sov_value nodeid = do
 			ines <- mzoom lens_esunifdgraph_dgraph (st_searchInEqDGSOEdges [] [] nodeid);
 			if ((length ines) /= 1) then do
 			{
-				gtraceM True "Tracing error situation";
+				gtraceM False "Tracing error situation";
 				str <- show_esuvdg;
-				gtraceM True str;
+				gtraceM False str;
 				error ("Trying to extract second-order variable from a node with " ++ (show (length ines)) ++ " incoming edges (and no equivalent constant).")
 			}
 			else do
@@ -510,9 +533,9 @@ enumerate_all_root_sovs_esuvdg esuvdg = do
 	{
 		(mb_sov,esuvdg2) <- runStateT find_root_sov esuvdg;
 		str_esuvdg <- fst <$> runStateT show_esuvdg esuvdg2;
-		gtraceM True ("Looking for root second-order variable. Graph: \n\n");
-		gtraceM True str_esuvdg;
-		gtraceM True ("Found: " ++ (show mb_sov));
+		gtraceM False ("Looking for root second-order variable. Graph: \n\n");
+		gtraceM False str_esuvdg;
+		gtraceM False ("Found: " ++ (show mb_sov));
 		case mb_sov of
 		{
 			Nothing -> return (False,ImplicitAS esuvdg2);
@@ -929,7 +952,7 @@ getStateTSTESUnifVDGraphState st resuvdg = RESUnifVDGraph (do {esuvdg <- fromRES
 -- HalfFactorizeP means there is a projection that has incoming horizontal edges.
 -- SingleFactorize means there are constant heads, but also variable heads. We choose a variable and factorize that one using the constant heads.
 -- MultiFactorize means all heads are variables. We choose one variable and enumerate potential heads for it (including projection).
-data FactorizeCandidateS s t fn v sov uv = NoFactorize | ZeroFactorizeFO (ESUnifRelFoId s t fn v sov uv) | ZeroFactorizeSO (ESUnifRelSoId s t fn v sov uv) | HalfFactorizeF (ESUnifRelSoId s t fn v sov uv) | HalfFactorizeP Int | HalfFactorizeFO Int | SingleFactorizeFO (ESUnifRelFoId s t fn v sov uv) sov | SingleFactorizeSO (ESUnifRelSoId s t fn v sov uv) sov | MultiFactorize sov Int
+data FactorizeCandidateS s t fn v sov uv = NoFactorize | ZeroFactorizeFO (ESUnifRelFoId s t fn v sov uv) | ZeroFactorizeSO (ESUnifRelSoId s t fn v sov uv) | HalfFactorizeF (ESUnifRelSoId s t fn v sov uv) | HalfFactorizeP Int | HalfFactorizeFO Int sov | SingleFactorizeFO (ESUnifRelFoId s t fn v sov uv) sov | SingleFactorizeSO (ESUnifRelSoId s t fn v sov uv) sov | MultiFactorize sov Int
 newtype FactorizeCandidate t fn v sov uv = FC {fromFC :: forall s. ST s (FactorizeCandidateS s t fn v sov uv)} -- deriving (Ord,Eq)
 data FactorizeType = NoFactorizeT | ZeroFactorizeT | HalfFactorizeT | SingleFactorizeT | MultiFactorizeT deriving Show
 
@@ -939,7 +962,7 @@ instance Eq (FactorizeCandidateS s t fn v sov uv) where
 	(ZeroFactorizeSO _) == (ZeroFactorizeSO _) = True
 	(HalfFactorizeF _) == (HalfFactorizeF _) = True
 	(HalfFactorizeP _) == (HalfFactorizeP _) = True
-	(HalfFactorizeFO _) == (HalfFactorizeFO _) = True
+	(HalfFactorizeFO _ _) == (HalfFactorizeFO _ _) = True
 	(SingleFactorizeFO _ _) == (SingleFactorizeFO _ _) = True
 	(SingleFactorizeSO _ _) == (SingleFactorizeSO _ _) = True
 	(MultiFactorize _ x) == (MultiFactorize _ y) = x == y
@@ -954,7 +977,7 @@ instance Ord (FactorizeCandidateS s t fn v sov uv) where
 	(ZeroFactorizeFO _) <= (ZeroFactorizeSO _) = True
 	(ZeroFactorizeFO _) <= (HalfFactorizeF _) = True
 	(ZeroFactorizeFO _) <= (HalfFactorizeP _) = True
-	(ZeroFactorizeFO _) <= (HalfFactorizeFO _) = True
+	(ZeroFactorizeFO _) <= (HalfFactorizeFO _ _) = True
 	(ZeroFactorizeFO _) <= (SingleFactorizeFO _ _) = True
 	(ZeroFactorizeFO _) <= (SingleFactorizeSO _ _) = True
 	(ZeroFactorizeFO _) <= (MultiFactorize _ _) = True
@@ -962,29 +985,29 @@ instance Ord (FactorizeCandidateS s t fn v sov uv) where
 	(ZeroFactorizeSO _) <= (ZeroFactorizeSO _) = True
 	(ZeroFactorizeSO _) <= (HalfFactorizeF _) = True
 	(ZeroFactorizeSO _) <= (HalfFactorizeP _) = True
-	(ZeroFactorizeSO _) <= (HalfFactorizeFO _) = True
+	(ZeroFactorizeSO _) <= (HalfFactorizeFO _ _) = True
 	(ZeroFactorizeSO _) <= (SingleFactorizeFO _ _) = True
 	(ZeroFactorizeSO _) <= (SingleFactorizeSO _ _) = True
 	(ZeroFactorizeSO _) <= (MultiFactorize _ _) = True
 	(ZeroFactorizeSO _) <= NoFactorize = True
 	(HalfFactorizeF _) <= (HalfFactorizeF _) = True
 	(HalfFactorizeF _) <= (HalfFactorizeP _) = True
-	(HalfFactorizeF _) <= (HalfFactorizeFO _) = True
+	(HalfFactorizeF _) <= (HalfFactorizeFO _ _) = True
 	(HalfFactorizeF _) <= (SingleFactorizeFO _ _) = True
 	(HalfFactorizeF _) <= (SingleFactorizeSO _ _) = True
 	(HalfFactorizeF _) <= (MultiFactorize _ _) = True
 	(HalfFactorizeF _) <= NoFactorize = True
 	(HalfFactorizeP _) <= (HalfFactorizeP _) = True
-	(HalfFactorizeP _) <= (HalfFactorizeFO _) = True
+	(HalfFactorizeP _) <= (HalfFactorizeFO _ _) = True
 	(HalfFactorizeP _) <= (SingleFactorizeFO _ _) = True
 	(HalfFactorizeP _) <= (SingleFactorizeSO _ _) = True
 	(HalfFactorizeP _) <= (MultiFactorize _ _) = True
 	(HalfFactorizeP _) <= NoFactorize = True	
-	(HalfFactorizeFO _) <= (HalfFactorizeFO _) = True
-	(HalfFactorizeFO _) <= (SingleFactorizeFO _ _) = True
-	(HalfFactorizeFO _) <= (SingleFactorizeSO _ _) = True
-	(HalfFactorizeFO _) <= (MultiFactorize _ _) = True
-	(HalfFactorizeFO _) <= NoFactorize = True
+	(HalfFactorizeFO _ _) <= (HalfFactorizeFO _ _) = True
+	(HalfFactorizeFO _ _) <= (SingleFactorizeFO _ _) = True
+	(HalfFactorizeFO _ _) <= (SingleFactorizeSO _ _) = True
+	(HalfFactorizeFO _ _) <= (MultiFactorize _ _) = True
+	(HalfFactorizeFO _ _) <= NoFactorize = True
 	(SingleFactorizeFO _ _) <= (SingleFactorizeFO _ _) = True
 	(SingleFactorizeFO _ _) <= (SingleFactorizeSO _ _) = True
 	(SingleFactorizeFO _ _) <= (MultiFactorize _ _) = True
@@ -1177,7 +1200,7 @@ factorize_type fc = runST (do
 			ZeroFactorizeSO _ -> return ZeroFactorizeT;
 			HalfFactorizeF _ -> return HalfFactorizeT;
 			HalfFactorizeP _ -> return HalfFactorizeT;
-			HalfFactorizeFO _ -> return HalfFactorizeT;
+			HalfFactorizeFO _ _ -> return HalfFactorizeT;
 			SingleFactorizeFO _ _ -> return SingleFactorizeT;
 			SingleFactorizeSO _ _ -> return SingleFactorizeT;
 			MultiFactorize _ _ -> return MultiFactorizeT
@@ -1257,7 +1280,7 @@ factorize_candidate fc resuvdg = gtrace False ("FACTORIZING\n\nBEFORE:\n" ++ (sh
 						return (ExplicitAS (ImplicitAS <$> enprojs))
 					}				
 				};
-				HalfFactorizeFO e -> do
+				HalfFactorizeFO e sov -> do
 				{
 					-- Check that the edge is still non-redundant in the graph.
 					(r,esuvdg2) <- runStateT (mzoom lens_esunifdgraph_dgraph (checkEqDGFOEdge e)) esuvdg;
@@ -1271,12 +1294,15 @@ factorize_candidate fc resuvdg = gtrace False ("FACTORIZING\n\nBEFORE:\n" ++ (sh
 							-- Check which of the sources of the edge are the same as the target
 							(t,esuvdg5) <- runStateT (mzoom lens_esunifdgraph_dgraph (eqDGFOEdge_target e)) esuvdg4;
 							(ss,esuvdg6) <- runStateT (mzoom lens_esunifdgraph_dgraph (eqDGFOEdge_sources e)) esuvdg5;
-							let {fils = (\idx -> eqSTRelativeEqDGFoIds t (ss !! idx))};
+							let {fils = (\idx -> eqSTRelativeEqDGFoIds t (errAt "HalfFactorizeFO !!" ss idx))};
 							(rsis,esuvdg7) <- runStateT (mzoom lens_esunifdgraph_dgraph (m_filter fils [0..((length ss) - 1)])) esuvdg6;							
-							let {fs = (\idx -> snd <$> runStateT (do {pr <- grab_sonode (UTerm (SOF (Proj idx))); ops <- prop_mergeEqDGSONodes h pr; runStateTOps ops}) esuvdg7)};
-							let {en = fmap fs (uns_enum_from_list rsis)};
-
-							return (ExplicitAS (ImplicitAS <$> en))
+							let {fproj = (\idx -> snd <$> runStateT (factorize_in_proj sov idx) esuvdg7)};
+							let {enprojs = fmap fproj (uns_enum_from_list rsis)};
+							let {res_nd = snd <$> runStateT (factorize_in_nondep sov rsis) esuvdg7};
+							
+							-- This may bite my ass in the future, but I do not think so right now.
+							-- If all the sources are the same as the target, there is no point in creating the edge with no sources, it will lead to nothing, and produces some cycles with the current implementation.
+							if ((length rsis) == (length ss)) then (return (ExplicitAS (ImplicitAS <$> enprojs))) else (return (ExplicitAS (uns_append (ImplicitAS <$> enprojs) (single_enum (ImplicitAS res_nd)))))
 						}
 					}
 				};
@@ -1349,8 +1375,31 @@ factorize_get_foe_candidate fot = do
 		ines <- mzoom lens_esunifdgraph_dgraph (st_searchInEqDGFOEdges [] [] fot);
 		let {ffil = (\ine -> do {ss <- mzoom lens_esunifdgraph_dgraph (eqDGFOEdge_sources ine); t <- mzoom lens_esunifdgraph_dgraph (eqDGFOEdge_target ine); mzoom lens_esunifdgraph_dgraph (m_any (eqSTRelativeEqDGFoIds t) ss)})};
 		rines <- m_filter ffil ines;
+		-- We assume here that all nodes either have a dependant or incoming horizontal edges.
+		let {ffil2 = (\ine -> do {h <- mzoom lens_esunifdgraph_dgraph (eqDGFOEdge_head ine); hts <- mzoom lens_esunifdgraph_dgraph (getEquivDGSONodes h); hines <- mzoom lens_esunifdgraph_dgraph (st_searchInEqDGSOEdges [] [] h); return ((Prelude.null hines) && (all isvar_sot hts))})};
+		rrines <- m_filter ffil2 rines;
 		
-		if (Prelude.null rines) then (return NoFactorize) else (return (HalfFactorizeFO (head rines)))
+		if (Prelude.null rrines) then (return NoFactorize) else (do
+		{
+			let {e = head rrines};
+			eh <- mzoom lens_esunifdgraph_dgraph (eqDGFOEdge_head e);
+			hts <- mzoom lens_esunifdgraph_dgraph (getEquivDGSONodes eh);
+			-- It should be the case here that there is at least one dependant in the node, and it is a variable.
+			let {avar = case (headErr "factorize_get_foe_candidate: No dependants" hts) of {UVar x -> x; _ -> error "factorize_get_foe_candidate: Non-variable dependant"}};
+			gtraceM True "HALFFACTORIZEFO";
+			gtraceM True "Current graph:";
+			gg <- show_esuvdg;
+			gtraceM True gg;
+			gtraceM True ("ines: " ++ (show ines));
+			gtraceM True ("rines: " ++ (show rines));
+			gtraceM True ("rrines: " ++ (show rrines));
+			et <- mzoom lens_esunifdgraph_dgraph (eqDGFOEdge_target e);
+			hid <- mzoom lens_esunifdgraph_dgraph (getSTRelativeId eh);
+			gtraceM True ("Head: " ++ (show hid));
+			tid <- mzoom lens_esunifdgraph_dgraph (getSTRelativeId et);
+			gtraceM True ("Target: " ++ (show tid));
+			return (HalfFactorizeFO e avar)
+		})
 	}
 
 factorize_get_soe_candidate :: ESMGUConstraintsU t pd fn v sov uv => ESUnifRelSoId s t fn v sov uv -> StateT (ESUnifVDGraph s t pd fn v sov uv) (ST s) (FactorizeCandidateS s t fn v sov uv)
@@ -1375,16 +1424,16 @@ factorize_get_fo_candidate fot = do
 		if ((length ines) <= 1) then (return NoFactorize) else do
 		{
 			inhs <- mzoom lens_esunifdgraph_dgraph (traverse eqDGFOEdge_head ines);
-			inhsots <- mzoom lens_esunifdgraph_dgraph (m_concat getEquivDGSONodes inhs);
-			if (all (not . isvar_sot) inhsots) then (return (ZeroFactorizeFO fot))
-			else (if (any (not . isvar_sot) inhsots) then do
+			inhsots <- mzoom lens_esunifdgraph_dgraph (traverse getEquivDGSONodes inhs);
+			if (all (any (not . isvar_sot)) inhsots) then (return (ZeroFactorizeFO fot))
+			else (if (any (any (not . isvar_sot)) inhsots) then do
 			{
-				let {avar = case (fromJust (find isvar_sot inhsots)) of {UVar x -> x}};
+				let {avar = case (fromJustErr "Outer fromJust factorize_get_fo_candidate" (find isvar_sot (fromJustErr "Inner fromJust factorize_get_fo_candidate" (find (all isvar_sot) inhsots)))) of {UVar x -> x}};
 				return (SingleFactorizeFO fot avar)
 			}
 			else do
 			{
-				let {avar = case (head inhsots) of {UVar x -> x}; nvars = length inhsots};
+				let {avar = case (head (head inhsots)) of {UVar x -> x}; nvars = length inhsots};
 				return (MultiFactorize avar nvars)
 			}
 			)
@@ -1430,25 +1479,43 @@ factorize_soe_consttarget_head soe = do
 		runStateTOps (ops1 ++ ops2 ++ ops3)
 	}
 
+-- Partially instantiates a variable to remove the dependency to some of its arguments. This is used for half factorization of first-order nodes.
+-- The list of indices are those arguments to REMOVE from the dependency.
+factorize_in_nondep :: ESMGUConstraintsU t pd fn v sov uv => sov -> [Int] -> StateT (ESUnifVDGraph s t pd fn v sov uv) (ST s) ()
+factorize_in_nondep sov rems = do
+	{
+		let {aty = arity sov; keeps = Prelude.filter (not . (\x -> elem x rems)) [0..(aty -1)]};
+		let {vsot = UVar sov; vsotid = relbwEqDGSoId vsot};
+		let {naty = length keeps};
+		nsov <- mzoom lens_esunifdgraph_sosig (new_sovar naty);
+		let {nvsot = UVar nsov; nvsotid = relbwEqDGSoId nvsot};
+		let {fproj = (\idx -> relbwEqDGSoId (UTerm (SOF (Proj idx))))};
+		let {nss = fproj <$> keeps};
+
+		ops <- prop_newEqDGSOEdge nvsotid nss vsotid;
+
+		runStateTOps ops
+	}
+
 -- We assume the second-order term being given is indeed simple (not a composition), and non-variable. This should be true in every case anyway.
 factorize_in_flexrigid :: ESMGUConstraintsU t pd fn v sov uv => sov -> SOTerm fn sov -> StateT (ESUnifVDGraph s t pd fn v sov uv) (ST s) ()
 factorize_in_flexrigid sov sot = do
 	{
-		gtraceM True "Factorizing flexrigid";
+		gtraceM False "Factorizing flexrigid";
 		strb <- mzoom lens_esunifdgraph_dgraph st_dump_eqdgraph;
-		gtraceM True "BEFORE:";
-		gtraceM True strb;
+		gtraceM False "BEFORE:";
+		gtraceM False strb;
 		let {vsot = UVar sov; vsotid = relbwEqDGSoId vsot; vaty = arity sov};
 		let {aty = arity sot; sotid = relbwEqDGSoId sot};		
 		let {fnewvar = mzoom lens_esunifdgraph_sosig (new_sovar vaty); fnewnode = (\_ -> relbwEqDGSoId . UVar <$> fnewvar)};
 		newss <- traverse fnewnode [0..(aty-1)];
-		gtraceM True "BEFORE NEW EDGE";
+		gtraceM False "BEFORE NEW EDGE";
 		ops <- prop_newEqDGSOEdge sotid newss vsotid;
-		gtraceM True "AFTER NEW EDGE";
+		gtraceM False "AFTER NEW EDGE";
 		
 		stra <- mzoom lens_esunifdgraph_dgraph st_dump_eqdgraph;
-		gtraceM True "AFTER:";
-		gtraceM True stra;
+		gtraceM False "AFTER:";
+		gtraceM False stra;
 
 		runStateTOps ops
 	}
@@ -1456,18 +1523,18 @@ factorize_in_flexrigid sov sot = do
 factorize_in_proj :: ESMGUConstraintsU t pd fn v sov uv => sov -> Int -> StateT (ESUnifVDGraph s t pd fn v sov uv) (ST s) ()
 factorize_in_proj sov idx = do
 	{
-		gtraceM True "Factorizing proj";
+		gtraceM False "Factorizing proj";
 		strb <- mzoom lens_esunifdgraph_dgraph st_dump_eqdgraph;
-		gtraceM True "BEFORE:";
-		gtraceM True strb;
+		gtraceM False "BEFORE:";
+		gtraceM False strb;
 		let {sot = UVar sov; sotid = relbwEqDGSoId sot};
 		let {projt = UTerm (SOF (Proj idx)); projid = relbwEqDGSoId projt};
 		
 		ops <- prop_mergeEqDGSONodes sotid projid;
 		
 		stra <- mzoom lens_esunifdgraph_dgraph st_dump_eqdgraph;
-		gtraceM True "AFTER:";
-		gtraceM True stra;
+		gtraceM False "AFTER:";
+		gtraceM False stra;
 
 		runStateTOps ops
 	}
@@ -1588,7 +1655,15 @@ check_cycle_up_fot downhs downs fot = do
 		if cycle then (return (True,[(downhs,downs)])) else do
 		{
 			ines <- mzoom lens_esunifdgraph_dgraph (st_searchInEqDGFOEdges [] [] fot);
-			ssh <- mzoom lens_esunifdgraph_dgraph (traverse fh ines);
+			-- For occurs check purposes, edges whose head contains variables are not relevant.
+			let {ffil = (\e -> do
+				{
+					h <- mzoom lens_esunifdgraph_dgraph (eqDGFOEdge_head e);
+					hels <- mzoom lens_esunifdgraph_dgraph (getEquivDGSONodes h);
+					return (any (not . isvar_sot) hels)
+				})};
+			rines <- m_filter ffil ines;
+			ssh <- mzoom lens_esunifdgraph_dgraph (traverse fh rines);
 			ups <- traverse_collect ff ffd ssh;
 			return ups
 		}
@@ -1643,7 +1718,15 @@ check_cycle_up_sot downhs downs sot = do
 		if cycle then (return (True,[(downhs,downs)])) else do
 		{
 			ines <- mzoom lens_esunifdgraph_dgraph (st_searchInEqDGSOEdges [] [] sot);
-			ssh <- mzoom lens_esunifdgraph_dgraph (traverse fh ines);
+			-- For occurs check purposes, edges whose head contains variables are not relevant.
+			let {ffil = (\e -> do
+				{
+					h <- mzoom lens_esunifdgraph_dgraph (eqDGSOEdge_head e);
+					hels <- mzoom lens_esunifdgraph_dgraph (getEquivDGSONodes h);
+					return (any (not . isvar_sot) hels)
+				})};
+			rines <- m_filter ffil ines;
+			ssh <- mzoom lens_esunifdgraph_dgraph (traverse fh rines);
 			ups <- traverse_collect ff ffd ssh;
 			return ups
 		}
@@ -1983,7 +2066,8 @@ esu_so_simplify_proj_soe soe = do
 				--if (length ss) <= idx then (trace ("Projection does not have enough inputs! Has: " ++ (show (length ss)) ++ ", but is looking for " ++ (show idx) ++ "th projection.") (return [])) else do
 				if (length ss) <= idx then (return []) else do
 				{
-					result1 <- prop_mergeEqDGSONodes (ss !! idx) t;
+					--result1 <- prop_mergeEqDGSONodes (ss !! idx) t;
+					result1 <- prop_mergeEqDGSONodes (errAt "esu_so_simplify_proj_soe !!" ss idx) t;
 					result2 <- (return result1) >>=++ (prop_deleteEqDGSOEdge soe);
 
 					return result2
@@ -2022,7 +2106,8 @@ esu_fo_simplify_proj_foe foe = do
 				--if (length ss) <= idx then (trace ("Projection does not have enough inputs! Has: " ++ (show (length ss)) ++ ", but is looking for " ++ (show idx) ++ "th projection.") (return [])) else do
 				if (length ss) <= idx then (return []) else do
 				{
-					result1 <- prop_mergeEqDGFONodes (ss !! idx) t;
+					--result1 <- prop_mergeEqDGFONodes (ss !! idx) t;
+					result1 <- prop_mergeEqDGFONodes (errAt "esu_fo_simplify_proj_foe !!" ss idx) t;
 					result2 <- (return result1) >>=++ (prop_deleteEqDGFOEdge foe);
 
 					return result2

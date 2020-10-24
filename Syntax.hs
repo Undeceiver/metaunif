@@ -330,6 +330,13 @@ to_groundsot :: SOTerm fn sov -> GroundSOT fn
 to_groundsot (UVar _) = error "Trying to convert a second-order variable into a constant second-order term!"
 to_groundsot (UTerm t) = Fix (to_groundsot <$> t)
 
+-- This one is a particular case of the generic UTerm case.
+--instance (Eq sov, Eq fn) => Substitutable (SOTerm fn sov) sov (SOTerm fn sov) where
+
+-- This is a particular case
+instance (Eq sov, Eq fn) => Substitutable (SOTerm fn sov) sov (GroundSOT fn) where
+	subst v rt t = subst v rrt t where rrt = inject_groundsot rt :: SOTerm fn sov
+
 -- Dummy second-order variable type used when using inject_groundsot. Its entire purpose is that it can be an instance of any class, because its methods will never be used.
 newtype DummySOV = DummySOV ()
 
@@ -346,7 +353,8 @@ apply_soterm_actual :: HasArity fn => (fn -> [t] -> t) -> GroundSOT fn -> [t] ->
 apply_soterm_actual c (Fix (SOF (ConstF f))) args = c f args
 -- It is normalized, so the head needs to be a constant function symbol.
 apply_soterm_actual c (Fix (SOF (CompF (Fix (SOF (ConstF f))) sargs))) args = c f (Prelude.map (\s -> apply_soterm c s args) sargs)
-apply_soterm_actual c (Fix (SOF (Proj idx))) args = args !! idx
+--apply_soterm_actual c (Fix (SOF (Proj idx))) args = args !! idx
+apply_soterm_actual c (Fix (SOF (Proj idx))) args = errAt "apply_soterm_actual !!" args idx
 
 apply_soterm_checkarity :: HasArity fn => GroundSOT fn -> [t] -> a -> a
 apply_soterm_checkarity f args r = if (arity f <= length args) then r else (error ("The arity of the function (" ++ (show (arity f)) ++ ") is larger than the number of arguments (" ++ (show (length args)) ++ ")."))
@@ -379,7 +387,8 @@ instance HasArity fn => Normalizable (GroundSOT fn) (GroundSOT fn) where
 	normalize (Fix (SOF (CompF h args))) = case (normalize h) of
 												{
 													(Fix (SOF (ConstF f))) -> Fix (SOF (CompF (Fix (SOF (ConstF f))) (Prelude.map normalize args)));
-													(Fix (SOF (Proj idx))) | idx < length args -> normalize (args !! idx);
+													--(Fix (SOF (Proj idx))) | idx < length args -> normalize (args !! idx);
+													(Fix (SOF (Proj idx))) | idx < length args -> normalize (errAt "Normalizable GroundSOT !!" args idx);
 													(Fix (SOF (Proj idx))) -> error ("Projection on the " ++ (show idx) ++ "th argument, but only " ++ (show (length args)) ++ " arguments were provided.");
 													-- If the normalized head is a composition, we can assume its head is a constant function, and so...
 													(Fix (SOF (CompF f args1))) -> Fix (SOF (CompF f (Prelude.map (normalize . (*. args)) args1)))
@@ -395,7 +404,8 @@ instance (HasArity fn, HasArity sov) => Normalizable (SOTerm fn sov) (SOTerm fn 
 													{
 														(UVar v) -> UTerm (SOF (CompF (UVar v) (Prelude.map normalize args)));
 														(UTerm (SOF (ConstF f))) -> UTerm (SOF (CompF (UTerm (SOF (ConstF f))) (Prelude.map normalize args)));
-														(UTerm (SOF (Proj idx))) | idx < length args -> normalize (args !! idx);
+														--(UTerm (SOF (Proj idx))) | idx < length args -> normalize (args !! idx);
+														(UTerm (SOF (Proj idx))) | idx < length args -> normalize (errAt "Normalizable SOTerm !!" args idx);
 														(UTerm (SOF (Proj idx))) -> error ("Projection on the " ++ (show idx) ++ "th argument, but only " ++ (show (length args)) ++ " arguments were provided.");
 														-- If the normalized head is a composition, we can assume its head is a constant function OR a variable, and so...
 														(UTerm (SOF (CompF f args1))) -> UTerm (SOF (CompF f (Prelude.map (normalize . (*.. args)) args1)))
@@ -564,7 +574,8 @@ normalize_metawrap_helper Nothing [t] = normalize_metawrap_helper2 t
 normalize_metawrap_helper Nothing _ = error "Trying to build a term with no head and multiple arguments. This is multiple terms!"
 normalize_metawrap_helper (Just (UVar sov)) ts = normalize_metawrap_build_term (Just (UVar sov), Prelude.map normalize_metawrap_helper2 ts)
 normalize_metawrap_helper (Just (UTerm (SOF (ConstF f)))) ts = normalize_metawrap_build_term (Just (UTerm (SOF (ConstF f))),Prelude.map normalize_metawrap_helper2 ts)
-normalize_metawrap_helper (Just (UTerm (SOF (Proj idx)))) ts | idx < length ts = normalize_metawrap_helper2 (ts !! idx)
+--normalize_metawrap_helper (Just (UTerm (SOF (Proj idx)))) ts | idx < length ts = normalize_metawrap_helper2 (ts !! idx)
+normalize_metawrap_helper (Just (UTerm (SOF (Proj idx)))) ts | idx < length ts = normalize_metawrap_helper2 (errAt "normalize_metawrap_helper !!" ts idx)
 normalize_metawrap_helper (Just (UTerm (SOF (Proj idx)))) ts = error ("Trying to project on the " ++ (show idx) ++ "th argument, but there are only " ++ (show (length ts)) ++ " arguments.")
 normalize_metawrap_helper (Just (UTerm (SOF (CompF (UTerm (SOF (ConstF f))) sargs)))) ts = normalize_metawrap_build_term ((Just (UTerm (SOF (ConstF f)))),(Prelude.map (\g -> normalize_metawrap_helper (Just g) ts) sargs))
 normalize_metawrap_helper (Just (UTerm (SOF (CompF (UVar v) sargs)))) ts = normalize_metawrap_build_term ((Just (UVar v)),(Prelude.map (\g -> normalize_metawrap_helper (Just g) ts) sargs))
@@ -596,7 +607,8 @@ normalize_groundsotwrap_helper :: (HasArity fn, SimpleTerm t) => Maybe (GroundSO
 normalize_groundsotwrap_helper Nothing [t] = normalize_groundsotwrap_helper2 t
 normalize_groundsotwrap_helper Nothing _ = error "Trying to build a term with no head and multiple arguments. This is multiple terms!"
 normalize_groundsotwrap_helper (Just (Fix (SOF (ConstF f)))) ts = normalize_groundsotwrap_build_term (Just (Fix (SOF (ConstF f))),Prelude.map normalize_groundsotwrap_helper2 ts)
-normalize_groundsotwrap_helper (Just (Fix (SOF (Proj idx)))) ts | idx < length ts = normalize_groundsotwrap_helper2 (ts !! idx)
+--normalize_groundsotwrap_helper (Just (Fix (SOF (Proj idx)))) ts | idx < length ts = normalize_groundsotwrap_helper2 (ts !! idx)
+normalize_groundsotwrap_helper (Just (Fix (SOF (Proj idx)))) ts | idx < length ts = normalize_groundsotwrap_helper2 (errAt "normalize_groundsotwrap_helper !!" ts idx)
 normalize_groundsotwrap_helper (Just (Fix (SOF (Proj idx)))) ts = error ("Trying to project on the " ++ (show idx) ++ "th argument, but there are only " ++ (show (length ts)) ++ " arguments.")
 normalize_groundsotwrap_helper (Just (Fix (SOF (CompF (Fix (SOF (ConstF f))) sargs)))) ts = normalize_groundsotwrap_build_term ((Just (Fix (SOF (ConstF f)))),(Prelude.map (\g -> normalize_groundsotwrap_helper (Just g) ts) sargs))
 
@@ -620,6 +632,13 @@ apply_vsoterm_actual f args = SOMetawrap (UTerm (build_term f (Prelude.map fromS
 apply_vsoterm_checkarity :: (HasArity fn, HasArity mv) => SOTerm fn mv -> [SOMetawrap t fn v mv] -> a -> a
 apply_vsoterm_checkarity f args r = if (arity f <= length args) then r else (error ("The arity of the function (" ++ (show (arity f)) ++ ") is larger than the number of arguments (" ++ (show (length args)) ++ ")."))
 
+instance (Eq fn, Eq sov, SimpleTerm t) => Substitutable (SOMetawrap t fn v sov) sov (SOTerm fn sov) where
+	subst sov rsot (SOMetawrap (UVar v)) = SOMetawrap (UVar v)
+	subst sov rsot (SOMetawrap (UTerm t)) = SOMetawrap (UTerm rt) where (h,sts) = unbuild_term t; rh = subst sov rsot h; rt = build_term rh sts
+
+instance (Eq fn, Eq sov, SimpleTerm t) => Substitutable (SOMetawrap t fn v sov) sov (GroundSOT fn) where
+	subst sov rsot (SOMetawrap (UVar v)) = SOMetawrap (UVar v)
+	subst sov rsot (SOMetawrap (UTerm t)) = SOMetawrap (UTerm rt) where (h,sts) = unbuild_term t; rh = subst sov rsot h; rt = build_term rh sts
 
 newtype SOMetawrapA (a :: * -> * -> *) (t :: * -> * -> *) pd fn v pmv fmv = SOMetawrapA (a (SOAtom pd fn pmv fmv) (SOMetawrap t fn v fmv))
 fromSOMetawrapA :: SOMetawrapA a t pd fn v pmv fmv -> a (SOAtom pd fn pmv fmv) (SOMetawrap t fn v fmv)
@@ -900,7 +919,8 @@ enum_funcs_base :: HasArity fn => Int -> Signature pd fn v -> EnumProc (GroundSO
 -- Base functions really are just projections (choosing which variable)? 
 -- Even when the arity is zero: then there are no base functions.
 -- However, to avoid zero arity functions appearing multiple times, we consider those the base for arity zero.
-enum_funcs_base aty sig = ((Fix . SOF . Proj) <$> (uns_enum_from_list [0..(aty-1)])) ..+ ((Fix . SOF . ConstF) <$> ((funcs sig) !! 0))
+--enum_funcs_base aty sig = ((Fix . SOF . Proj) <$> (uns_enum_from_list [0..(aty-1)])) ..+ ((Fix . SOF . ConstF) <$> ((funcs sig) !! 0))
+enum_funcs_base aty sig = ((Fix . SOF . Proj) <$> (uns_enum_from_list [0..(aty-1)])) ..+ ((Fix . SOF . ConstF) <$> (errAt "enum_funcs_base !!" (funcs sig) 0))
 
 enum_funcs_rec :: HasArity fn => Signature pd fn v -> EnumProc (GroundSOT fn) -> EnumProc (GroundSOT fn)
 enum_funcs_rec sig prev = prev ..+ (enum_funcs_rec sig next) where next = enum_funcs_next sig prev
@@ -935,7 +955,8 @@ instance (Show pd, Show fn, Show v, Show sov) => Show (SOSignature pd fn v sov) 
 	show sig = "Predicates:" ++ (show (preds (fosig sig))) ++ ", Function symbols:" ++ (show (funcs (fosig sig))) ++ ", F.O. variables:" ++ (show (vars (fosig sig))) ++ ", S.O. variables:" ++ (show (sovars sig))
 
 enum_constfofuncs :: HasArity fn => Int -> SOSignature pd fn v sov -> EnumProc (GroundSOT fn)
-enum_constfofuncs aty sig = (Fix . SOF . ConstF) <$> (econcat (Prelude.map ((funcs (fosig sig)) !!) [0..aty]))
+--enum_constfofuncs aty sig = (Fix . SOF . ConstF) <$> (econcat (Prelude.map ((funcs (fosig sig)) !!) [0..aty]))
+enum_constfofuncs aty sig = (Fix . SOF . ConstF) <$> (econcat (Prelude.map (errAt "enum_constfofuncs !!" fs) [0..(min aty ((length fs) - 1))])) where fs = funcs (fosig sig)
 
 enum_fofuncs :: HasArity fn => Int -> SOSignature pd fn v sov -> EnumProc (GroundSOT fn)
 enum_fofuncs aty = (enum_funcs aty) . fosig

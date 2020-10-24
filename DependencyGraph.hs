@@ -524,12 +524,12 @@ f_getEqDGFONode fot eqdg = (,eqdg) <$> stmb_int where stmb_int = getEqDGFONode e
 getEqDGSONode :: Ord sot => EqDGraph s fot sot -> sot -> ST s (Maybe Int)
 getEqDGSONode eqdg sot = do
 	{
-		gtraceM True "GETEQDGSONODE";
-		gtraceM True ("MB_PT: " ++ (show (isJust mb_pt)) ++ "\n");
+		gtraceM False "GETEQDGSONODE";
+		gtraceM False ("MB_PT: " ++ (show (isJust mb_pt)) ++ "\n");
 		mb_desc <- desc;
-		gtraceM True ("DESC: " ++ (show (isJust mb_desc)) ++ "\n");
+		gtraceM False ("DESC: " ++ (show (isJust mb_desc)) ++ "\n");
 		mb_node <- node;
-		gtraceM True ("NODE: " ++ (show (isJust mb_node)) ++ "\n");
+		gtraceM False ("NODE: " ++ (show (isJust mb_node)) ++ "\n");
 		node
 	}
 	--where mb_pt = (eqdg_sopoints eqdg) !? sot; desc = traverse descriptor mb_pt; node = desc >>= (\mb_desc -> return (((eqdg_sonodes eqdg) !?) =<< mb_desc))
