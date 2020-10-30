@@ -871,7 +871,7 @@ check_imp_usol :: String -> SOMetaUnifSysSolution -> AnswerSet s SOMetaUnifSysSo
 check_imp_usol title desired as = if (uns_produce_next (checkAS as desired \$ ())) then (AT title (ATR True "The solution correctly was implicitly found in the answer set.")) else (AT title (ATR False "The solution could not be implicitly found in the answer set, but it should have."))
 
 check_not_imp_usol :: String -> SOMetaUnifSysSolution -> AnswerSet s SOMetaUnifSysSolution -> AutomatedTest
-check_not_imp_usol title desired as = if (uns_produce_next (checkAS as desired \$ ())) then (AT title (ATR False "The solution was implicitly found in the answer set, but it should have.")) else (AT title (ATR True "The solution was correctly not implicitly found in the answer set."))
+check_not_imp_usol title desired as = if (uns_produce_next (checkAS as desired \$ ())) then (AT title (ATR False "The solution was implicitly found in the answer set, but it should not have.")) else (AT title (ATR True "The solution was correctly not implicitly found in the answer set."))
 
 
 
@@ -4842,7 +4842,7 @@ unifsys9_tests :: String
 unifsys9_tests = combine_test_results [unifsys9_t1,unifsys9_t2,unifsys9_t3,unifsys9_t4,unifsys9_t5,unifsys9_t6,unifsys9_t7]
 
 unifsys10_nsols :: Int
-unifsys10_nsols = 20
+unifsys10_nsols = 4
 
 unifsys10_sig :: SOMetaSignature
 unifsys10_sig = SOSignature (Signature [] [EnumProc.Empty, read "f2[1]" --> EnumProc.Empty, read "f0[2]" --> read "f1[2]" --> EnumProc.Empty] (read "x0" --> read "x1" --> read "x2" --> read "x3" --> EnumProc.Empty)) (read "F0[2]" --> EnumProc.Empty)
@@ -4869,7 +4869,7 @@ unifsys10_cheq1_1 :: SOMetaUnifEquation
 unifsys10_cheq1_1 = read "F0[2](x0,x1) = f0[2]{F1[2],F2[2]}(x0,x1)"
 
 unifsys10_chsys1 :: [SOMetaUnifEquation]
-unifsys10_chsys1 = [unifsys9_cheq1_1]
+unifsys10_chsys1 = [unifsys10_cheq1_1]
 
 unifsys10_sol1 :: SOMetaUnifSysSolution
 unifsys10_sol1 = fromList [(read "F0[2]", read "f0[2]{pi0,pi1}")]
@@ -4884,7 +4884,7 @@ unifsys10_t1 :: AutomatedTest
 unifsys10_t1 = check_min_exp_as "Checking that the equation system has at least 1 solution" 1 unifsys10_as
 
 unifsys10_t2 :: AutomatedTest
-unifsys10_t2 = check_en_all_usol unifsys9_nsols "Checking F0[2] = f0[2]{F1[2],F2[2]} is true for every solution" (\title -> \sol -> check_usys_usol_at title unifsys10_chsys1 sol) unifsys10_as
+unifsys10_t2 = check_en_all_usol unifsys10_nsols "Checking F0[2] = f0[2]{F1[2],F2[2]} is true for every solution" (\title -> \sol -> check_usys_usol_at title unifsys10_chsys1 sol) unifsys10_as
 
 unifsys10_t3 :: AutomatedTest
 unifsys10_t3 = check_imp_usol "Checking F0[2] = f0[2]{pi0,pi1} is implicitly a solution" unifsys10_sol1 unifsys10_as
@@ -4898,6 +4898,88 @@ unifsys10_t5 = check_not_imp_usol "Checking F0[2] = f0[2]{pi0,pi0} is not implic
 unifsys10_tests :: String
 unifsys10_tests = combine_test_results [unifsys10_t1,unifsys10_t2,unifsys10_t3,unifsys10_t4,unifsys10_t5]
 
+unifsys11_nsols :: Int
+unifsys11_nsols = 20
+
+unifsys11_sig :: SOMetaSignature
+unifsys11_sig = SOSignature (Signature [] [EnumProc.Empty, read "f2[1]" --> EnumProc.Empty, read "f0[2]" --> read "f1[2]" --> EnumProc.Empty] (read "x0" --> read "x1" --> read "x2" --> read "x3" --> EnumProc.Empty)) (read "F0[2]" --> EnumProc.Empty)
+
+unifsys11_eq1 :: SOMetaUnifEquation
+unifsys11_eq1 = read "u0 x0 = u0 f0[2](x1,x2)"
+
+unifsys11_eq2 :: SOMetaUnifEquation
+unifsys11_eq2 = read "u1 u0 x0 = u1 f2[1](x1)"
+
+unifsys11_eq3 :: SOMetaUnifEquation
+unifsys11_eq3 = read "u1 u0 F0[2](x1,x2) = u1 u0 x0"
+
+unifsys11_sys :: SOMetaUnifSystem
+unifsys11_sys = USys unifsys11_sig [unifsys11_eq1,unifsys11_eq2,unifsys11_eq3]
+
+unifsys11_as :: AnswerSet SOMetaUnifSystem SOMetaUnifSysSolution
+unifsys11_as = ImplicitAS unifsys11_sys
+
+unifsys11_t1 :: AutomatedTest
+unifsys11_t1 = check_exactly_exp_as "Checking that the equation system has no solutions" 0 unifsys11_as
+
+unifsys11_tests :: String
+unifsys11_tests = combine_test_results [unifsys11_t1]
+
+unifsys12_nsols :: Int
+unifsys12_nsols = 20
+
+unifsys12_sig :: SOMetaSignature
+unifsys12_sig = SOSignature (Signature [] [EnumProc.Empty, read "f2[1]" --> EnumProc.Empty, read "f0[2]" --> read "f1[2]" --> EnumProc.Empty] (read "x0" --> read "x1" --> read "x2" --> read "x3" --> EnumProc.Empty)) (read "F0[2]" --> EnumProc.Empty)
+
+unifsys12_eq1 :: SOMetaUnifEquation
+unifsys12_eq1 = read "u0 x0 = u0 f0[2](x1,x2)"
+
+unifsys12_eq2 :: SOMetaUnifEquation
+unifsys12_eq2 = read "u1 x0 = u1 f2[1](x1)"
+
+unifsys12_eq3 :: SOMetaUnifEquation
+unifsys12_eq3 = read "u1 u0 F0[2](f2[1](x2),x2) = u1 u0 x0"
+
+unifsys12_sys :: SOMetaUnifSystem
+unifsys12_sys = USys unifsys12_sig [unifsys12_eq1,unifsys12_eq2,unifsys12_eq3]
+
+unifsys12_as :: AnswerSet SOMetaUnifSystem SOMetaUnifSysSolution
+unifsys12_as = ImplicitAS unifsys12_sys
+
+unifsys12_cheq1_1 :: SOMetaUnifEquation
+unifsys12_cheq1_1 = read "F0[2](x0,x1) = f0[2]{F1[2],F2[2]}(x0,x1)"
+
+unifsys12_chsys1 :: [SOMetaUnifEquation]
+unifsys12_chsys1 = [unifsys12_cheq1_1]
+
+unifsys12_sol1 :: SOMetaUnifSysSolution
+unifsys12_sol1 = fromList [(read "F0[2]", read "f0[2]{pi0,pi1}")]
+
+unifsys12_sol2 :: SOMetaUnifSysSolution
+unifsys12_sol2 = fromList [(read "F0[2]", read "f0[2]{pi1,pi0}")]
+
+unifsys12_sol3 :: SOMetaUnifSysSolution
+unifsys12_sol3 = fromList [(read "F0[2]", read "f0[2]{pi0,pi0}")]
+
+unifsys12_t1 :: AutomatedTest
+unifsys12_t1 = check_min_exp_as "Checking that the equation system has at least 1 solution" 1 unifsys12_as
+
+unifsys12_t2 :: AutomatedTest
+unifsys12_t2 = check_en_all_usol unifsys12_nsols "Checking F0[2] = f0[2]{F1[2],F2[2]} is true for every solution" (\title -> \sol -> check_usys_usol_at title unifsys12_chsys1 sol) unifsys12_as
+
+unifsys12_t3 :: AutomatedTest
+unifsys12_t3 = check_imp_usol "Checking F0[2] = f0[2]{pi0,pi1} is implicitly a solution" unifsys12_sol1 unifsys12_as
+
+unifsys12_t4 :: AutomatedTest
+unifsys12_t4 = check_not_imp_usol "Checking F0[2] = f0[2]{pi1,pi0} is not implicitly a solution" unifsys12_sol2 unifsys12_as
+
+unifsys12_t5 :: AutomatedTest
+unifsys12_t5 = check_not_imp_usol "Checking F0[2] = f0[2]{pi0,pi0} is not implicitly a solution" unifsys12_sol3 unifsys12_as
+
+unifsys12_tests :: String
+unifsys12_tests = combine_test_results [unifsys12_t1,unifsys12_t2,unifsys12_t3,unifsys12_t4,unifsys12_t5]
+
+
 
 unifsys_test :: IO ()
 unifsys_test = putStr "EXAMPLE 1\n\n" >> putStr unifsys1_tests >>
@@ -4906,7 +4988,12 @@ unifsys_test = putStr "EXAMPLE 1\n\n" >> putStr unifsys1_tests >>
 		putStr "EXAMPLE 4\n\n" >> putStr unifsys4_tests >>
 		putStr "EXAMPLE 5\n\n" >> putStr unifsys5_tests >>
 		putStr "EXAMPLE 6\n\n" >> putStr unifsys6_tests >>
-		putStr "EXAMPLE 7\n\n" >> putStr unifsys7_tests 
+		putStr "EXAMPLE 7\n\n" >> putStr unifsys7_tests >>
+		putStr "EXAMPLE 8\n\n" >> putStr unifsys8_tests >>
+		putStr "EXAMPLE 9\n\n" >> putStr unifsys9_tests >>
+		putStr "EXAMPLE 10\n\n" >> putStr unifsys10_tests >>
+		putStr "EXAMPLE 11\n\n" >> putStr unifsys11_tests >>
+		putStr "EXAMPLE 12\n\n" >> putStr unifsys12_tests
 
 
 

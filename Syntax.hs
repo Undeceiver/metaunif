@@ -911,10 +911,12 @@ data Signature pd fn v = Signature {preds :: [EnumProc pd], funcs :: [EnumProc f
 -- Enumerate functions (including composites) of a certain arity (this includes lower arities, as they simply ignore the remaining arguments).
 -- Concatenating this function with arbitrarily large arities is highly discouraged since this will include an exponential amount of redundancy.
 -- Note that the values returned by this function are already normal!
-enum_funcs :: HasArity fn => Int -> Signature pd fn v -> EnumProc (GroundSOT fn)
-enum_funcs aty sig = enum_funcs_rec sig (enum_funcs_base aty sig)
+-- IMPORTANT: We manually remove duplicates here because there is no simpler way to avoid duplicates while being complete, and this is the most efficient place to remove them.
+-- IMPORTANT: We choose to collapse here because this is producing some serious performance issues. This assumes that signatures are finite (which is fine).
+enum_funcs :: (Eq fn, HasArity fn) => Int -> Signature pd fn v -> EnumProc (GroundSOT fn)
+enum_funcs aty sig = uns_ecollapse (enub (base ..+ (enum_funcs_rec sig base))) where base = enum_funcs_base aty sig
 
-enum_funcs_base :: HasArity fn => Int -> Signature pd fn v -> EnumProc (GroundSOT fn)
+enum_funcs_base :: (Eq fn, HasArity fn) => Int -> Signature pd fn v -> EnumProc (GroundSOT fn)
 --enum_funcs_base aty sig = ((Fix . SOF . ConstF) <$> (econcat (Data.List.take (aty+1) (funcs sig)))) ..+ ((Fix . SOF . Proj) <$> (uns_enum_from_list [0..(aty-1)]))
 -- Base functions really are just projections (choosing which variable)? 
 -- Even when the arity is zero: then there are no base functions.
@@ -922,16 +924,16 @@ enum_funcs_base :: HasArity fn => Int -> Signature pd fn v -> EnumProc (GroundSO
 --enum_funcs_base aty sig = ((Fix . SOF . Proj) <$> (uns_enum_from_list [0..(aty-1)])) ..+ ((Fix . SOF . ConstF) <$> ((funcs sig) !! 0))
 enum_funcs_base aty sig = ((Fix . SOF . Proj) <$> (uns_enum_from_list [0..(aty-1)])) ..+ ((Fix . SOF . ConstF) <$> (errAt "enum_funcs_base !!" (funcs sig) 0))
 
-enum_funcs_rec :: HasArity fn => Signature pd fn v -> EnumProc (GroundSOT fn) -> EnumProc (GroundSOT fn)
-enum_funcs_rec sig prev = prev ..+ (enum_funcs_rec sig next) where next = enum_funcs_next sig prev
+enum_funcs_rec :: (Eq fn, HasArity fn) => Signature pd fn v -> EnumProc (GroundSOT fn) -> EnumProc (GroundSOT fn)
+enum_funcs_rec sig prev = next ..+ (enum_funcs_rec sig (prev ..+ next)) where next = enum_funcs_next sig prev
 
 -- We do not include arity zero functions here.
 enum_funcs_next :: HasArity fn => Signature pd fn v -> EnumProc (GroundSOT fn) -> EnumProc (GroundSOT fn)
-enum_funcs_next sig prev = all_funcs >>= (\fn -> Fix . SOF . (CompF (Fix . SOF . ConstF $ fn)) <$> (epick (arity fn) prev)) where all_funcs = econcat (tail (funcs sig))
+enum_funcs_next sig prev = uns_ecollapse (all_funcs >>= (\fn -> Fix . SOF . (CompF (Fix . SOF . ConstF $ fn)) <$> (epick (arity fn) prev))) where all_funcs = econcat (tail (funcs sig))
 
 
 -- Perhaps surprisingly, enumerating terms (of a simple term structure with a second-order structure on top) is as simple as enumerating 0-ary functions, converting into first-order simple elements by adding 0 arguments, and then normalizing to dump the second-order structure into first-order.
-enum_terms :: (HasArity fn, SimpleTerm t, Functor (t (GroundSOT fn))) => Signature pd fn v -> EnumProc (GroundT t fn)
+enum_terms :: (Eq fn, HasArity fn, SimpleTerm t, Functor (t (GroundSOT fn))) => Signature pd fn v -> EnumProc (GroundT t fn)
 enum_terms sig = plain_ggsomw <$> ggsomws where fs = enum_funcs 0 sig; ggsomws = (\f -> GGSOMetawrap (Fix (build_term f []))) <$> fs
 
 data SOSignature pd fn v sov = SOSignature {fosig :: Signature pd fn v, sovars :: EnumProc sov}
@@ -954,14 +956,17 @@ fovars = vars. fosig
 instance (Show pd, Show fn, Show v, Show sov) => Show (SOSignature pd fn v sov) where
 	show sig = "Predicates:" ++ (show (preds (fosig sig))) ++ ", Function symbols:" ++ (show (funcs (fosig sig))) ++ ", F.O. variables:" ++ (show (vars (fosig sig))) ++ ", S.O. variables:" ++ (show (sovars sig))
 
-enum_constfofuncs :: HasArity fn => Int -> SOSignature pd fn v sov -> EnumProc (GroundSOT fn)
+enum_constfofuncs :: (Eq fn, HasArity fn) => Int -> SOSignature pd fn v sov -> EnumProc (GroundSOT fn)
 --enum_constfofuncs aty sig = (Fix . SOF . ConstF) <$> (econcat (Prelude.map ((funcs (fosig sig)) !!) [0..aty]))
 enum_constfofuncs aty sig = (Fix . SOF . ConstF) <$> (econcat (Prelude.map (errAt "enum_constfofuncs !!" fs) [0..(min aty ((length fs) - 1))])) where fs = funcs (fosig sig)
 
-enum_fofuncs :: HasArity fn => Int -> SOSignature pd fn v sov -> EnumProc (GroundSOT fn)
+enum_all_constfofuncs :: (Eq fn, HasArity fn) => SOSignature pd fn v sov -> EnumProc (GroundSOT fn)
+enum_all_constfofuncs sig = econcat ((\aty -> enum_constfofuncs aty sig) <$> [0..maxaty]) where maxaty = (length (fofuncs sig)) - 1
+
+enum_fofuncs :: (Eq fn, HasArity fn) => Int -> SOSignature pd fn v sov -> EnumProc (GroundSOT fn)
 enum_fofuncs aty = (enum_funcs aty) . fosig
 
-enum_foterms :: (HasArity fn, SimpleTerm t, Functor (t (GroundSOT fn))) => SOSignature pd fn v sov -> EnumProc (GroundT t fn)
+enum_foterms :: (Eq fn, HasArity fn, SimpleTerm t, Functor (t (GroundSOT fn))) => SOSignature pd fn v sov -> EnumProc (GroundT t fn)
 enum_foterms = enum_terms . fosig
 
 
