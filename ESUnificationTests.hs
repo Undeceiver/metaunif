@@ -41,713 +41,6 @@ import Identifier
 import Algorithm
 
 
--- Implicit solution handling tests.
--- We define implicit solutions using the (>:=) and (>::=) operators and then check that they work properly.
-
-{-|
-check_sol_implicit :: String -> SOMetaUnifSol -> SOMetaNMGU -> AutomatedTest
-check_sol_implicit title usol mgu = AT title (if res then (ATR True "The solution is correctly implicitly represented.") else (ATR False "The implicit unifier does not include the provided solution.")) where res = checkImplicit mgu usol
-
-check_not_sol_implicit :: String -> SOMetaUnifSol -> SOMetaNMGU -> AutomatedTest
-check_not_sol_implicit title usol mgu = AT title (if res then (ATR False "The solution should not be implicitly represented, but it is.") else (ATR True "The implicit unifier correctly does not include the provided solution.")) where res = checkImplicit mgu usol
-
-explicit_unif_compare :: SOMetaUnifSol -> SOMetaUnifSol -> Bool
-explicit_unif_compare usols usoll = (isSubmapOfBy (\a -> \b -> ((normalize_groundt a)::GroundSOMetaterm) == (normalize_groundt b)) (fosol usols) (fosol usoll)) && (isSubmapOfBy (\a -> \b -> ((normalize a)::GroundSOMetatermF) == (normalize b)) (sosol usols) (sosol usoll))
-
-check_sol_explicit :: String -> SOMetaUnifSol -> SOMetaNMGU -> Int -> AutomatedTest
-check_sol_explicit title usol mgu n = AT title (if (isNothing res) then (ATR False ("Could not find the given solution in the first " ++ (show n) ++ " elements of the enumeration of the implicit solution.")) else (ATR True ("Found the given solution within the first " ++ (show n) ++ " elements of the enumeration of the implicit solution."))) where res = uns_produce_next (efind (explicit_unif_compare usol) (etake n (enumImplicit mgu)))
-
-check_not_sol_explicit :: String -> SOMetaUnifSol -> SOMetaNMGU -> Int -> AutomatedTest
-check_not_sol_explicit title usol mgu n = AT title (if (isNothing res) then (ATR True ("Verified the solution is not within the first " ++ (show n) ++ " elements of the enumeration of the implicit solution.")) else (ATR False ("Incorrectly found the given solution within the first " ++ (show n) ++ " elements of the enumeration of the implicit solution."))) where res = uns_produce_next (efind (explicit_unif_compare usol) (etake n (enumImplicit mgu)))
-
-check_all_sol :: String -> SOMetaUnifSol -> SOMetaNMGU -> Int -> AutomatedTest
-check_all_sol title usol mgu n = AT title (if res then (ATR True ("Verified that all of the first " ++ (show n) ++ " elements of the enumeration of the implicit solution contain the given subsolution.")) else (ATR False ("Found elements within the first " ++ (show n) ++ " elements of the enumeration of the implicit solution that do not contain the given subsolution."))) where res = uns_produce_next (eall (return . (explicit_unif_compare usol)) (etake n (enumImplicit mgu)))
-
-check_not_all_sol :: String -> SOMetaUnifSol -> SOMetaNMGU -> Int -> AutomatedTest
-check_not_all_sol title usol mgu n = AT title (if res then (ATR False ("Incorrectly, all of the first " ++ (show n) ++ " elements of the enumeration of the implicit solution contain the given subsolution.")) else (ATR True ("Verified that there exist elements within the first " ++ (show n) ++ " elements of the enumeration that do not contain the given subsolution."))) where res = uns_produce_next (eall (return . (explicit_unif_compare usol)) (etake n (enumImplicit mgu)))
-
--- Detail to make testing more reliable and efficient: We reverse the lists of predicates, functions and variables, as the first one to be enumerated is the last one in the list (recursion happens from the end).
-
-implicit_preds1 :: [EnumProc OPredicate]
-implicit_preds1 = (uns_ecollapse . uns_ereverse) <$> [read "p1[0]" --> EnumProc.Empty, read "p2[1]" --> EnumProc.Empty, read "p3[2]" --> EnumProc.Empty, read "p4[3]" --> EnumProc.Empty]
-
-implicit_funcs1 :: [EnumProc OFunction]
-implicit_funcs1 = (uns_ecollapse . uns_ereverse) <$> [read "f1[0]" --> EnumProc.Empty, read "f2[1]" --> EnumProc.Empty, read "f3[2]" --> EnumProc.Empty, read "f4[3]" --> EnumProc.Empty]
-
-implicit_vars1 :: EnumProc OVariable
-implicit_vars1 = uns_ecollapse . uns_ereverse $ (read "x0" --> read "x1" --> read "x2" --> read "x3" --> read "x4" --> EnumProc.Empty)
-
-implicit_sovars1 :: EnumProc SOMVariable
-implicit_sovars1 = uns_ecollapse . uns_ereverse $ (read "F1[0]" --> read "F2[1]" --> read "F3[2]" --> read "F4[3]" --> EnumProc.Empty)
-
-implicit_sig1 :: SOMetaSignature
-implicit_sig1 = SOSignature (Signature implicit_preds1 implicit_funcs1 implicit_vars1) implicit_sovars1
-
-implicit_scale1 :: Int
-implicit_scale1 = 100
-
-
-implicit_eq1_1 :: JState SOMetaMGU
-implicit_eq1_1 = (read "x0") >:= (read "f1[0]()")
-
-implicit_mgu1 :: SOMetaMGU
-implicit_mgu1 = runESMGU implicit_sig1 (implicit_eq1_1)
-
-implicit_nmgu1 :: SOMetaNMGU
-implicit_nmgu1 = fromJust (normalize_esmgu implicit_mgu1)
-
-implicit_sols1 :: EnumProc (SOMetaUnifSol :- CQRP)
-implicit_sols1 = fromProvenanceT (nesmgu_enumImplicit implicit_nmgu1)
-
-implicit_lsols1 :: EnumProc (SOMetaUnifSol :- CQRP)
-implicit_lsols1 = etake implicit_scale1 implicit_sols1
-
-implicit_rsols1 :: EnumProc SOMetaUnifSol
-implicit_rsols1 = raw <$> implicit_lsols1
-
-implicit1_t1 :: AutomatedTest
-implicit1_t1 = check_sol_implicit "Verifying the implicit representation of {x0 -> f1[0]()}"
-		(UnifSolution (fromList [(read "x0",read "f1[0]()")]) (fromList []))
-		implicit_nmgu1
-
-implicit1_t2 :: AutomatedTest
-implicit1_t2 = check_sol_explicit "Verifying the explicit presence of {x0 -> f1[0]()}"
-		(UnifSolution (fromList [(read "x0",read "f1[0]()")]) (fromList []))
-		implicit_nmgu1
-		implicit_scale1
-
-implicit1_t3 :: AutomatedTest
-implicit1_t3 = check_all_sol "Verifying that all solutions have {x0 -> f1[0]()}"
-		(UnifSolution (fromList [(read "x0",read "f1[0]()")]) (fromList []))
-		implicit_nmgu1
-		implicit_scale1
-
-implicit1_t4 :: AutomatedTest
-implicit1_t4 = check_not_sol_implicit "Verifying the implicit non-representation of {x0 -> f2[1](f1[0]())}"
-		(UnifSolution (fromList [(read "x0",read "f2[1](f1[0]())")]) (fromList []))
-		implicit_nmgu1
-
-implicit1_t5 :: AutomatedTest
-implicit1_t5 = check_not_sol_explicit "Verifying the explicit non-presence of {x0 -> f2[1](f1[0]())}"
-		(UnifSolution (fromList [(read "x0",read "f2[1](f1[0]())")]) (fromList []))
-		implicit_nmgu1
-		implicit_scale1
-
-implicit1_t6 :: AutomatedTest
-implicit1_t6 = check_sol_implicit "Verifying the implicit representation of {x1 -> f2[1](f1[0]())}"
-		(UnifSolution (fromList [(read "x1",read "f2[1](f1[0]())")]) (fromList []))
-		implicit_nmgu1
-		
-implicit1_t7 :: AutomatedTest
-implicit1_t7 = check_sol_explicit "Verifying the explicit presence of {x1 -> f2[1](f1[0]())"
-		(UnifSolution (fromList [(read "x1",read "f2[1](f1[0]())")]) (fromList []))
-		implicit_nmgu1
-		implicit_scale1
-
-implicit1_t8 :: AutomatedTest
-implicit1_t8 = check_not_all_sol "Verifying that not all solutions have {x1 -> f2[1](f1[0]())"
-		(UnifSolution (fromList [(read "x1",read "f2[1](f1[0]())")]) (fromList []))
-		implicit_nmgu1
-		implicit_scale1
-
-implicit_tests1 :: String
-implicit_tests1 = combine_test_results [implicit1_t1,implicit1_t2,implicit1_t3,implicit1_t4,implicit1_t5,implicit1_t6,implicit1_t7,implicit1_t8]
-
-
-implicit_eq2_1 :: JState SOMetaMGU
-implicit_eq2_1 = (read "x0") >:= (read "f1[0]()")
-
-implicit_eq2_2 :: JState SOMetaMGU
-implicit_eq2_2 = (read "x1") >:= (read "f2[1](f1[0]())")
-
-implicit_mgu2 :: SOMetaMGU
-implicit_mgu2 = runESMGU implicit_sig1 (implicit_eq1_1 >> implicit_eq2_2)
-
-implicit_nmgu2 :: SOMetaNMGU
-implicit_nmgu2 = fromJust (normalize_esmgu implicit_mgu2)
-
-implicit_sols2 :: EnumProc (SOMetaUnifSol :- CQRP)
-implicit_sols2 = fromProvenanceT (nesmgu_enumImplicit implicit_nmgu2)
-
-implicit_lsols2 :: EnumProc (SOMetaUnifSol :- CQRP)
-implicit_lsols2 = etake implicit_scale1 implicit_sols2
-
-implicit_rsols2 :: EnumProc SOMetaUnifSol
-implicit_rsols2 = raw <$> implicit_lsols2
-
-
-implicit2_t1 :: AutomatedTest
-implicit2_t1 = check_sol_implicit "Verifying the implicit representation of {x0 -> f1[0]()}"
-		(UnifSolution (fromList [(read "x0",read "f1[0]()")]) (fromList []))
-		implicit_nmgu2
-
-implicit2_t2 :: AutomatedTest
-implicit2_t2 = check_sol_explicit "Verifying the explicit presence of {x0 -> f1[0]()}"
-		(UnifSolution (fromList [(read "x0",read "f1[0]()")]) (fromList []))
-		implicit_nmgu2
-		implicit_scale1
-
-implicit2_t3 :: AutomatedTest
-implicit2_t3 = check_all_sol "Verifying that all solutions have {x0 -> f1[0]()}"
-		(UnifSolution (fromList [(read "x0",read "f1[0]()")]) (fromList []))
-		implicit_nmgu2
-		implicit_scale1
-
-implicit2_t4 :: AutomatedTest
-implicit2_t4 = check_not_sol_implicit "Verifying the implicit non-representation of {x0 -> f2[1](f1[0]())}"
-		(UnifSolution (fromList [(read "x0",read "f2[1](f1[0]())")]) (fromList []))
-		implicit_nmgu2
-
-implicit2_t5 :: AutomatedTest
-implicit2_t5 = check_not_sol_explicit "Verifying the explicit non-presence of {x0 -> f2[1](f1[0]())}"
-		(UnifSolution (fromList [(read "x0",read "f2[1](f1[0]())")]) (fromList []))
-		implicit_nmgu2
-		implicit_scale1
-
-implicit2_t6 :: AutomatedTest
-implicit2_t6 = check_sol_implicit "Verifying the implicit representation of {x1 -> f2[1](f1[0]())}"
-		(UnifSolution (fromList [(read "x1",read "f2[1](f1[0]())")]) (fromList []))
-		implicit_nmgu2
-		
-implicit2_t7 :: AutomatedTest
-implicit2_t7 = check_sol_explicit "Verifying the explicit presence of {x1 -> f2[1](f1[0]())"
-		(UnifSolution (fromList [(read "x1",read "f2[1](f1[0]())")]) (fromList []))
-		implicit_nmgu2
-		implicit_scale1
-
-implicit2_t8 :: AutomatedTest
-implicit2_t8 = check_all_sol "Verifying that all solutions have {x1 -> f2[1](f1[0]())"
-		(UnifSolution (fromList [(read "x1",read "f2[1](f1[0]())")]) (fromList []))
-		implicit_nmgu2
-		implicit_scale1
-
-implicit2_t9 :: AutomatedTest
-implicit2_t9 = check_not_sol_implicit "Verifying the implicit non-representation of {x1 -> f1[0]()}"
-		(UnifSolution (fromList [(read "x1",read "f1[0]()")]) (fromList []))
-		implicit_nmgu2
-
-implicit2_t10 :: AutomatedTest
-implicit2_t10 = check_not_sol_explicit "Verifying the explicit non-presence of {x1 -> f1[0]()}"
-		(UnifSolution (fromList [(read "x1",read "f1[0]()")]) (fromList []))
-		implicit_nmgu2
-		implicit_scale1
-
-implicit_tests2 :: String
-implicit_tests2 = combine_test_results [implicit2_t1,implicit2_t2,implicit2_t3,implicit2_t4,implicit2_t5,implicit2_t6,implicit2_t7,implicit2_t8,implicit2_t9,implicit2_t10]
-
-
-implicit_scale2 :: Int
-implicit_scale2 = 1000
-
-implicit_eq3_1 :: JState SOMetaMGU
-implicit_eq3_1 = (read "F1[0]") >::= (read "f1[0]")
-
-implicit_mgu3 :: SOMetaMGU
-implicit_mgu3 = runESMGU implicit_sig1 (implicit_eq3_1)
-
-implicit_nmgu3 :: SOMetaNMGU
-implicit_nmgu3 = fromJust (normalize_esmgu implicit_mgu3)
-
-implicit_sols3 :: EnumProc (SOMetaUnifSol :- CQRP)
-implicit_sols3 = fromProvenanceT (nesmgu_enumImplicit implicit_nmgu3)
-
-implicit_lsols3 :: EnumProc (SOMetaUnifSol :- CQRP)
-implicit_lsols3 = etake implicit_scale2 implicit_sols3
-
-implicit_rsols3 :: EnumProc SOMetaUnifSol
-implicit_rsols3 = raw <$> implicit_lsols3
-
-
-implicit3_t1 :: AutomatedTest
-implicit3_t1 = check_sol_implicit "Verifying the implicit representation of {F1[0] -> f1[0]}"
-		(UnifSolution (fromList []) (fromList [(read "F1[0]",read "f1[0]")]))
-		implicit_nmgu3
-
-implicit3_t2 :: AutomatedTest
-implicit3_t2 = check_sol_explicit "Verifying the explicit presence of {F1[0] -> f1[0]}"
-		(UnifSolution (fromList []) (fromList [(read "F1[0]",read "f1[0]")]))
-		implicit_nmgu3
-		implicit_scale2
-
-implicit3_t3 :: AutomatedTest
-implicit3_t3 = check_all_sol "Verifying that all solutions have {F1[0] -> f1[0]}"
-		(UnifSolution (fromList []) (fromList [(read "F1[0]",read "f1[0]")]))
-		implicit_nmgu3
-		implicit_scale2
-
-implicit3_t4 :: AutomatedTest
-implicit3_t4 = check_not_sol_implicit "Verifying the implicit non-representation of {F1[0] -> f2[1]{f1[0]}}"
-		(UnifSolution (fromList []) (fromList [(read "F1[0]",read "f2[1]{f1[0]}")]))
-		implicit_nmgu3
-
-implicit3_t5 :: AutomatedTest
-implicit3_t5 = check_not_sol_explicit "Verifying the explicit non-presence of {F1[0] -> f2[1]{f1[0]}}"
-		(UnifSolution (fromList []) (fromList [(read "F1[0]",read "f2[1]{f1[0]}")]))
-		implicit_nmgu3
-		implicit_scale2
-
-implicit3_t6 :: AutomatedTest
-implicit3_t6 = check_sol_implicit "Verifying the implicit representation of {F2[1] -> f2[1]{f1[0]}}"
-		(UnifSolution (fromList []) (fromList [(read "F2[1]",read "f2[1]{f1[0]}")]))
-		implicit_nmgu3
-		
-implicit3_t7 :: AutomatedTest
-implicit3_t7 = check_sol_explicit "Verifying the explicit presence of {F2[1] -> f2[1]{f1[0]}}"
-		(UnifSolution (fromList []) (fromList [(read "F2[1]",read "f2[1]{f1[0]}")]))
-		implicit_nmgu3
-		implicit_scale2
-
-implicit3_t8 :: AutomatedTest
-implicit3_t8 = check_not_all_sol "Verifying that not all solutions have {F2[1] -> f2[1]{f1[0]}}"
-		(UnifSolution (fromList []) (fromList [(read "F2[1]",read "f2[1]{f1[0]}")]))
-		implicit_nmgu3
-		implicit_scale2
-
-implicit_tests3 :: String
-implicit_tests3 = combine_test_results [implicit3_t1,implicit3_t2,implicit3_t3,implicit3_t4,implicit3_t5,implicit3_t6,implicit3_t7,implicit3_t8]
-
-
-implicit_eq4_1 :: JState SOMetaMGU
-implicit_eq4_1 = (read "F1[0]") >::= (read "f1[0]")
-
-implicit_eq4_2 :: JState SOMetaMGU
-implicit_eq4_2 = (read "x0") >:= (read "F1[0]()")
-
-implicit_mgu4 :: SOMetaMGU
-implicit_mgu4 = runESMGU implicit_sig1 (implicit_eq4_1 >> implicit_eq4_2)
-
-implicit_nmgu4 :: SOMetaNMGU
-implicit_nmgu4 = fromJust (normalize_esmgu implicit_mgu4)
-
-implicit_sols4 :: EnumProc (SOMetaUnifSol :- CQRP)
-implicit_sols4 = fromProvenanceT (nesmgu_enumImplicit implicit_nmgu4)
-
-implicit_lsols4 :: EnumProc (SOMetaUnifSol :- CQRP)
-implicit_lsols4 = etake implicit_scale2 implicit_sols4
-
-implicit_rsols4 :: EnumProc SOMetaUnifSol
-implicit_rsols4 = raw <$> implicit_lsols4
-
-implicit4_t1 :: AutomatedTest
-implicit4_t1 = check_sol_implicit "Verifying the implicit representation of {x0 -> f1[0]()}"
-		(UnifSolution (fromList [(read "x0",read "f1[0]()")]) (fromList []))
-		implicit_nmgu4
-
-implicit4_t2 :: AutomatedTest
-implicit4_t2 = check_sol_explicit "Verifying the explicit presence of {x0 -> f1[0]()}"
-		(UnifSolution (fromList [(read "x0",read "f1[0]()")]) (fromList []))
-		implicit_nmgu4
-		implicit_scale2
-
-implicit4_t3 :: AutomatedTest
-implicit4_t3 = check_all_sol "Verifying that all solutions have {x0 -> f1[0]()}"
-		(UnifSolution (fromList [(read "x0",read "f1[0]()")]) (fromList []))
-		implicit_nmgu4
-		implicit_scale2
-
-implicit4_t4 :: AutomatedTest
-implicit4_t4 = check_not_sol_implicit "Verifying the implicit non-representation of {x0 -> f2[1](f1[0]())}"
-		(UnifSolution (fromList [(read "x0",read "f2[1](f1[0]())")]) (fromList []))
-		implicit_nmgu4
-
-implicit4_t5 :: AutomatedTest
-implicit4_t5 = check_not_sol_explicit "Verifying the explicit non-presence of {x0 -> f2[1](f1[0]())}"
-		(UnifSolution (fromList [(read "x0",read "f2[1](f1[0]())")]) (fromList []))
-		implicit_nmgu4
-		implicit_scale2
-
-implicit_tests4 :: String
-implicit_tests4 = combine_test_results [implicit4_t1,implicit4_t2,implicit4_t3,implicit4_t4,implicit4_t5]
-
-
-implicit_eq5_1 :: JState SOMetaMGU
-implicit_eq5_1 = (read "x0") >:= (read "F1[0]()")
-
-implicit_eq5_2 :: JState SOMetaMGU
-implicit_eq5_2 = (read "x1") >:= (read "F1[0]()")
-
-implicit_mgu5 :: SOMetaMGU
-implicit_mgu5 = runESMGU implicit_sig1 (implicit_eq5_1 >> implicit_eq5_2)
-
-implicit_nmgu5 :: SOMetaNMGU
-implicit_nmgu5 = fromJust (normalize_esmgu implicit_mgu5)
-
-implicit_sols5 :: EnumProc (SOMetaUnifSol :- CQRP)
-implicit_sols5 = fromProvenanceT (nesmgu_enumImplicit implicit_nmgu5)
-
-implicit_lsols5 :: EnumProc (SOMetaUnifSol :- CQRP)
-implicit_lsols5 = etake implicit_scale2 implicit_sols5
-
-implicit_rsols5 :: EnumProc SOMetaUnifSol
-implicit_rsols5 = raw <$> implicit_lsols5
-
-implicit5_t1 :: AutomatedTest
-implicit5_t1 = check_sol_implicit "Verifying the implicit representation of {x0 -> f1[0](), x1 -> f1[0](), F1[0] -> f1[0]}"
-		(UnifSolution (fromList [(read "x0",read "f1[0]()"),(read "x1",read "f1[0]()")]) (fromList [(read "F1[0]",read "f1[0]")]))
-		implicit_nmgu5
-
-implicit5_t2 :: AutomatedTest
-implicit5_t2 = check_sol_explicit "Verifying the explicit presence of {x0 -> f1[0](), x1 -> f1[0](), F1[0] -> f1[0]}"
-		(UnifSolution (fromList [(read "x0",read "f1[0]()"),(read "x1",read "f1[0]()")]) (fromList [(read "F1[0]",read "f1[0]")]))
-		implicit_nmgu5
-		implicit_scale2
-
-implicit5_t3 :: AutomatedTest
-implicit5_t3 = check_not_all_sol "Verifying that not all solutions have {x0 -> f1[0](), x1 -> f1[0](), F1[0] -> f1[0]}"
-		(UnifSolution (fromList [(read "x0",read "f1[0]()"),(read "x1",read "f1[0]()")]) (fromList [(read "F1[0]",read "f1[0]")]))
-		implicit_nmgu5
-		implicit_scale2
-
-implicit5_t4 :: AutomatedTest
-implicit5_t4 = check_sol_implicit "Verifying the implicit representation of {x0 -> f2[1](f1[0]()), x1 -> f2[1](f1[0]()), F1[0] -> f2[1]{f1[0]}}"
-		(UnifSolution (fromList [(read "x0",read "f2[1](f1[0]())"),(read "x1",read "f2[1](f1[0]())")]) (fromList [(read "F1[0]",read "f2[1]{f1[0]}")]))
-		implicit_nmgu5
-
-implicit5_t5 :: AutomatedTest
-implicit5_t5 = check_sol_explicit "Verifying the explicit presence of {x0 -> f2[1](f1[0]()), x1 -> f2[1](f1[0]()), F1[0] -> f2[1]{f1[0]}}"
-		(UnifSolution (fromList [(read "x0",read "f2[1](f1[0]())"),(read "x1",read "f2[1](f1[0]())")]) (fromList [(read "F1[0]",read "f2[1]{f1[0]}")]))
-		implicit_nmgu5
-		implicit_scale2
-
-implicit5_t6 :: AutomatedTest
-implicit5_t6 = check_not_all_sol "Verifying that not all solutions have {x0 -> f2[1](f1[0]()), x1 -> f2[1](f1[0]()), F1[0] -> f2[1]{f1[0]}}"
-		(UnifSolution (fromList [(read "x0",read "f2[1](f1[0]())"),(read "x1",read "f2[1](f1[0]())")]) (fromList [(read "F1[0]",read "f2[1]{f1[0]}")]))
-		implicit_nmgu5
-		implicit_scale2
-
-implicit5_t7 :: AutomatedTest
-implicit5_t7 = check_not_sol_implicit "Verifying the implicit non-representation of {x0 -> f1[0](), x1 -> f2[1](f1[0]())}"
-		(UnifSolution (fromList [(read "x0",read "f1[0]()"),(read "x1",read "f2[1](f1[0]())")]) (fromList []))
-		implicit_nmgu5
-
-implicit5_t8 :: AutomatedTest
-implicit5_t8 = check_not_sol_explicit "Verifying the explicit non-presence of {x0 -> f1[0](), x1 -> f2[1](f1[0]())}"
-		(UnifSolution (fromList [(read "x0",read "f1[0]()"),(read "x1",read "f2[1](f1[0]())")]) (fromList []))
-		implicit_nmgu5
-		implicit_scale2
-
-implicit5_t9 :: AutomatedTest
-implicit5_t9 = check_not_sol_implicit "Verifying the implicit non-representation of {x0 -> f2[1](f1[0]()), x1 -> f1[0]()}"
-		(UnifSolution (fromList [(read "x0",read "f2[1](f1[0]())"),(read "x1",read "f1[0]()")]) (fromList []))
-		implicit_nmgu5
-
-implicit5_t10 :: AutomatedTest
-implicit5_t10 = check_not_sol_explicit "Verifying the explicit non-presence of {x0 -> f2[1](f1[0]()), x1 -> f1[0]()}"
-		(UnifSolution (fromList [(read "x0",read "f2[1](f1[0]())"),(read "x1",read "f1[0]()")]) (fromList []))
-		implicit_nmgu5
-		implicit_scale2
-
-implicit_tests5 :: String
-implicit_tests5 = combine_test_results [implicit5_t1,implicit5_t2,implicit5_t3,implicit5_t4,implicit5_t5,implicit5_t6,implicit5_t7,implicit5_t8,implicit5_t9,implicit5_t10]
-
-
-implicit_scale3 :: Int
-implicit_scale3 = 3000
-
-implicit_eq6_1 :: JState SOMetaMGU
-implicit_eq6_1 = (read "x0") >:= (read "f3[2]{F2[1],pi0}(f1[0](),f1[0]())")
-
-implicit_eq6_2 :: JState SOMetaMGU
-implicit_eq6_2 = (read "x1") >:= (read "f2[1]{F2[1]}(f1[0]())")
-
-implicit_mgu6 :: SOMetaMGU
-implicit_mgu6 = runESMGU implicit_sig1 (implicit_eq6_1 >> implicit_eq6_2)
-
-implicit_nmgu6 :: SOMetaNMGU
-implicit_nmgu6 = fromJust (normalize_esmgu implicit_mgu6)
-
-implicit_sols6 :: EnumProc (SOMetaUnifSol :- CQRP)
-implicit_sols6 = fromProvenanceT (nesmgu_enumImplicit implicit_nmgu6)
-
-implicit_lsols6 :: EnumProc (SOMetaUnifSol :- CQRP)
-implicit_lsols6 = etake implicit_scale3 implicit_sols6
-
-implicit_rsols6 :: EnumProc SOMetaUnifSol
-implicit_rsols6 = raw <$> implicit_lsols6
-
--- Unfortunately, we choose not to do explicit checks for this case because the solution space is too big to get a representative subset in a reasonable time using any reasonable search order.
-
-implicit6_t1 :: AutomatedTest
-implicit6_t1 = check_sol_implicit "Verifying the implicit representation of {x0 -> f3[2](f1[0](),f1[0]()), x1 -> f2[1](f1[0]()), F2[1] -> pi0}"
-		(UnifSolution (fromList [(read "x0",read "f3[2](f1[0](),f1[0]())"),(read "x1",read "f2[1](f1[0]())")]) (fromList [(read "F2[1]",read "pi0")]))
-		implicit_nmgu6
-
-implicit6_t2 :: AutomatedTest
-implicit6_t2 = check_sol_explicit "Verifying the explicit presence of {x0 -> f3[2](f1[0](),f1[0]()), x1 -> f2[1](f1[0]()), F2[1] -> pi0}"
-		(UnifSolution (fromList [(read "x0",read "f3[2](f1[0](),f1[0]())"),(read "x1",read "f2[1](f1[0]())")]) (fromList [(read "F2[1]",read "pi0")]))
-		implicit_nmgu6
-		implicit_scale3
-
-implicit6_t3 :: AutomatedTest
-implicit6_t3 = check_not_all_sol "Verifying that not all solutions have {x0 -> f3[2](f1[0](),f1[0]()), x1 -> f2[1](f1[0]()), F2[1] -> pi0}"
-		(UnifSolution (fromList [(read "x0",read "f3[2](f1[0](),f1[0]())"),(read "x1",read "f2[1](f1[0]())")]) (fromList [(read "F2[1]",read "pi0")]))
-		implicit_nmgu6
-		implicit_scale3
-
-implicit6_t4 :: AutomatedTest
-implicit6_t4 = check_sol_implicit "Verifying the implicit representation of {x0 -> f3[2](f1[0](),f1[0]()), x1 -> f2[1](f1[0]()), F2[1] -> f1[0]}"
-		(UnifSolution (fromList [(read "x0",read "f3[2](f1[0](),f1[0]())"),(read "x1",read "f2[1](f1[0]())")]) (fromList [(read "F2[1]",read "f1[0]")]))
-		implicit_nmgu6
-
-implicit6_t5 :: AutomatedTest
-implicit6_t5 = check_sol_explicit "Verifying the explicit presence of {x0 -> f3[2](f1[0](),f1[0]()), x1 -> f2[1](f1[0]()), F2[1] -> f1[0]}"
-		(UnifSolution (fromList [(read "x0",read "f3[2](f1[0](),f1[0]())"),(read "x1",read "f2[1](f1[0]())")]) (fromList [(read "F2[1]",read "f1[0]")]))
-		implicit_nmgu6
-		implicit_scale3
-
-implicit6_t6 :: AutomatedTest
-implicit6_t6 = check_not_all_sol "Verifying that not all solutions have {x0 -> f3[2](f1[0](),f1[0]()), x1 -> f2[1](f1[0]()), F2[1] -> f1[0]}"
-		(UnifSolution (fromList [(read "x0",read "f3[2](f1[0](),f1[0]())"),(read "x1",read "f2[1](f1[0]())")]) (fromList [(read "F2[1]",read "f1[0]")]))
-		implicit_nmgu6
-		implicit_scale3
-
-implicit6_t7 :: AutomatedTest
-implicit6_t7 = check_sol_implicit "Verifying the implicit representation of {x0 -> f3[2](f2[1](f1[0]()),f1[0]()), x1 -> f2[1](f2[1](f1[0]())), F2[1] -> f2[1]{f1[0]}}"
-		(UnifSolution (fromList [(read "x0",read "f3[2](f2[1](f1[0]()),f1[0]())"),(read "x1",read "f2[1](f2[1](f1[0]()))")]) (fromList [(read "F2[1]",read "f2[1]{f1[0]}")]))
-		implicit_nmgu6
-
-implicit6_t8 :: AutomatedTest
-implicit6_t8 = check_sol_explicit "Verifying the explicit presence of {x0 -> f3[2](f2[1](f1[0]()),f1[0]()), x1 -> f2[1](f2[1](f1[0]())), F2[1] -> f2[1]{f1[0]}}"
-		(UnifSolution (fromList [(read "x0",read "f3[2](f2[1](f1[0]()),f1[0]())"),(read "x1",read "f2[1](f2[1](f1[0]()))")]) (fromList [(read "F2[1]",read "f2[1]{f1[0]}")]))
-		implicit_nmgu6
-		implicit_scale3
-
-implicit6_t9 :: AutomatedTest
-implicit6_t9 = check_not_all_sol "Verifying that not all solutions have {x0 -> f3[2](f2[1](f1[0]()),f1[0]()), x1 -> f2[1](f2[1](f1[0]())), F2[1] -> f2[1]{f1[0]}}"
-		(UnifSolution (fromList [(read "x0",read "f3[2](f2[1](f1[0]()),f1[0]())"),(read "x1",read "f2[1](f2[1](f1[0]()))")]) (fromList [(read "F2[1]",read "f2[1]{f1[0]}")]))
-		implicit_nmgu6
-		implicit_scale3
-
-implicit6_t10 :: AutomatedTest
-implicit6_t10 = check_not_sol_implicit "Verifying the implicit non-representation of {x0 -> f3[2](f2[1](f1[0]()),f1[0]()), x1 -> f2[1](f1[0]())}"
-		(UnifSolution (fromList [(read "x0",read "f3[2](f2[1](f1[0]()),f1[0]())"),(read "x1",read "f2[1](f1[0]())")]) (fromList []))
-		implicit_nmgu6
-
-implicit6_t11 :: AutomatedTest
-implicit6_t11 = check_not_sol_explicit "Verifying the explicit non-presence of {x0 -> f3[2](f2[1](f1[0]()),f1[0]()), x1 -> f2[1](f1[0]())}"
-		(UnifSolution (fromList [(read "x0",read "f3[2](f2[1](f1[0]()),f1[0]())"),(read "x1",read "f2[1](f1[0]())")]) (fromList []))
-		implicit_nmgu6
-		implicit_scale3
-
-
-implicit_tests6 :: String
---implicit_tests6 = combine_test_results [implicit6_t1,implicit6_t2,implicit6_t3,implicit6_t4,implicit6_t5,implicit6_t6,implicit6_t7,implicit6_t8,implicit6_t9,implicit6_t10,implicit6_t11]
-implicit_tests6 = combine_test_results [implicit6_t1,implicit6_t2,implicit6_t3,implicit6_t4,implicit6_t5,implicit6_t6,implicit6_t7,implicit6_t9,implicit6_t10,implicit6_t11]
---implicit_tests6 = combine_test_results [implicit6_t1,implicit6_t4,implicit6_t7,implicit6_t10]
-
-
-implicit_scale4 :: Int
-implicit_scale4 = 100
-
-
-implicit_eq7_1 :: JState SOMetaMGU
-implicit_eq7_1 = (read "x0") >:= (read "F2[1](x1)")
-
-implicit_eq7_2 :: JState SOMetaMGU
-implicit_eq7_2 = (read "x1") >:= (read "F3[2](f1[0](),f2[1](f1[0]()))")
-
-implicit_eq7_3 :: JState SOMetaMGU
-implicit_eq7_3 = (read "F3[2]") >::= (read "f3[2]{F2[1],f1[0]}")
-
-implicit_mgu7 :: SOMetaMGU
-implicit_mgu7 = runESMGU implicit_sig1 (implicit_eq7_1 >> implicit_eq7_2 >> implicit_eq7_3)
-
-
-implicit_nmgu7 :: SOMetaNMGU
-implicit_nmgu7 = fromJust (normalize_esmgu implicit_mgu7)
-
-implicit_sols7 :: EnumProc (SOMetaUnifSol :- CQRP)
-implicit_sols7 = fromProvenanceT (nesmgu_enumImplicit implicit_nmgu7)
-
-implicit_lsols7 :: EnumProc (SOMetaUnifSol :- CQRP)
-implicit_lsols7 = etake implicit_scale4 implicit_sols7
-
-implicit_rsols7 :: EnumProc SOMetaUnifSol
-implicit_rsols7 = raw <$> implicit_lsols7
-
-implicit7_t1 :: AutomatedTest
-implicit7_t1 = check_sol_implicit "Verifying the implicit representation of {x0 -> f1[0](), x1 -> f3[2](f1[0](),f1[0]()), F3[2] -> f3[2]{f1[0],f1[0]}, F2[1] -> f1[0]}"
-		(UnifSolution (fromList [(read "x0",read "f1[0]()"),(read "x1",read "f3[2](f1[0](),f1[0]())")]) (fromList [(read "F3[2]",read "f3[2]{f1[0],f1[0]}"),(read "F2[1]",read "f1[0]")]))
-		implicit_nmgu7
-
-implicit7_t2 :: AutomatedTest
-implicit7_t2 = check_sol_explicit "Verifying the explicit presence of {x0 -> f1[0](), x1 -> f3[2](f1[0](),f1[0]()), F3[2] -> f3[2]{f1[0],f1[0]}, F2[1] -> f1[0]}"
-		(UnifSolution (fromList [(read "x0",read "f1[0]()"),(read "x1",read "f3[2](f1[0](),f1[0]())")]) (fromList [(read "F3[2]",read "f3[2]{f1[0],f1[0]}"),(read "F2[1]",read "f1[0]")]))
-		implicit_nmgu7
-		implicit_scale4
-
-implicit7_t3 :: AutomatedTest
-implicit7_t3 = check_not_all_sol "Verifying that not all solutions have {x0 -> f1[0](), x1 -> f3[2](f1[0](),f1[0]()), F3[2] -> f3[2]{f1[0],f1[0]}, F2[1] -> f1[0]}"
-		(UnifSolution (fromList [(read "x0",read "f1[0]()"),(read "x1",read "f3[2](f1[0](),f1[0]())")]) (fromList [(read "F3[2]",read "f3[2]{f1[0],f1[0]}"),(read "F2[1]",read "f1[0]")]))
-		implicit_nmgu7
-		implicit_scale4
-
-implicit7_t4 :: AutomatedTest
-implicit7_t4 = check_sol_implicit "Verifying the implicit representation of {x0 -> f3[2](f1[0](),f1[0]()), x1 -> f3[2](f1[0](),f1[0]()), F3[2] -> f3[2]{pi0,f1[0]}, F2[1] -> pi0}"
-		(UnifSolution (fromList [(read "x0",read "f3[2](f1[0](),f1[0]())"),(read "x1",read "f3[2](f1[0](),f1[0]())")]) (fromList [(read "F3[2]",read "f3[2]{pi0,f1[0]}"),(read "F2[1]",read "pi0")]))
-		implicit_nmgu7
-
-implicit7_t5 :: AutomatedTest
-implicit7_t5 = check_sol_explicit "Verifying the explicit presence of {x0 -> f3[2](f1[0](),f1[0]()), x1 -> f3[2](f1[0](),f1[0]()), F3[2] -> f3[2]{pi0,f1[0]}, F2[1] -> pi0}"
-		(UnifSolution (fromList [(read "x0",read "f3[2](f1[0](),f1[0]())"),(read "x1",read "f3[2](f1[0](),f1[0]())")]) (fromList [(read "F3[2]",read "f3[2]{pi0,f1[0]}"),(read "F2[1]",read "pi0")]))
-		implicit_nmgu7
-		implicit_scale4
-
-implicit7_t6 :: AutomatedTest
-implicit7_t6 = check_not_all_sol "Verifying that not all solutions have {x0 -> f3[2](f1[0](),f1[0]()), x1 -> f3[2](f1[0](),f1[0]()), F3[2] -> f3[2]{pi0,f1[0]}, F2[1] -> pi0}"
-		(UnifSolution (fromList [(read "x0",read "f3[2](f1[0](),f1[0]())"),(read "x1",read "f3[2](f1[0](),f1[0]())")]) (fromList [(read "F3[2]",read "f3[2]{pi0,f1[0]}"),(read "F2[1]",read "pi0")]))
-		implicit_nmgu7
-		implicit_scale4
-
-implicit7_t7 :: AutomatedTest
-implicit7_t7 = check_not_sol_implicit "Verifying the implicit non-representation of {x0 -> f1[0](), x1 -> f3[2](f2[1](f1[0]()),f1[0]())}"
-		(UnifSolution (fromList [(read "x0",read "f1[0]()"),(read "x1",read "f3[2](f2[1](f1[0]()),f1[0]())")]) (fromList []))
-		implicit_nmgu7
-
-implicit7_t8 :: AutomatedTest
-implicit7_t8 = check_not_sol_explicit "Verifying the explicit non-presence of {x0 -> f1[0](), x1 -> f3[2](f2[1](f1[0]()),f1[0]())}"
-		(UnifSolution (fromList [(read "x0",read "f1[0]()"),(read "x1",read "f3[2](f2[1](f1[0]()),f1[0]())")]) (fromList []))
-		implicit_nmgu7
-		implicit_scale4
-
-implicit7_t9 :: AutomatedTest
-implicit7_t9 = check_not_sol_implicit "Verifying the implicit non-representation of {x0 -> f1[0](), F3[2] -> f3[2]{pi0,f1[0]}}"
-		(UnifSolution (fromList [(read "x0",read "f1[0]()")]) (fromList [(read "F3[2]",read "f3[2]{pi0,f1[0]}")]))
-		implicit_nmgu7
-
-implicit7_t10 :: AutomatedTest
-implicit7_t10 = check_not_sol_explicit "Verifying the explicit non-presence of {x0 -> f1[0](), F3[2] -> f3[2]{pi0,f1[0]}}"
-		(UnifSolution (fromList [(read "x0",read "f1[0]()")]) (fromList [(read "F3[2]",read "f3[2]{pi0,f1[0]}")]))
-		implicit_nmgu7
-		implicit_scale4
-
-implicit7_t11 :: AutomatedTest
-implicit7_t11 = check_not_sol_implicit "Verifying the implicit non-representation of {x0 -> f1[0](), F2[1] -> pi0}"
-		(UnifSolution (fromList [(read "x0",read "f1[0]()")]) (fromList [(read "F2[1]",read "pi0")]))
-		implicit_nmgu7
-
-implicit7_t12 :: AutomatedTest
-implicit7_t12 = check_not_sol_explicit "Verifying the explicit non-presence of {x0 -> f1[0](), F2[1] -> pi0}"
-		(UnifSolution (fromList [(read "x0",read "f1[0]()")]) (fromList [(read "F2[1]",read "pi0")]))
-		implicit_nmgu7
-		implicit_scale4
-
--- These are actually compatible, because x1 has the same value in the first two cases.
---implicit7_t13 :: AutomatedTest
---implicit7_t13 = check_not_sol_implicit "Verifying the implicit non-representation of {x1 -> f3[2](f1[0](),f1[0]()), F3[2] -> f3[2]{pi0,f1[0]}}"
---		(UnifSolution (fromList [(read "x1",read "f3[2](f1[0](),f1[0]())")]) (fromList [(read "F3[2]",read "f3[2]{pi0,f1[0]}")]))
---		implicit_nmgu7
-
---implicit7_t14 :: AutomatedTest
---implicit7_t14 = check_not_sol_explicit "Verifying the explicit non-presence of {x1 -> f3[2](f1[0](),f1[0]()), F3[2] -> f3[2]{pi0,f1[0]}}"
---		(UnifSolution (fromList [(read "x1",read "f3[2](f1[0](),f1[0]())")]) (fromList [(read "F3[2]",read "f3[2]{pi0,f1[0]}")]))
---		implicit_nmgu7
---		implicit_scale4
-
---implicit7_t15 :: AutomatedTest
---implicit7_t15 = check_not_sol_implicit "Verifying the implicit non-representation of {x1 -> f3[2](f1[0](),f1[0]()), F2[1] -> pi0}"
---		(UnifSolution (fromList [(read "x1",read "f3[2](f1[0](),f1[0]())")]) (fromList [(read "F2[1]",read "pi0")]))
---		implicit_nmgu7
-
---implicit7_t16 :: AutomatedTest
---implicit7_t16 = check_not_sol_explicit "Verifying the explicit non-presence of {x1 -> f3[2](f1[0](),f1[0]()), F2[1] -> pi0}"
---		(UnifSolution (fromList [(read "x1",read "f3[2](f1[0](),f1[0]())")]) (fromList [(read "F2[1]",read "pi0")]))
---		implicit_nmgu7
---		implicit_scale4
-
-implicit7_t17 :: AutomatedTest
-implicit7_t17 = check_not_sol_implicit "Verifying the implicit non-representation of {F3[2] -> f3[2]{f1[0],f1[0]}, F2[1] -> pi0}"
-		(UnifSolution (fromList []) (fromList [(read "F3[2]",read "f3[2]{f1[0],f1[0]}"),(read "F2[1]",read "pi0")]))
-		implicit_nmgu7
-
-implicit7_t18 :: AutomatedTest
-implicit7_t18 = check_not_sol_explicit "Verifying the explicit non-presence of {F3[2] -> f3[2]{f1[0],f1[0]}, F2[1] -> pi0}"
-		(UnifSolution (fromList []) (fromList [(read "F3[2]",read "f3[2]{f1[0],f1[0]}"),(read "F2[1]",read "pi0")]))
-		implicit_nmgu7
-		implicit_scale4
-
-implicit_tests7 :: String
-implicit_tests7 = combine_test_results [implicit7_t1,implicit7_t2,implicit7_t3,implicit7_t4,implicit7_t5,implicit7_t6,implicit7_t7,implicit7_t8,implicit7_t9,implicit7_t10,implicit7_t11,implicit7_t12,implicit7_t17,implicit7_t18]
-
-
-implicit_eq8_1 :: JState SOMetaMGU
-implicit_eq8_1 = (read "x0") >:= (read "F2[1](f1[0]())")
-
-implicit_mgu8 :: SOMetaMGU
-implicit_mgu8 = runESMGU implicit_sig1 (implicit_eq8_1)
-
-implicit_nmgu8 :: SOMetaNMGU
-implicit_nmgu8 = fromJust (normalize_esmgu implicit_mgu8)
-
-implicit_sols8 :: EnumProc (SOMetaUnifSol :- CQRP)
-implicit_sols8 = fromProvenanceT (nesmgu_enumImplicit implicit_nmgu8)
-
-implicit_lsols8 :: EnumProc (SOMetaUnifSol :- CQRP)
-implicit_lsols8 = etake implicit_scale3 implicit_sols8
-
-implicit_rsols8 :: EnumProc SOMetaUnifSol
-implicit_rsols8 = raw <$> implicit_lsols8
-
--- We only check implicitly for this one, as it is quite complex instantiations that explicitly would take long to appear.
-implicit8_t1 :: AutomatedTest
-implicit8_t1 = check_sol_implicit "Verifying the implicit representation of {x0 -> f3[2](f1[0](),f1[0]()), F2[1] -> f3[2]{pi0,pi0}}"
-		(UnifSolution (fromList [(read "x0",read "f3[2](f1[0](),f1[0]())")]) (fromList [(read "F2[1]",read "f3[2]{pi0,pi0}")]))
-		implicit_nmgu8
-
-implicit8_t2 :: AutomatedTest
-implicit8_t2 = check_sol_implicit "Verifying the implicit representation of {x0 -> f3[2](f1[0](),f1[0]()), F2[1] -> f3[2]{pi0,f1[0]}}"
-		(UnifSolution (fromList [(read "x0",read "f3[2](f1[0](),f1[0]())")]) (fromList [(read "F2[1]",read "f3[2]{pi0,f1[0]}")]))
-		implicit_nmgu8
-
-implicit8_t3 :: AutomatedTest
-implicit8_t3 = check_sol_implicit "Verifying the implicit representation of {x0 -> f3[2](f2[1](f1[0]()),f2[1](f1[0]())), F2[1] -> f3[2]{f2[1]{pi0},f2[1]{pi0}}}"
-		(UnifSolution (fromList [(read "x0",read "f3[2](f2[1](f1[0]()),f2[1](f1[0]()))")]) (fromList [(read "F2[1]",read "f3[2]{f2[1]{pi0},f2[1]{pi0}}")]))
-		implicit_nmgu8
-
-implicit8_t4 :: AutomatedTest
-implicit8_t4 = check_sol_implicit "Verifying the implicit representation of {x0 -> f3[2](f2[1](f1[0]()),f1[0]()), F2[1] -> f3[2]{f2[1]{f1[0]},pi0}}"
-		(UnifSolution (fromList [(read "x0",read "f3[2](f2[1](f1[0]()),f1[0]())")]) (fromList [(read "F2[1]",read "f3[2]{f2[1]{f1[0]},pi0}")]))
-		implicit_nmgu8
-
-implicit8_t5 :: AutomatedTest
-implicit8_t5 = check_not_sol_implicit "Verifying the implicit non-representation of {x0 -> f3[2](f2[1](f1[0]()),f1[0]()), F2[1] -> f3[2]{pi0,pi0}}"
-		(UnifSolution (fromList [(read "x0",read "f3[2](f2[1](f1[0]()),f1[0]())")]) (fromList [(read "F2[1]",read "f3[2]{pi0,pi0}")]))
-		implicit_nmgu8
-
--- What if we don't give it the hint of what the second-order instantiation might look like, so that it needs to infer composite instantiations for them. This will fail in not-so-naive implementations.
-implicit8_t6 :: AutomatedTest
-implicit8_t6 = check_sol_implicit "Verifying the implicit representation of {x0 -> f3[2](f1[0](),f1[0]())}"
-		(UnifSolution (fromList [(read "x0",read "f3[2](f1[0](),f1[0]())")]) (fromList []))
-		implicit_nmgu8
-
-implicit8_t7 :: AutomatedTest
-implicit8_t7 = check_sol_implicit "Verifying the implicit representation of {x0 -> f3[2](f2[1](f1[0]()),f1[0]())}"
-		(UnifSolution (fromList [(read "x0",read "f3[2](f2[1](f1[0]()),f1[0]())")]) (fromList []))
-		implicit_nmgu8
-
-
-
-implicit_tests8 :: String
-implicit_tests8 = combine_test_results [implicit8_t1,implicit8_t2,implicit8_t3,implicit8_t4,implicit8_t5,implicit8_t6,implicit8_t7]
-
-
-
-
-implicit_test :: IO ()
-implicit_test = putStr "EXAMPLE 1\n\n" >> putStr implicit_tests1 >>
-		putStr "EXAMPLE 2\n\n" >> putStr implicit_tests2 >>
-		putStr "EXAMPLE 3\n\n" >> putStr implicit_tests3 >>
-		putStr "EXAMPLE 4\n\n" >> putStr implicit_tests4 >>
-		putStr "EXAMPLE 5\n\n" >> putStr implicit_tests5 >>
-		putStr "EXAMPLE 6\n\n" >> putStr implicit_tests6 >>
-		putStr "EXAMPLE 7\n\n" >> putStr implicit_tests7 >>
-		putStr "EXAMPLE 8\n\n" >> putStr implicit_tests8
-
-|-}
-
-
-
-
 -- Dependency graph operation tests
 -- Note that on the tests we always assume that we start from an empty graph, to build the StateT.
 newtype RTestSOMetaUnifDGraph s = RTestSOMetaUnifDGraph {fromMudg :: SOMetaUnifDGraph s}
@@ -758,10 +51,10 @@ lens_RTestSOMetaUnifDGraph f rrmudg = fmap (\rmudg -> RTestSOMetaUnifDGraph rmud
 emptyRMUDG :: SOMetaSignature -> RTestSOMetaUnifDGraph s
 emptyRMUDG sig = RTestSOMetaUnifDGraph (emptyVDGraph sig)
 
-on_vdgraph :: StateT (ESUnifVDGraph s CTermF OPredicate OFunction OVariable SOMVariable UnifVariable) (ST s) a -> StateT (RTestSOMetaUnifDGraph s) (ST s) a
+on_vdgraph :: StateT (ESUnifVDGraph s CTermF SOPredicate OPredicate OFunction OVariable SOAMVariable SOMVariable UnifVariable) (ST s) a -> StateT (RTestSOMetaUnifDGraph s) (ST s) a
 on_vdgraph = mzoom lens_RTestSOMetaUnifDGraph
 
-on_dgraph :: StateT (ESUnifDGraph s CTermF OFunction OVariable SOMVariable UnifVariable) (ST s) a -> StateT (RTestSOMetaUnifDGraph s) (ST s) a
+on_dgraph :: StateT (ESUnifDGraph s CTermF OPredicate OFunction OVariable SOAMVariable SOMVariable UnifVariable) (ST s) a -> StateT (RTestSOMetaUnifDGraph s) (ST s) a
 on_dgraph = mzoom (lens_RTestSOMetaUnifDGraph . lens_esunifdgraph_dgraph)
 
 to_rsomudg :: SOMetaSignature -> (forall s. StateT (RTestSOMetaUnifDGraph s) (ST s) a) -> RSOMetaUnifDGraph
@@ -773,16 +66,16 @@ show_mudg sig s = putStr (runST (fst <$> (runStateT (s >> (mzoom lens_RTestSOMet
 
 -- Check that horizontal edge exists / does not exist
 check_hfoedge :: SOMetaSignature -> String -> (forall s. StateT (RTestSOMetaUnifDGraph s) (ST s) a) -> SOMetatermF -> [SOMetaTermDependant] -> SOMetaTermDependant -> AutomatedTest
-check_hfoedge sig title stmudg h ss t = AT title (if result then (ATR True "The horizontal edge was correctly found.") else (ATR False "Could not find the expected horizontal edge.")) where hid = relbwEqDGSoId h; sids = Prelude.map relbwEqDGFoId ss; tid = relbwEqDGFoId t; checked = do {stmudg; on_dgraph (st_checkEqDGFOEdge hid sids tid)}; result = getStateTSTValue checked (emptyRMUDG sig)
+check_hfoedge sig title stmudg h ss t = AT title (if result then (ATR True "The horizontal edge was correctly found.") else (ATR False "Could not find the expected horizontal edge.")) where hid = relbwEqDGSoId (FSONode h); sids = Prelude.map relbwEqDGFoId ss; tid = relbwEqDGFoId t; checked = do {stmudg; on_dgraph (st_checkEqDGFOEdge hid sids tid)}; result = getStateTSTValue checked (emptyRMUDG sig)
 
 check_hsoedge :: SOMetaSignature -> String -> (forall s. StateT (RTestSOMetaUnifDGraph s) (ST s) a) -> SOMetatermF -> [SOMetatermF] -> SOMetatermF -> AutomatedTest
-check_hsoedge sig title stmudg h ss t = AT title (if result then (ATR True "The horizontal edge was correctly found.") else (ATR False "Could not find the expected horizontal edge.")) where hid = relbwEqDGSoId h; sids = Prelude.map relbwEqDGSoId ss; tid = relbwEqDGSoId t; checked = do {stmudg; on_dgraph (st_checkEqDGSOEdge hid sids tid)}; result = getStateTSTValue checked (emptyRMUDG sig)
+check_hsoedge sig title stmudg h ss t = AT title (if result then (ATR True "The horizontal edge was correctly found.") else (ATR False "Could not find the expected horizontal edge.")) where hid = relbwEqDGSoId (FSONode h); sids = Prelude.map (relbwEqDGSoId . FSONode) ss; tid = relbwEqDGSoId (FSONode t); checked = do {stmudg; on_dgraph (st_checkEqDGSOEdge hid sids tid)}; result = getStateTSTValue checked (emptyRMUDG sig)
 
 check_not_hfoedge :: SOMetaSignature -> String -> (forall s. StateT (RTestSOMetaUnifDGraph s) (ST s) a) -> SOMetatermF -> [SOMetaTermDependant] -> SOMetaTermDependant -> AutomatedTest
-check_not_hfoedge sig title stmudg h ss t = AT title (if result then (ATR True "The horizontal edge was correctly not found.") else (ATR False "Found the horizontal edge, but we should not have done so.")) where hid = relbwEqDGSoId h; sids = Prelude.map relbwEqDGFoId ss; tid = relbwEqDGFoId t; checked = do {stmudg; on_dgraph (st_checkEqDGFOEdge hid sids tid)}; result = not (getStateTSTValue checked (emptyRMUDG sig))
+check_not_hfoedge sig title stmudg h ss t = AT title (if result then (ATR True "The horizontal edge was correctly not found.") else (ATR False "Found the horizontal edge, but we should not have done so.")) where hid = relbwEqDGSoId (FSONode h); sids = Prelude.map relbwEqDGFoId ss; tid = relbwEqDGFoId t; checked = do {stmudg; on_dgraph (st_checkEqDGFOEdge hid sids tid)}; result = not (getStateTSTValue checked (emptyRMUDG sig))
 
 check_not_hsoedge :: SOMetaSignature -> String -> (forall s. StateT (RTestSOMetaUnifDGraph s) (ST s) a) -> SOMetatermF -> [SOMetatermF] -> SOMetatermF -> AutomatedTest
-check_not_hsoedge sig title stmudg h ss t = AT title (if result then (ATR True "The horizontal edge was correctly not found.") else (ATR False "Found the horizontal edge, but we should not have done so.")) where hid = relbwEqDGSoId h; sids = Prelude.map relbwEqDGSoId ss; tid = relbwEqDGSoId t; checked = do {stmudg; on_dgraph (st_checkEqDGSOEdge hid sids tid)}; result = not (getStateTSTValue checked (emptyRMUDG sig))
+check_not_hsoedge sig title stmudg h ss t = AT title (if result then (ATR True "The horizontal edge was correctly not found.") else (ATR False "Found the horizontal edge, but we should not have done so.")) where hid = relbwEqDGSoId (FSONode h); sids = Prelude.map (relbwEqDGSoId . FSONode) ss; tid = relbwEqDGSoId (FSONode t); checked = do {stmudg; on_dgraph (st_checkEqDGSOEdge hid sids tid)}; result = not (getStateTSTValue checked (emptyRMUDG sig))
 
 
 -- Check that vertical edge exists / does not exist
@@ -797,13 +90,13 @@ check_foequiv :: SOMetaSignature -> String -> (forall s. StateT (RTestSOMetaUnif
 check_foequiv sig title stmudg a b = AT title (if result then (ATR True "The two elements were indeed found to be equivalent.") else (ATR False "The two elements were not equivalent, but they should be.")) where aid = relbwEqDGFoId a; bid = relbwEqDGFoId b; checked = do {stmudg; on_dgraph (eqSTRelativeIds aid bid)}; result = getStateTSTValue checked (emptyRMUDG sig)
 
 check_soequiv :: SOMetaSignature -> String -> (forall s. StateT (RTestSOMetaUnifDGraph s) (ST s) a) -> SOMetatermF -> SOMetatermF -> AutomatedTest
-check_soequiv sig title stmudg a b = AT title (if result then (ATR True "The two elements were indeed found to be equivalent.") else (ATR False "The two elements were not equivalent, but they should be.")) where aid = relbwEqDGSoId a; bid = relbwEqDGSoId b; checked = do {stmudg; on_dgraph (eqSTRelativeIds aid bid)}; result = getStateTSTValue checked (emptyRMUDG sig)
+check_soequiv sig title stmudg a b = AT title (if result then (ATR True "The two elements were indeed found to be equivalent.") else (ATR False "The two elements were not equivalent, but they should be.")) where aid = relbwEqDGSoId (FSONode a); bid = relbwEqDGSoId (FSONode b); checked = do {stmudg; on_dgraph (eqSTRelativeIds aid bid)}; result = getStateTSTValue checked (emptyRMUDG sig)
 
 check_not_foequiv :: SOMetaSignature -> String -> (forall s. StateT (RTestSOMetaUnifDGraph s) (ST s) a) -> SOMetaTermDependant -> SOMetaTermDependant -> AutomatedTest
 check_not_foequiv sig title stmudg a b = AT title (if result then (ATR True "The two elements were indeed found to be not equivalent.") else (ATR False "The two elements were equivalent, but they should not be.")) where aid = relbwEqDGFoId a; bid = relbwEqDGFoId b; checked = do {stmudg; on_dgraph (eqSTRelativeIds aid bid)}; result = not (getStateTSTValue checked (emptyRMUDG sig))
 
 check_not_soequiv :: SOMetaSignature -> String -> (forall s. StateT (RTestSOMetaUnifDGraph s) (ST s) a) -> SOMetatermF -> SOMetatermF -> AutomatedTest
-check_not_soequiv sig title stmudg a b = AT title (if result then (ATR True "The two elements were indeed found to be not equivalent.") else (ATR False "The two elements were equivalent, but they should not be.")) where aid = relbwEqDGSoId a; bid = relbwEqDGSoId b; checked = do {stmudg; on_dgraph (eqSTRelativeIds aid bid)}; result = not (getStateTSTValue checked (emptyRMUDG sig))
+check_not_soequiv sig title stmudg a b = AT title (if result then (ATR True "The two elements were indeed found to be not equivalent.") else (ATR False "The two elements were equivalent, but they should not be.")) where aid = relbwEqDGSoId (FSONode a); bid = relbwEqDGSoId (FSONode b); checked = do {stmudg; on_dgraph (eqSTRelativeIds aid bid)}; result = not (getStateTSTValue checked (emptyRMUDG sig))
 
 
 -- Checking with expressions
@@ -814,10 +107,10 @@ check_not_foexp :: SOMetaSignature -> String -> (forall s. StateT (RTestSOMetaUn
 check_not_foexp sig title stmudg exp t = AT title (if result then (ATR True "The dependant does not match the expression in the graph.") else (ATR False "The dependant matches the expression in the graph, but it should not.")) where checked = do {stmudg; on_vdgraph (match_foexp exp (relbwEqDGFoId t))}; result = not (getStateTSTValue checked (emptyRMUDG sig))
 
 check_soexp :: SOMetaSignature -> String -> (forall s. StateT (RTestSOMetaUnifDGraph s) (ST s) a) -> SOMetaUnifSOExp -> SOMetatermF -> AutomatedTest
-check_soexp sig title stmudg exp t = AT title (if result then (ATR True "The dependant matches the expression in the graph.") else (ATR False "The dependant does not match the expression in the graph, but it should.")) where checked = do {stmudg; on_vdgraph (match_soexp exp (relbwEqDGSoId t))}; result = getStateTSTValue checked (emptyRMUDG sig)
+check_soexp sig title stmudg exp t = AT title (if result then (ATR True "The dependant matches the expression in the graph.") else (ATR False "The dependant does not match the expression in the graph, but it should.")) where checked = do {stmudg; on_vdgraph (match_soexp exp (relbwEqDGSoId (FSONode t)))}; result = getStateTSTValue checked (emptyRMUDG sig)
 
 check_not_soexp :: SOMetaSignature -> String -> (forall s. StateT (RTestSOMetaUnifDGraph s) (ST s) a) -> SOMetaUnifSOExp -> SOMetatermF -> AutomatedTest
-check_not_soexp sig title stmudg exp t = AT title (if result then (ATR True "The dependant does not match the expression in the graph.") else (ATR False "The dependant matches the expression in the graph, but it should not.")) where checked = do {stmudg; on_vdgraph (match_soexp exp (relbwEqDGSoId t))}; result = not (getStateTSTValue checked (emptyRMUDG sig))
+check_not_soexp sig title stmudg exp t = AT title (if result then (ATR True "The dependant does not match the expression in the graph.") else (ATR False "The dependant matches the expression in the graph, but it should not.")) where checked = do {stmudg; on_vdgraph (match_soexp exp (relbwEqDGSoId (FSONode t)))}; result = not (getStateTSTValue checked (emptyRMUDG sig))
 
 
 -- For answer sets
@@ -850,13 +143,14 @@ check_all_resuvdg maxen title ftest as = case filtered of {EnumProc.Empty -> AT 
 
 
 -- UnifSysSolution tests
+check_map :: (Normalizable b b, Eq b, Ord a) => (a := b) -> (a := b) -> Bool
+check_map desired sol = all f (toList desired) where f = (\(k,v) -> NormalizedFunctor (sol !? k) ~~ NormalizedFunctor (Just v))
+
 check_usol :: String -> SOMetaUnifSysSolution -> SOMetaUnifSysSolution -> AutomatedTest
-check_usol title desired sol = if (all f (toList desired)) then (AT title (ATR True "All the values in the desired solution were found in the actual solution.")) else (AT title (ATR False "Some values in the desired solution could not be found in the actual solution."))
-	where f = (\(k,v) -> NormalizedFunctor (sol !? k) ~~ NormalizedFunctor (Just v))
+check_usol title desired sol = if ((check_map (uss_fnsol desired) (uss_fnsol sol)) && (check_map (uss_pdsol desired) (uss_pdsol sol))) then (AT title (ATR True "All the values in the desired solution were found in the actual solution.")) else (AT title (ATR False "Some values in the desired solution could not be found in the actual solution."))	
 
 check_not_usol :: String -> SOMetaUnifSysSolution -> SOMetaUnifSysSolution -> AutomatedTest
-check_not_usol title desired sol = if (any f (toList desired)) then (AT title (ATR False "Some of the values in the undesired solution were found in the actual solution.")) else (AT title (ATR True "None of the values from the undesired solution could be found in the actual solution."))
-	where f = (\(k,v) -> NormalizedFunctor (sol !? k) ~~ NormalizedFunctor (Just v))
+check_not_usol title desired sol = if ((check_map (uss_fnsol desired) (uss_fnsol sol)) && (check_map (uss_pdsol desired) (uss_pdsol sol))) then (AT title (ATR False "Some of the values in the undesired solution were found in the actual solution.")) else (AT title (ATR True "None of the values from the undesired solution could be found in the actual solution."))
 
 
 check_en_any_usol :: Int -> String -> (String -> SOMetaUnifSysSolution -> AutomatedTest) -> AnswerSet s SOMetaUnifSysSolution -> AutomatedTest
@@ -914,10 +208,10 @@ vcommute1_soterm1 :: SOMetatermF
 vcommute1_soterm1 = read "f1[1]"
 
 vcommute1_sotid1 :: SOMetaUnifRelSoId s
-vcommute1_sotid1 = relbwEqDGSoId vcommute1_soterm1
+vcommute1_sotid1 = relbwEqDGSoId (FSONode vcommute1_soterm1)
 
 vcommute1_sig :: SOMetaSignature
-vcommute1_sig = SOSignature (Signature [] [EnumProc.Empty,read "f1[1]" --> EnumProc.Empty] (read "x0" --> read "x1" --> EnumProc.Empty)) EnumProc.Empty
+vcommute1_sig = SOSignature (Signature [] [EnumProc.Empty,read "f1[1]" --> EnumProc.Empty] (read "x0" --> read "x1" --> EnumProc.Empty)) EnumProc.Empty EnumProc.Empty EnumProc.Empty
 
 vcommute1_mudg1 :: StateT (RTestSOMetaUnifDGraph s) (ST s) _
 vcommute1_mudg1 = do {on_dgraph (newEqDGFOEdge vcommute1_sotid1 [vcommute1_tid1] vcommute1_tid2); on_vdgraph (addVFoEdge vcommute1_tid2 vcommute1_tid3 (read "u1")); pass}
@@ -994,10 +288,10 @@ vcommute2_soterm1 :: SOMetatermF
 vcommute2_soterm1 = read "f1[2]"
 
 vcommute2_sotid1 :: SOMetaUnifRelSoId s
-vcommute2_sotid1 = relbwEqDGSoId vcommute2_soterm1
+vcommute2_sotid1 = relbwEqDGSoId (FSONode vcommute2_soterm1)
 
 vcommute2_sig :: SOMetaSignature
-vcommute2_sig = SOSignature (Signature [] [EnumProc.Empty,EnumProc.Empty,read "f1[2]" --> EnumProc.Empty] (read "x0" --> read "x1" --> read "x2" --> EnumProc.Empty)) EnumProc.Empty
+vcommute2_sig = SOSignature (Signature [] [EnumProc.Empty,EnumProc.Empty,read "f1[2]" --> EnumProc.Empty] (read "x0" --> read "x1" --> read "x2" --> EnumProc.Empty)) EnumProc.Empty EnumProc.Empty EnumProc.Empty
 
 vcommute2_mudg1 :: StateT (RTestSOMetaUnifDGraph s) (ST s) _
 vcommute2_mudg1 = do {on_dgraph (newEqDGFOEdge vcommute2_sotid1 [vcommute2_tid1,vcommute2_tid2] vcommute2_tid3); on_vdgraph (addVFoEdge vcommute2_tid3 vcommute2_tid4 (read "u1")); pass}
@@ -1091,16 +385,16 @@ vcommute3_soterm1 :: SOMetatermF
 vcommute3_soterm1 = read "f1[1]"
 
 vcommute3_sotid1 :: SOMetaUnifRelSoId s
-vcommute3_sotid1 = relbwEqDGSoId vcommute3_soterm1
+vcommute3_sotid1 = relbwEqDGSoId (FSONode vcommute3_soterm1)
 
 vcommute3_soterm2 :: SOMetatermF
 vcommute3_soterm2 = read "f2[1]"
 
 vcommute3_sotid2 :: SOMetaUnifRelSoId s
-vcommute3_sotid2 = relbwEqDGSoId vcommute3_soterm2
+vcommute3_sotid2 = relbwEqDGSoId (FSONode vcommute3_soterm2)
 
 vcommute3_sig :: SOMetaSignature
-vcommute3_sig = SOSignature (Signature [] [EnumProc.Empty,read "f1[1]" --> read "f2[1]" --> EnumProc.Empty] (read "x0" --> read "x1" --> read "x2" --> EnumProc.Empty)) EnumProc.Empty
+vcommute3_sig = SOSignature (Signature [] [EnumProc.Empty,read "f1[1]" --> read "f2[1]" --> EnumProc.Empty] (read "x0" --> read "x1" --> read "x2" --> EnumProc.Empty)) EnumProc.Empty EnumProc.Empty EnumProc.Empty
 
 vcommute3_mudg1 :: StateT (RTestSOMetaUnifDGraph s) (ST s) _
 vcommute3_mudg1 = do {on_dgraph (newEqDGFOEdge vcommute3_sotid1 [vcommute3_tid1] vcommute3_tid2); on_dgraph (newEqDGFOEdge vcommute3_sotid2 [vcommute3_tid5] vcommute3_tid1); on_vdgraph (addVFoEdge vcommute3_tid2 vcommute3_tid3 (read "u1")); pass}
@@ -1174,10 +468,10 @@ vcommute4_soterm1 :: SOMetatermF
 vcommute4_soterm1 = read "f1[1]"
 
 vcommute4_sotid1 :: SOMetaUnifRelSoId s
-vcommute4_sotid1 = relbwEqDGSoId vcommute4_soterm1
+vcommute4_sotid1 = relbwEqDGSoId (FSONode vcommute4_soterm1)
 
 vcommute4_sig :: SOMetaSignature
-vcommute4_sig = SOSignature (Signature [] [EnumProc.Empty,read "f1[1]" --> EnumProc.Empty] (read "x0" --> read "x1" --> EnumProc.Empty)) EnumProc.Empty
+vcommute4_sig = SOSignature (Signature [] [EnumProc.Empty,read "f1[1]" --> EnumProc.Empty] (read "x0" --> read "x1" --> EnumProc.Empty)) EnumProc.Empty EnumProc.Empty EnumProc.Empty
 
 vcommute4_mudg1 :: StateT (RTestSOMetaUnifDGraph s) (ST s) _
 vcommute4_mudg1 = do {on_dgraph (newEqDGFOEdge vcommute4_sotid1 [vcommute4_tid1] vcommute4_tid2); on_vdgraph (addVFoEdge vcommute4_tid1 vcommute4_tid4 (read "u1")); pass}
@@ -1261,7 +555,7 @@ valign1_tid6 :: SOMetaUnifRelFoId s
 valign1_tid6 = relbwEqDGFoId valign1_term6
 
 valign1_sig :: SOMetaSignature
-valign1_sig = SOSignature (Signature [] [] (read "x0" --> read "x1" --> EnumProc.Empty)) EnumProc.Empty
+valign1_sig = SOSignature (Signature [] [] (read "x0" --> read "x1" --> EnumProc.Empty)) EnumProc.Empty EnumProc.Empty EnumProc.Empty
 
 valign1_mudg1 :: StateT (RTestSOMetaUnifDGraph s) (ST s) _
 valign1_mudg1 = do {on_vdgraph (addVFoEdge valign1_tid3 valign1_tid1 (read "u1")); on_dgraph (newEqDGFONode valign1_term6); on_dgraph (newEqDGFONode valign1_term2); return ()}
@@ -1319,78 +613,78 @@ zip1_soterm1 :: SOMetatermF
 zip1_soterm1 = read "f1[2]"
 
 zip1_sotid1 :: SOMetaUnifRelSoId s
-zip1_sotid1 = relbwEqDGSoId zip1_soterm1
+zip1_sotid1 = relbwEqDGSoId (FSONode zip1_soterm1)
 
 zip1_soterm2 :: SOMetatermF
 zip1_soterm2 = read "f2[2]"
 
 zip1_sotid2 :: SOMetaUnifRelSoId s
-zip1_sotid2 = relbwEqDGSoId zip1_soterm2
+zip1_sotid2 = relbwEqDGSoId (FSONode zip1_soterm2)
 
 zip1_soterm3 :: SOMetatermF
 zip1_soterm3 = read "F0[1]"
 
 zip1_sotid3 :: SOMetaUnifRelSoId s
-zip1_sotid3 = relbwEqDGSoId zip1_soterm3
+zip1_sotid3 = relbwEqDGSoId (FSONode zip1_soterm3)
 
 zip1_soterm4 :: SOMetatermF
 zip1_soterm4 = read "F1[1]"
 
 zip1_sotid4 :: SOMetaUnifRelSoId s
-zip1_sotid4 = relbwEqDGSoId zip1_soterm4
+zip1_sotid4 = relbwEqDGSoId (FSONode zip1_soterm4)
 
 zip1_soterm5 :: SOMetatermF
 zip1_soterm5 = read "F2[1]"
 
 zip1_sotid5 :: SOMetaUnifRelSoId s
-zip1_sotid5 = relbwEqDGSoId zip1_soterm5
+zip1_sotid5 = relbwEqDGSoId (FSONode zip1_soterm5)
 
 zip1_soterm6 :: SOMetatermF
 zip1_soterm6 = read "F3[1]"
 
 zip1_sotid6 :: SOMetaUnifRelSoId s
-zip1_sotid6 = relbwEqDGSoId zip1_soterm6
+zip1_sotid6 = relbwEqDGSoId (FSONode zip1_soterm6)
 
 zip1_soterm7 :: SOMetatermF
 zip1_soterm7 = read "F4[1]"
 
 zip1_sotid7 :: SOMetaUnifRelSoId s
-zip1_sotid7 = relbwEqDGSoId zip1_soterm7
+zip1_sotid7 = relbwEqDGSoId (FSONode zip1_soterm7)
 
 zip1_soterm8 :: SOMetatermF
 zip1_soterm8 = read "F5[1]"
 
 zip1_sotid8 :: SOMetaUnifRelSoId s
-zip1_sotid8 = relbwEqDGSoId zip1_soterm8
+zip1_sotid8 = relbwEqDGSoId (FSONode zip1_soterm8)
 
 zip1_soterm9 :: SOMetatermF
 zip1_soterm9 = read "F6[1]"
 
 zip1_sotid9 :: SOMetaUnifRelSoId s
-zip1_sotid9 = relbwEqDGSoId zip1_soterm9
+zip1_sotid9 = relbwEqDGSoId (FSONode zip1_soterm9)
 
 zip1_soterm10 :: SOMetatermF
 zip1_soterm10 = read "F7[1]"
 
 zip1_sotid10 :: SOMetaUnifRelSoId s
-zip1_sotid10 = relbwEqDGSoId zip1_soterm10
+zip1_sotid10 = relbwEqDGSoId (FSONode zip1_soterm10)
 
 zip1_sig :: SOMetaSignature
-zip1_sig = SOSignature (Signature [] [EnumProc.Empty,EnumProc.Empty,read "f1[2]" --> read "f2[2]" --> EnumProc.Empty] EnumProc.Empty) (read "F0[1]" --> read "F1[1]" --> read "F2[1]" --> read "F3[1]" --> read "F4[1]" --> read "F5[1]" --> read "F6[1]" --> read "F7[1]" --> EnumProc.Empty)
+zip1_sig = SOSignature (Signature [] [EnumProc.Empty,EnumProc.Empty,read "f1[2]" --> read "f2[2]" --> EnumProc.Empty] EnumProc.Empty) (read "F0[1]" --> read "F1[1]" --> read "F2[1]" --> read "F3[1]" --> read "F4[1]" --> read "F5[1]" --> read "F6[1]" --> read "F7[1]" --> EnumProc.Empty) EnumProc.Empty EnumProc.Empty
 
 zip1_mudg1 :: StateT (RTestSOMetaUnifDGraph s) (ST s) _
 zip1_mudg1 = do
 	{
-		on_dgraph (newEqDGSONode zip1_soterm1);
-		on_dgraph (newEqDGSONode zip1_soterm2);
-		on_dgraph (newEqDGSONode zip1_soterm3);
-		on_dgraph (newEqDGSONode zip1_soterm4);
-		on_dgraph (newEqDGSONode zip1_soterm5);
-		on_dgraph (newEqDGSONode zip1_soterm6);
-		on_dgraph (newEqDGSONode zip1_soterm7);
-		on_dgraph (newEqDGSONode zip1_soterm8);
-		on_dgraph (newEqDGSONode zip1_soterm9);
-		on_dgraph (newEqDGSONode zip1_soterm10);
+		on_dgraph (newEqDGSONode (FSONode zip1_soterm1));
+		on_dgraph (newEqDGSONode (FSONode zip1_soterm2));
+		on_dgraph (newEqDGSONode (FSONode zip1_soterm3));
+		on_dgraph (newEqDGSONode (FSONode zip1_soterm4));
+		on_dgraph (newEqDGSONode (FSONode zip1_soterm5));
+		on_dgraph (newEqDGSONode (FSONode zip1_soterm6));
+		on_dgraph (newEqDGSONode (FSONode zip1_soterm7));
+		on_dgraph (newEqDGSONode (FSONode zip1_soterm8));
+		on_dgraph (newEqDGSONode (FSONode zip1_soterm9));
+		on_dgraph (newEqDGSONode (FSONode zip1_soterm10));
 		on_dgraph (newEqDGSOEdge zip1_sotid1 [zip1_sotid3, zip1_sotid4] zip1_sotid6);
 		on_dgraph (newEqDGSOEdge zip1_sotid1 [zip1_sotid3, zip1_sotid4] zip1_sotid7);
 		on_dgraph (newEqDGSOEdge zip1_sotid2 [zip1_sotid3, zip1_sotid4] zip1_sotid8);
@@ -1470,57 +764,57 @@ zip2_soterm1 :: SOMetatermF
 zip2_soterm1 = read "F0[1]"
 
 zip2_sotid1 :: SOMetaUnifRelSoId s
-zip2_sotid1 = relbwEqDGSoId zip2_soterm1
+zip2_sotid1 = relbwEqDGSoId (FSONode zip2_soterm1)
 
 zip2_soterm2 :: SOMetatermF
 zip2_soterm2 = read "F1[1]"
 
 zip2_sotid2 :: SOMetaUnifRelSoId s
-zip2_sotid2 = relbwEqDGSoId zip2_soterm2
+zip2_sotid2 = relbwEqDGSoId (FSONode zip2_soterm2)
 
 zip2_soterm3 :: SOMetatermF
 zip2_soterm3 = read "F2[1]"
 
 zip2_sotid3 :: SOMetaUnifRelSoId s
-zip2_sotid3 = relbwEqDGSoId zip2_soterm3
+zip2_sotid3 = relbwEqDGSoId (FSONode zip2_soterm3)
 
 zip2_soterm4 :: SOMetatermF
 zip2_soterm4 = read "F3[1]"
 
 zip2_sotid4 :: SOMetaUnifRelSoId s
-zip2_sotid4 = relbwEqDGSoId zip2_soterm4
+zip2_sotid4 = relbwEqDGSoId (FSONode zip2_soterm4)
 
 zip2_soterm5 :: SOMetatermF
 zip2_soterm5 = read "F4[1]"
 
 zip2_sotid5 :: SOMetaUnifRelSoId s
-zip2_sotid5 = relbwEqDGSoId zip2_soterm5
+zip2_sotid5 = relbwEqDGSoId (FSONode zip2_soterm5)
 
 zip2_soterm6 :: SOMetatermF
 zip2_soterm6 = read "f0[1]"
 
 zip2_sotid6 :: SOMetaUnifRelSoId s
-zip2_sotid6 = relbwEqDGSoId zip2_soterm6
+zip2_sotid6 = relbwEqDGSoId (FSONode zip2_soterm6)
 
 zip2_soterm7 :: SOMetatermF
 zip2_soterm7 = read "f1[1]"
 
 zip2_sotid7 :: SOMetaUnifRelSoId s
-zip2_sotid7 = relbwEqDGSoId zip2_soterm7
+zip2_sotid7 = relbwEqDGSoId (FSONode zip2_soterm7)
 
 zip2_sig :: SOMetaSignature
-zip2_sig = SOSignature (Signature [] [EnumProc.Empty,read "f0[1]" --> read "f1[1]" --> EnumProc.Empty] EnumProc.Empty) (read "F0[1]" --> read "F1[1]" --> read "F2[1]" --> read "F3[1]" --> read "F4[1]" --> EnumProc.Empty)
+zip2_sig = SOSignature (Signature [] [EnumProc.Empty,read "f0[1]" --> read "f1[1]" --> EnumProc.Empty] EnumProc.Empty) (read "F0[1]" --> read "F1[1]" --> read "F2[1]" --> read "F3[1]" --> read "F4[1]" --> EnumProc.Empty) EnumProc.Empty EnumProc.Empty
 
 zip2_mudg1 :: StateT (RTestSOMetaUnifDGraph s) (ST s) _
 zip2_mudg1 = do
 	{
-		on_dgraph (newEqDGSONode zip2_soterm1);
-		on_dgraph (newEqDGSONode zip2_soterm2);
-		on_dgraph (newEqDGSONode zip2_soterm3);
-		on_dgraph (newEqDGSONode zip2_soterm4);
-		on_dgraph (newEqDGSONode zip2_soterm5);
-		on_dgraph (newEqDGSONode zip2_soterm6);
-		on_dgraph (newEqDGSONode zip2_soterm7);
+		on_dgraph (newEqDGSONode (FSONode zip2_soterm1));
+		on_dgraph (newEqDGSONode (FSONode zip2_soterm2));
+		on_dgraph (newEqDGSONode (FSONode zip2_soterm3));
+		on_dgraph (newEqDGSONode (FSONode zip2_soterm4));
+		on_dgraph (newEqDGSONode (FSONode zip2_soterm5));
+		on_dgraph (newEqDGSONode (FSONode zip2_soterm6));
+		on_dgraph (newEqDGSONode (FSONode zip2_soterm7));
 		on_dgraph (newEqDGSOEdge zip2_sotid6 [zip2_sotid1] zip2_sotid2);
 		on_dgraph (newEqDGSOEdge zip2_sotid6 [zip2_sotid1] zip2_sotid3);
 		on_dgraph (newEqDGSOEdge zip2_sotid7 [zip2_sotid2] zip2_sotid4);
@@ -1587,16 +881,16 @@ zip3_soterm6 :: SOMetatermF
 zip3_soterm6 = read "f0[1]"
 
 zip3_sotid6 :: SOMetaUnifRelSoId s
-zip3_sotid6 = relbwEqDGSoId zip3_soterm6
+zip3_sotid6 = relbwEqDGSoId (FSONode zip3_soterm6)
 
 zip3_soterm7 :: SOMetatermF
 zip3_soterm7 = read "f1[1]"
 
 zip3_sotid7 :: SOMetaUnifRelSoId s
-zip3_sotid7 = relbwEqDGSoId zip3_soterm7
+zip3_sotid7 = relbwEqDGSoId (FSONode zip3_soterm7)
 
 zip3_sig :: SOMetaSignature
-zip3_sig = SOSignature (Signature [] [EnumProc.Empty,read "f0[1]" --> read "f1[1]" --> EnumProc.Empty] (read "x0" --> read "x1" --> read "x2" --> read "x3" --> read "x4" --> EnumProc.Empty)) EnumProc.Empty
+zip3_sig = SOSignature (Signature [] [EnumProc.Empty,read "f0[1]" --> read "f1[1]" --> EnumProc.Empty] (read "x0" --> read "x1" --> read "x2" --> read "x3" --> read "x4" --> EnumProc.Empty)) EnumProc.Empty EnumProc.Empty EnumProc.Empty
 
 zip3_mudg1 :: StateT (RTestSOMetaUnifDGraph s) (ST s) _
 zip3_mudg1 = do
@@ -1606,8 +900,8 @@ zip3_mudg1 = do
 		on_dgraph (newEqDGFONode zip3_term3);
 		on_dgraph (newEqDGFONode zip3_term4);
 		on_dgraph (newEqDGFONode zip3_term5);
-		on_dgraph (newEqDGSONode zip3_soterm6);
-		on_dgraph (newEqDGSONode zip3_soterm7);
+		on_dgraph (newEqDGSONode (FSONode zip3_soterm6));
+		on_dgraph (newEqDGSONode (FSONode zip3_soterm7));
 		on_dgraph (newEqDGFOEdge zip3_sotid6 [zip3_tid1] zip3_tid2);
 		on_dgraph (newEqDGFOEdge zip3_sotid6 [zip3_tid1] zip3_tid3);
 		on_dgraph (newEqDGFOEdge zip3_sotid7 [zip3_tid2] zip3_tid4);
@@ -1703,22 +997,22 @@ zip4_soterm1 :: SOMetatermF
 zip4_soterm1 = read "f1[1]"
 
 zip4_sotid1 :: SOMetaUnifRelSoId s
-zip4_sotid1 = relbwEqDGSoId zip4_soterm1
+zip4_sotid1 = relbwEqDGSoId (FSONode zip4_soterm1)
 
 zip4_soterm2 :: SOMetatermF
 zip4_soterm2 = read "f2[1]"
 
 zip4_sotid2 :: SOMetaUnifRelSoId s
-zip4_sotid2 = relbwEqDGSoId zip4_soterm2
+zip4_sotid2 = relbwEqDGSoId (FSONode zip4_soterm2)
 
 zip4_soterm3 :: SOMetatermF
 zip4_soterm3 = read "f3[1]"
 
 zip4_sotid3 :: SOMetaUnifRelSoId s
-zip4_sotid3 = relbwEqDGSoId zip4_soterm3
+zip4_sotid3 = relbwEqDGSoId (FSONode zip4_soterm3)
 
 zip4_sig :: SOMetaSignature
-zip4_sig = SOSignature (Signature [] [EnumProc.Empty,read "f1[1]" --> read "f2[1]" --> read "f3[1]" --> EnumProc.Empty] (read "x0" --> read "x1" --> read "x2" --> read "x3" --> EnumProc.Empty)) EnumProc.Empty
+zip4_sig = SOSignature (Signature [] [EnumProc.Empty,read "f1[1]" --> read "f2[1]" --> read "f3[1]" --> EnumProc.Empty] (read "x0" --> read "x1" --> read "x2" --> read "x3" --> EnumProc.Empty)) EnumProc.Empty EnumProc.Empty EnumProc.Empty
 
 zip4_mudg1 :: StateT (RTestSOMetaUnifDGraph s) (ST s) _
 zip4_mudg1 = do
@@ -1733,9 +1027,9 @@ zip4_mudg1 = do
 		on_dgraph (newEqDGFONode zip4_term8);
 		on_dgraph (newEqDGFONode zip4_term9);
 		-- term 10 is purposely not added to the graph beforehand. It should be generated by the operations.
-		on_dgraph (newEqDGSONode zip4_soterm1);
-		on_dgraph (newEqDGSONode zip4_soterm2);
-		on_dgraph (newEqDGSONode zip4_soterm3);
+		on_dgraph (newEqDGSONode (FSONode zip4_soterm1));
+		on_dgraph (newEqDGSONode (FSONode zip4_soterm2));
+		on_dgraph (newEqDGSONode (FSONode zip4_soterm3));
 		on_dgraph (newEqDGFOEdge zip4_sotid1 [zip4_tid1] zip4_tid2);
 		on_dgraph (newEqDGFOEdge zip4_sotid1 [zip4_tid1] zip4_tid3);
 		on_dgraph (newEqDGFOEdge zip4_sotid2 [zip4_tid4] zip4_tid3);
@@ -1778,39 +1072,6 @@ zip4_t9 = check_not_vedge zip4_sig "Checking there is no vertical edge between u
 
 zip4_t10 :: AutomatedTest
 zip4_t10 = check_not_vedge zip4_sig "Checking there is no vertical edge between u1 x3 and u2 u1 x3 before" zip4_mudg1 zip4_term8 zip4_term9
-
--- We remove the inbetween tests because we underestimated how good propagation actually is!
-{-|
-zip4_t11 :: AutomatedTest
-zip4_t11 = check_not_foequiv "Checking that u0 x1 and u0 x2 are not equivalent inbetween" zip4_mudg2 zip4_term2 zip4_term3
-
-zip4_t12 :: AutomatedTest
-zip4_t12 = check_not_hfoedge "Checking there is no g horizontal edge between u0 x3 and u0 x1 inbetween" zip4_mudg2 zip4_soterm2 [zip4_term4] zip4_term2
-
-zip4_t13 :: AutomatedTest
-zip4_t13 = check_not_foequiv "Checking that u1 u0 x1 and u1 x3 are not equivalent inbetween" zip4_mudg2 zip4_term6 zip4_term8
-
-zip4_t14 :: AutomatedTest
-zip4_t14 = check_not_hfoedge "Checking there is no g horizontal edge between u1 u0 x3 and u1 u0 x1 inbetween" zip4_mudg2 zip4_soterm2 [zip4_term7] zip4_term6
-
-zip4_t15 :: AutomatedTest
-zip4_t15 = check_not_hfoedge "Checking there is no h horizontal edge between u1 x1 and u1 x3 inbetween" zip4_mudg2 zip4_soterm3 [zip4_term5] zip4_term8
-
-zip4_t16 :: AutomatedTest
-zip4_t16 = check_not_hfoedge "Checking there is no h horizontal edge between u2 u1 x1 and u2 u1 x3 inbetween" zip4_mudg2 zip4_soterm3 [zip4_term10] zip4_term9
-
-zip4_t17 :: AutomatedTest
-zip4_t17 = check_vedge "Checking there is a vertical edge between u0 x3 and u1 u0 x3 inbetween" zip4_mudg2 zip4_term4 zip4_term7
-
-zip4_t18 :: AutomatedTest
-zip4_t18 = check_vedge "Checking there is a vertical edge between u0 x1 and u1 u0 x1 inbetween" zip4_mudg2 zip4_term2 zip4_term6
-
-zip4_t19 :: AutomatedTest
-zip4_t19 = check_not_vedge "Checking there is no vertical edge between u1 x1 and u2 u1 x1 inbetween" zip4_mudg2 zip4_term5 zip4_term10
-
-zip4_t20 :: AutomatedTest
-zip4_t20 = check_not_vedge "Checking there is no vertical edge between u1 x3 and u2 u1 x3 inbetween" zip4_mudg2 zip4_term8 zip4_term9
-|-}
 
 zip4_t21 :: AutomatedTest
 zip4_t21 = check_foequiv zip4_sig "Checking that u0 x1 and u0 x2 are equivalent after" zip4_mudg3 zip4_term2 zip4_term3
@@ -1860,50 +1121,50 @@ simpproj1_term1 :: SOMetatermF
 simpproj1_term1 = read "f1[0]"
 
 simpproj1_tid1 :: SOMetaUnifRelSoId s
-simpproj1_tid1 = relbwEqDGSoId simpproj1_term1
+simpproj1_tid1 = relbwEqDGSoId (FSONode simpproj1_term1)
 
 simpproj1_term2 :: SOMetatermF
 simpproj1_term2 = read "f2[0]"
 
 simpproj1_tid2 :: SOMetaUnifRelSoId s
-simpproj1_tid2 = relbwEqDGSoId simpproj1_term2
+simpproj1_tid2 = relbwEqDGSoId (FSONode simpproj1_term2)
 
 simpproj1_term3 :: SOMetatermF
 simpproj1_term3 = read "f3[0]"
 
 simpproj1_tid3 :: SOMetaUnifRelSoId s
-simpproj1_tid3 = relbwEqDGSoId simpproj1_term3
+simpproj1_tid3 = relbwEqDGSoId (FSONode simpproj1_term3)
 
 simpproj1_term4 :: SOMetatermF
 simpproj1_term4 = read "f4[0]"
 
 simpproj1_tid4 :: SOMetaUnifRelSoId s
-simpproj1_tid4 = relbwEqDGSoId simpproj1_term4
+simpproj1_tid4 = relbwEqDGSoId (FSONode simpproj1_term4)
 
 simpproj1_term5 :: SOMetatermF
 simpproj1_term5 = read "f5[3]"
 
 simpproj1_tid5 :: SOMetaUnifRelSoId s
-simpproj1_tid5 = relbwEqDGSoId simpproj1_term5
+simpproj1_tid5 = relbwEqDGSoId (FSONode simpproj1_term5)
 
 simpproj1_term6 :: SOMetatermF
 simpproj1_term6 = read "pi1"
 
 simpproj1_tid6 :: SOMetaUnifRelSoId s
-simpproj1_tid6 = relbwEqDGSoId simpproj1_term6
+simpproj1_tid6 = relbwEqDGSoId (FSONode simpproj1_term6)
 
 simpproj1_sig :: SOMetaSignature
-simpproj1_sig = SOSignature (Signature [] [read "f1[0]" --> read "f2[0]" --> read "f3[0]" --> read "f4[0]" --> EnumProc.Empty,EnumProc.Empty,EnumProc.Empty,read "f5[3]" --> EnumProc.Empty] EnumProc.Empty) EnumProc.Empty
+simpproj1_sig = SOSignature (Signature [] [read "f1[0]" --> read "f2[0]" --> read "f3[0]" --> read "f4[0]" --> EnumProc.Empty,EnumProc.Empty,EnumProc.Empty,read "f5[3]" --> EnumProc.Empty] EnumProc.Empty) EnumProc.Empty EnumProc.Empty EnumProc.Empty
 
 simpproj1_mudg1 :: StateT (RTestSOMetaUnifDGraph s) (ST s) _
 simpproj1_mudg1 = do
 	{
-		on_dgraph (newEqDGSONode simpproj1_term1);
-		on_dgraph (newEqDGSONode simpproj1_term2);
-		on_dgraph (newEqDGSONode simpproj1_term3);
-		on_dgraph (newEqDGSONode simpproj1_term4);
-		on_dgraph (newEqDGSONode simpproj1_term5);
-		on_dgraph (newEqDGSONode simpproj1_term6);
+		on_dgraph (newEqDGSONode (FSONode simpproj1_term1));
+		on_dgraph (newEqDGSONode (FSONode simpproj1_term2));
+		on_dgraph (newEqDGSONode (FSONode simpproj1_term3));
+		on_dgraph (newEqDGSONode (FSONode simpproj1_term4));
+		on_dgraph (newEqDGSONode (FSONode simpproj1_term5));
+		on_dgraph (newEqDGSONode (FSONode simpproj1_term6));
 		on_dgraph (newEqDGSOEdge simpproj1_tid5 [simpproj1_tid1,simpproj1_tid2,simpproj1_tid3] simpproj1_tid4);
 		on_dgraph (mergeEqDGSONodes simpproj1_tid5 simpproj1_tid6);
 		pass
@@ -1993,16 +1254,16 @@ simpproj2_term5 :: SOMetatermF
 simpproj2_term5 = read "f5[3]"
 
 simpproj2_tid5 :: SOMetaUnifRelSoId s
-simpproj2_tid5 = relbwEqDGSoId simpproj2_term5
+simpproj2_tid5 = relbwEqDGSoId (FSONode simpproj2_term5)
 
 simpproj2_term6 :: SOMetatermF
 simpproj2_term6 = read "pi1"
 
 simpproj2_tid6 :: SOMetaUnifRelSoId s
-simpproj2_tid6 = relbwEqDGSoId simpproj2_term6
+simpproj2_tid6 = relbwEqDGSoId (FSONode simpproj2_term6)
 
 simpproj2_sig :: SOMetaSignature
-simpproj2_sig = SOSignature (Signature [] [read "f1[0]" --> read "f2[0]" --> read "f3[0]" --> read "f4[0]" --> EnumProc.Empty,EnumProc.Empty,EnumProc.Empty,read "f5[3]" --> EnumProc.Empty] EnumProc.Empty) EnumProc.Empty
+simpproj2_sig = SOSignature (Signature [] [read "f1[0]" --> read "f2[0]" --> read "f3[0]" --> read "f4[0]" --> EnumProc.Empty,EnumProc.Empty,EnumProc.Empty,read "f5[3]" --> EnumProc.Empty] EnumProc.Empty) EnumProc.Empty EnumProc.Empty EnumProc.Empty
 
 simpproj2_mudg1 :: StateT (RTestSOMetaUnifDGraph s) (ST s) _
 simpproj2_mudg1 = do
@@ -2011,8 +1272,8 @@ simpproj2_mudg1 = do
 		on_dgraph (newEqDGFONode simpproj2_term2);
 		on_dgraph (newEqDGFONode simpproj2_term3);
 		on_dgraph (newEqDGFONode simpproj2_term4);
-		on_dgraph (newEqDGSONode simpproj2_term5);
-		on_dgraph (newEqDGSONode simpproj2_term6);
+		on_dgraph (newEqDGSONode (FSONode simpproj2_term5));
+		on_dgraph (newEqDGSONode (FSONode simpproj2_term6));
 		on_dgraph (newEqDGFOEdge simpproj2_tid5 [simpproj2_tid1,simpproj2_tid2,simpproj2_tid3] simpproj2_tid4);
 		on_dgraph (mergeEqDGSONodes simpproj2_tid5 simpproj2_tid6);
 		pass
@@ -2103,31 +1364,31 @@ dump1_soterm1 :: SOMetatermF
 dump1_soterm1 = read "F3[2]"
 
 dump1_sotid1 :: SOMetaUnifRelSoId s
-dump1_sotid1 = relbwEqDGSoId dump1_soterm1
+dump1_sotid1 = relbwEqDGSoId (FSONode dump1_soterm1)
 
 dump1_soterm2 :: SOMetatermF
 dump1_soterm2 = read "F4[2]"
 
 dump1_sotid2 :: SOMetaUnifRelSoId s
-dump1_sotid2 = relbwEqDGSoId dump1_soterm2
+dump1_sotid2 = relbwEqDGSoId (FSONode dump1_soterm2)
 
 dump1_soterm3 :: SOMetatermF
 dump1_soterm3 = read "F5[2]"
 
 dump1_sotid3 :: SOMetaUnifRelSoId s
-dump1_sotid3 = relbwEqDGSoId dump1_soterm3
+dump1_sotid3 = relbwEqDGSoId (FSONode dump1_soterm3)
 
 dump1_soterm4 :: SOMetatermF
 dump1_soterm4 = read "F6[2]"
 
 dump1_sotid4 :: SOMetaUnifRelSoId s
-dump1_sotid4 = relbwEqDGSoId dump1_soterm4
+dump1_sotid4 = relbwEqDGSoId (FSONode dump1_soterm4)
 
 dump1_exp1 :: SOMetaUnifFOExp
 dump1_exp1 = read "F6[2](F4[2](F0[0](),F1[0]()),F5[2](F0[0](),F1[0]()))"
 
 dump1_sig :: SOMetaSignature
-dump1_sig = SOSignature (Signature [] [] EnumProc.Empty) (read "F0[0]" --> read "F1[0]" --> read "F2[0]" --> read "F3[2]" --> read "F4[2]" --> read "F5[2]" --> read "F6[2]" --> EnumProc.Empty)
+dump1_sig = SOSignature (Signature [] [] EnumProc.Empty) (read "F0[0]" --> read "F1[0]" --> read "F2[0]" --> read "F3[2]" --> read "F4[2]" --> read "F5[2]" --> read "F6[2]" --> EnumProc.Empty) EnumProc.Empty EnumProc.Empty
 
 dump1_mudg1 :: StateT (RTestSOMetaUnifDGraph s) (ST s) _
 dump1_mudg1 = do
@@ -2135,10 +1396,10 @@ dump1_mudg1 = do
 		on_dgraph (newEqDGFONode dump1_term1);
 		on_dgraph (newEqDGFONode dump1_term2);
 		on_dgraph (newEqDGFONode dump1_term3);
-		on_dgraph (newEqDGSONode dump1_soterm1);
-		on_dgraph (newEqDGSONode dump1_soterm2);
-		on_dgraph (newEqDGSONode dump1_soterm3);
-		on_dgraph (newEqDGSONode dump1_soterm4);
+		on_dgraph (newEqDGSONode (FSONode dump1_soterm1));
+		on_dgraph (newEqDGSONode (FSONode dump1_soterm2));
+		on_dgraph (newEqDGSONode (FSONode dump1_soterm3));
+		on_dgraph (newEqDGSONode (FSONode dump1_soterm4));
 		on_dgraph (newEqDGFOEdge dump1_sotid1 [dump1_tid1,dump1_tid2] dump1_tid3);
 		on_dgraph (newEqDGSOEdge dump1_sotid4 [dump1_sotid2,dump1_sotid3] dump1_sotid1);
 		pass
@@ -2173,60 +1434,60 @@ dump2_term1 :: SOMetatermF
 dump2_term1 = read "F0[0]"
 
 dump2_tid1 :: SOMetaUnifRelSoId s
-dump2_tid1 = relbwEqDGSoId dump2_term1
+dump2_tid1 = relbwEqDGSoId (FSONode dump2_term1)
 
 dump2_term2 :: SOMetatermF
 dump2_term2 = read "F1[0]"
 
 dump2_tid2 :: SOMetaUnifRelSoId s
-dump2_tid2 = relbwEqDGSoId dump2_term2
+dump2_tid2 = relbwEqDGSoId (FSONode dump2_term2)
 
 dump2_term3 :: SOMetatermF
 dump2_term3 = read "F2[0]"
 
 dump2_tid3 :: SOMetaUnifRelSoId s
-dump2_tid3 = relbwEqDGSoId dump2_term3
+dump2_tid3 = relbwEqDGSoId (FSONode dump2_term3)
 
 dump2_soterm1 :: SOMetatermF
 dump2_soterm1 = read "F3[2]"
 
 dump2_sotid1 :: SOMetaUnifRelSoId s
-dump2_sotid1 = relbwEqDGSoId dump2_soterm1
+dump2_sotid1 = relbwEqDGSoId (FSONode dump2_soterm1)
 
 dump2_soterm2 :: SOMetatermF
 dump2_soterm2 = read "F4[2]"
 
 dump2_sotid2 :: SOMetaUnifRelSoId s
-dump2_sotid2 = relbwEqDGSoId dump2_soterm2
+dump2_sotid2 = relbwEqDGSoId (FSONode dump2_soterm2)
 
 dump2_soterm3 :: SOMetatermF
 dump2_soterm3 = read "F5[2]"
 
 dump2_sotid3 :: SOMetaUnifRelSoId s
-dump2_sotid3 = relbwEqDGSoId dump2_soterm3
+dump2_sotid3 = relbwEqDGSoId (FSONode dump2_soterm3)
 
 dump2_soterm4 :: SOMetatermF
 dump2_soterm4 = read "F6[2]"
 
 dump2_sotid4 :: SOMetaUnifRelSoId s
-dump2_sotid4 = relbwEqDGSoId dump2_soterm4
+dump2_sotid4 = relbwEqDGSoId (FSONode dump2_soterm4)
 
 dump2_exp1 :: SOMetaUnifSOExp
 dump2_exp1 = read "F6[2]{F4[2]{F0[0],F1[0]},F5[2]{F0[0],F1[0]}}"
 
 dump2_sig :: SOMetaSignature
-dump2_sig = SOSignature (Signature [] [] EnumProc.Empty) (read "F0[0]" --> read "F1[0]" --> read "F2[0]" --> read "F3[2]" --> read "F4[2]" --> read "F5[2]" --> read "F6[2]" --> EnumProc.Empty)
+dump2_sig = SOSignature (Signature [] [] EnumProc.Empty) (read "F0[0]" --> read "F1[0]" --> read "F2[0]" --> read "F3[2]" --> read "F4[2]" --> read "F5[2]" --> read "F6[2]" --> EnumProc.Empty) EnumProc.Empty EnumProc.Empty
 
 dump2_mudg1 :: StateT (RTestSOMetaUnifDGraph s) (ST s) _
 dump2_mudg1 = do
 	{
-		on_dgraph (newEqDGSONode dump2_term1);
-		on_dgraph (newEqDGSONode dump2_term2);
-		on_dgraph (newEqDGSONode dump2_term3);
-		on_dgraph (newEqDGSONode dump2_soterm1);
-		on_dgraph (newEqDGSONode dump2_soterm2);
-		on_dgraph (newEqDGSONode dump2_soterm3);
-		on_dgraph (newEqDGSONode dump2_soterm4);
+		on_dgraph (newEqDGSONode (FSONode dump2_term1));
+		on_dgraph (newEqDGSONode (FSONode dump2_term2));
+		on_dgraph (newEqDGSONode (FSONode dump2_term3));
+		on_dgraph (newEqDGSONode (FSONode dump2_soterm1));
+		on_dgraph (newEqDGSONode (FSONode dump2_soterm2));
+		on_dgraph (newEqDGSONode (FSONode dump2_soterm3));
+		on_dgraph (newEqDGSONode (FSONode dump2_soterm4));
 		on_dgraph (newEqDGSOEdge dump2_sotid1 [dump2_tid1,dump2_tid2] dump2_tid3);
 		on_dgraph (newEqDGSOEdge dump2_sotid4 [dump2_sotid2,dump2_sotid3] dump2_sotid1);
 		pass
@@ -2268,22 +1529,22 @@ sotconsistency1_term1 :: SOMetatermF
 sotconsistency1_term1 = read "f1[1]"
 
 sotconsistency1_tid1 :: SOMetaUnifRelSoId s
-sotconsistency1_tid1 = relbwEqDGSoId sotconsistency1_term1
+sotconsistency1_tid1 = relbwEqDGSoId (FSONode sotconsistency1_term1)
 
 sotconsistency1_term2 :: SOMetatermF
 sotconsistency1_term2 = read "f2[1]"
 
 sotconsistency1_tid2 :: SOMetaUnifRelSoId s
-sotconsistency1_tid2 = relbwEqDGSoId sotconsistency1_term2
+sotconsistency1_tid2 = relbwEqDGSoId (FSONode sotconsistency1_term2)
 
 sotconsistency1_sig :: SOMetaSignature
-sotconsistency1_sig = SOSignature (Signature [] [EnumProc.Empty,read "f1[1]" --> read "f2[1]" --> EnumProc.Empty] EnumProc.Empty) EnumProc.Empty
+sotconsistency1_sig = SOSignature (Signature [] [EnumProc.Empty,read "f1[1]" --> read "f2[1]" --> EnumProc.Empty] EnumProc.Empty) EnumProc.Empty EnumProc.Empty EnumProc.Empty
 
 sotconsistency1_mudg1 :: StateT (RTestSOMetaUnifDGraph s) (ST s) Bool
 sotconsistency1_mudg1 = do
 	{
-		on_dgraph (newEqDGSONode sotconsistency1_term1);
-		on_dgraph (newEqDGSONode sotconsistency1_term2);
+		on_dgraph (newEqDGSONode (FSONode sotconsistency1_term1));
+		on_dgraph (newEqDGSONode (FSONode sotconsistency1_term2));
 		on_vdgraph metaunif_check_sot_consistency;
 	}
 
@@ -2310,22 +1571,22 @@ sotconsistency2_term1 :: SOMetatermF
 sotconsistency2_term1 = read "f1[1]"
 
 sotconsistency2_tid1 :: SOMetaUnifRelSoId s
-sotconsistency2_tid1 = relbwEqDGSoId sotconsistency2_term1
+sotconsistency2_tid1 = relbwEqDGSoId (FSONode sotconsistency2_term1)
 
 sotconsistency2_term2 :: SOMetatermF
 sotconsistency2_term2 = read "F2[1]"
 
 sotconsistency2_tid2 :: SOMetaUnifRelSoId s
-sotconsistency2_tid2 = relbwEqDGSoId sotconsistency2_term2
+sotconsistency2_tid2 = relbwEqDGSoId (FSONode sotconsistency2_term2)
 
 sotconsistency2_sig :: SOMetaSignature
-sotconsistency2_sig = SOSignature (Signature [] [EnumProc.Empty,read "f1[1]" --> EnumProc.Empty] EnumProc.Empty) (read "F2[1]" --> EnumProc.Empty)
+sotconsistency2_sig = SOSignature (Signature [] [EnumProc.Empty,read "f1[1]" --> EnumProc.Empty] EnumProc.Empty) (read "F2[1]" --> EnumProc.Empty) EnumProc.Empty EnumProc.Empty
 
 sotconsistency2_mudg1 :: StateT (RTestSOMetaUnifDGraph s) (ST s) Bool
 sotconsistency2_mudg1 = do
 	{
-		on_dgraph (newEqDGSONode sotconsistency2_term1);
-		on_dgraph (newEqDGSONode sotconsistency2_term2);
+		on_dgraph (newEqDGSONode (FSONode sotconsistency2_term1));
+		on_dgraph (newEqDGSONode (FSONode sotconsistency2_term2));
 		on_vdgraph metaunif_check_sot_consistency;
 	}
 
@@ -2363,43 +1624,43 @@ head_arity1_term1 :: SOMetatermF
 head_arity1_term1 = read "f1[1]"
 
 head_arity1_tid1 :: SOMetaUnifRelSoId s
-head_arity1_tid1 = relbwEqDGSoId head_arity1_term1
+head_arity1_tid1 = relbwEqDGSoId (FSONode head_arity1_term1)
 
 head_arity1_term2 :: SOMetatermF
 head_arity1_term2 = read "f2[1]"
 
 head_arity1_tid2 :: SOMetaUnifRelSoId s
-head_arity1_tid2 = relbwEqDGSoId head_arity1_term2
+head_arity1_tid2 = relbwEqDGSoId (FSONode head_arity1_term2)
 
 head_arity1_term3 :: SOMetatermF
 head_arity1_term3 = read "F3[4]"
 
 head_arity1_tid3 :: SOMetaUnifRelSoId s
-head_arity1_tid3 = relbwEqDGSoId head_arity1_term3
+head_arity1_tid3 = relbwEqDGSoId (FSONode head_arity1_term3)
 
 head_arity1_term4 :: SOMetatermF
 head_arity1_term4 = read "f4[3]"
 
 head_arity1_tid4 :: SOMetaUnifRelSoId s
-head_arity1_tid4 = relbwEqDGSoId head_arity1_term4
+head_arity1_tid4 = relbwEqDGSoId (FSONode head_arity1_term4)
 
 head_arity1_term5 :: SOMetatermF
 head_arity1_term5 = read "f5[1]"
 
 head_arity1_tid5 :: SOMetaUnifRelSoId s
-head_arity1_tid5 = relbwEqDGSoId head_arity1_term5
+head_arity1_tid5 = relbwEqDGSoId (FSONode head_arity1_term5)
 
 head_arity1_sig :: SOMetaSignature
-head_arity1_sig = SOSignature (Signature [] [EnumProc.Empty,read "f1[1]" --> read "f2[1]" --> read "f5[1]" --> EnumProc.Empty, EnumProc.Empty, read "f4[3]" --> EnumProc.Empty] EnumProc.Empty) (read "F3[4]" --> EnumProc.Empty)
+head_arity1_sig = SOSignature (Signature [] [EnumProc.Empty,read "f1[1]" --> read "f2[1]" --> read "f5[1]" --> EnumProc.Empty, EnumProc.Empty, read "f4[3]" --> EnumProc.Empty] EnumProc.Empty) (read "F3[4]" --> EnumProc.Empty) EnumProc.Empty EnumProc.Empty
 
 head_arity1_mudg1 :: StateT (RTestSOMetaUnifDGraph s) (ST s) Bool
 head_arity1_mudg1 = do
 	{
-		on_dgraph (newEqDGSONode head_arity1_term1);
-		on_dgraph (newEqDGSONode head_arity1_term2);
-		on_dgraph (newEqDGSONode head_arity1_term3);
-		on_dgraph (newEqDGSONode head_arity1_term4);
-		on_dgraph (newEqDGSONode head_arity1_term5);
+		on_dgraph (newEqDGSONode (FSONode head_arity1_term1));
+		on_dgraph (newEqDGSONode (FSONode head_arity1_term2));
+		on_dgraph (newEqDGSONode (FSONode head_arity1_term3));
+		on_dgraph (newEqDGSONode (FSONode head_arity1_term4));
+		on_dgraph (newEqDGSONode (FSONode head_arity1_term5));
 		on_dgraph (newEqDGSOEdge head_arity1_tid3 [head_arity1_tid1,head_arity1_tid2] head_arity1_tid5);
 		on_vdgraph metaunif_check_head_arity_so
 	}
@@ -2438,29 +1699,29 @@ target_arity1_term1 :: SOMetatermF
 target_arity1_term1 = read "f1[2]"
 
 target_arity1_tid1 :: SOMetaUnifRelSoId s
-target_arity1_tid1 = relbwEqDGSoId target_arity1_term1
+target_arity1_tid1 = relbwEqDGSoId (FSONode target_arity1_term1)
 
 target_arity1_term2 :: SOMetatermF
 target_arity1_term2 = read "f2[1]"
 
 target_arity1_tid2 :: SOMetaUnifRelSoId s
-target_arity1_tid2 = relbwEqDGSoId target_arity1_term2
+target_arity1_tid2 = relbwEqDGSoId (FSONode target_arity1_term2)
 
 target_arity1_term3 :: SOMetatermF
 target_arity1_term3 = read "f3[2]"
 
 target_arity1_tid3 :: SOMetaUnifRelSoId s
-target_arity1_tid3 = relbwEqDGSoId target_arity1_term3
+target_arity1_tid3 = relbwEqDGSoId (FSONode target_arity1_term3)
 
 target_arity1_sig :: SOMetaSignature
-target_arity1_sig = SOSignature (Signature [] [EnumProc.Empty,read "f1[1]" --> read "f2[1]" --> EnumProc.Empty, read "f3[2]" --> EnumProc.Empty] EnumProc.Empty) EnumProc.Empty
+target_arity1_sig = SOSignature (Signature [] [EnumProc.Empty,read "f1[1]" --> read "f2[1]" --> EnumProc.Empty, read "f3[2]" --> EnumProc.Empty] EnumProc.Empty) EnumProc.Empty EnumProc.Empty EnumProc.Empty
 
 target_arity1_mudg1 :: StateT (RTestSOMetaUnifDGraph s) (ST s) Bool
 target_arity1_mudg1 = do
 	{
-		on_dgraph (newEqDGSONode target_arity1_term1);
-		on_dgraph (newEqDGSONode target_arity1_term2);
-		on_dgraph (newEqDGSONode target_arity1_term3);
+		on_dgraph (newEqDGSONode (FSONode target_arity1_term1));
+		on_dgraph (newEqDGSONode (FSONode target_arity1_term2));
+		on_dgraph (newEqDGSONode (FSONode target_arity1_term3));
 		on_vdgraph metaunif_check_target_arity_so
 	}
 
@@ -2491,29 +1752,29 @@ target_arity2_term1 :: SOMetatermF
 target_arity2_term1 = read "f1[2]"
 
 target_arity2_tid1 :: SOMetaUnifRelSoId s
-target_arity2_tid1 = relbwEqDGSoId target_arity2_term1
+target_arity2_tid1 = relbwEqDGSoId (FSONode target_arity2_term1)
 
 target_arity2_term2 :: SOMetatermF
 target_arity2_term2 = read "f2[1]"
 
 target_arity2_tid2 :: SOMetaUnifRelSoId s
-target_arity2_tid2 = relbwEqDGSoId target_arity2_term2
+target_arity2_tid2 = relbwEqDGSoId (FSONode target_arity2_term2)
 
 target_arity2_term3 :: SOMetatermF
 target_arity2_term3 = read "F3[1]"
 
 target_arity2_tid3 :: SOMetaUnifRelSoId s
-target_arity2_tid3 = relbwEqDGSoId target_arity2_term3
+target_arity2_tid3 = relbwEqDGSoId (FSONode target_arity2_term3)
 
 target_arity2_sig :: SOMetaSignature
-target_arity2_sig = SOSignature (Signature [] [EnumProc.Empty,read "f2[1]" --> EnumProc.Empty, read "f1[2]" --> EnumProc.Empty] EnumProc.Empty) (read "F3[1]" --> EnumProc.Empty)
+target_arity2_sig = SOSignature (Signature [] [EnumProc.Empty,read "f2[1]" --> EnumProc.Empty, read "f1[2]" --> EnumProc.Empty] EnumProc.Empty) (read "F3[1]" --> EnumProc.Empty) EnumProc.Empty EnumProc.Empty
 
 target_arity2_mudg1 :: StateT (RTestSOMetaUnifDGraph s) (ST s) Bool
 target_arity2_mudg1 = do
 	{
-		on_dgraph (newEqDGSONode target_arity2_term1);
-		on_dgraph (newEqDGSONode target_arity2_term2);
-		on_dgraph (newEqDGSONode target_arity2_term3);
+		on_dgraph (newEqDGSONode (FSONode target_arity2_term1));
+		on_dgraph (newEqDGSONode (FSONode target_arity2_term2));
+		on_dgraph (newEqDGSONode (FSONode target_arity2_term3));
 		on_vdgraph metaunif_check_target_arity_so
 	}
 
@@ -2544,29 +1805,29 @@ target_arity3_term1 :: SOMetatermF
 target_arity3_term1 = read "f1[2]"
 
 target_arity3_tid1 :: SOMetaUnifRelSoId s
-target_arity3_tid1 = relbwEqDGSoId target_arity3_term1
+target_arity3_tid1 = relbwEqDGSoId (FSONode target_arity3_term1)
 
 target_arity3_term2 :: SOMetatermF
 target_arity3_term2 = read "f2[1]"
 
 target_arity3_tid2 :: SOMetaUnifRelSoId s
-target_arity3_tid2 = relbwEqDGSoId target_arity3_term2
+target_arity3_tid2 = relbwEqDGSoId (FSONode target_arity3_term2)
 
 target_arity3_term3 :: SOMetatermF
 target_arity3_term3 = read "F3[2]"
 
 target_arity3_tid3 :: SOMetaUnifRelSoId s
-target_arity3_tid3 = relbwEqDGSoId target_arity3_term3
+target_arity3_tid3 = relbwEqDGSoId (FSONode target_arity3_term3)
 
 target_arity3_sig :: SOMetaSignature
-target_arity3_sig = SOSignature (Signature [] [EnumProc.Empty,read "f2[1]" --> EnumProc.Empty, read "f1[2]" --> EnumProc.Empty] EnumProc.Empty) (read "F3[2]" --> EnumProc.Empty)
+target_arity3_sig = SOSignature (Signature [] [EnumProc.Empty,read "f2[1]" --> EnumProc.Empty, read "f1[2]" --> EnumProc.Empty] EnumProc.Empty) (read "F3[2]" --> EnumProc.Empty) EnumProc.Empty EnumProc.Empty
 
 target_arity3_mudg1 :: StateT (RTestSOMetaUnifDGraph s) (ST s) Bool
 target_arity3_mudg1 = do
 	{
-		on_dgraph (newEqDGSONode target_arity3_term1);
-		on_dgraph (newEqDGSONode target_arity3_term2);
-		on_dgraph (newEqDGSONode target_arity3_term3);
+		on_dgraph (newEqDGSONode (FSONode target_arity3_term1));
+		on_dgraph (newEqDGSONode (FSONode target_arity3_term2));
+		on_dgraph (newEqDGSONode (FSONode target_arity3_term3));
 		on_vdgraph metaunif_check_target_arity_so
 	}
 
@@ -2597,50 +1858,50 @@ target_arity4_term1 :: SOMetatermF
 target_arity4_term1 = read "f1[1]"
 
 target_arity4_tid1 :: SOMetaUnifRelSoId s
-target_arity4_tid1 = relbwEqDGSoId target_arity4_term1
+target_arity4_tid1 = relbwEqDGSoId (FSONode target_arity4_term1)
 
 target_arity4_term2 :: SOMetatermF
 target_arity4_term2 = read "f2[1]"
 
 target_arity4_tid2 :: SOMetaUnifRelSoId s
-target_arity4_tid2 = relbwEqDGSoId target_arity4_term2
+target_arity4_tid2 = relbwEqDGSoId (FSONode target_arity4_term2)
 
 target_arity4_term3 :: SOMetatermF
 target_arity4_term3 = read "f3[2]"
 
 target_arity4_tid3 :: SOMetaUnifRelSoId s
-target_arity4_tid3 = relbwEqDGSoId target_arity4_term3
+target_arity4_tid3 = relbwEqDGSoId (FSONode target_arity4_term3)
 
 target_arity4_term4 :: SOMetatermF
 target_arity4_term4 = read "F4[3]"
 
 target_arity4_tid4 :: SOMetaUnifRelSoId s
-target_arity4_tid4 = relbwEqDGSoId target_arity4_term4
+target_arity4_tid4 = relbwEqDGSoId (FSONode target_arity4_term4)
 
 target_arity4_term5 :: SOMetatermF
 target_arity4_term5 = read "f5[1]"
 
 target_arity4_tid5 :: SOMetaUnifRelSoId s
-target_arity4_tid5 = relbwEqDGSoId target_arity4_term5
+target_arity4_tid5 = relbwEqDGSoId (FSONode target_arity4_term5)
 
 target_arity4_term6 :: SOMetatermF
 target_arity4_term6 = read "F6[1]"
 
 target_arity4_tid6 :: SOMetaUnifRelSoId s
-target_arity4_tid6 = relbwEqDGSoId target_arity4_term6
+target_arity4_tid6 = relbwEqDGSoId (FSONode target_arity4_term6)
 
 target_arity4_sig :: SOMetaSignature
-target_arity4_sig = SOSignature (Signature [] [EnumProc.Empty,read "f1[1]" --> read "f2[1]" --> read "f5[1]" --> EnumProc.Empty, read "f3[2]" --> EnumProc.Empty] EnumProc.Empty) (read "F4[3]" --> read "F6[1]" --> EnumProc.Empty)
+target_arity4_sig = SOSignature (Signature [] [EnumProc.Empty,read "f1[1]" --> read "f2[1]" --> read "f5[1]" --> EnumProc.Empty, read "f3[2]" --> EnumProc.Empty] EnumProc.Empty) (read "F4[3]" --> read "F6[1]" --> EnumProc.Empty) EnumProc.Empty EnumProc.Empty
 
 target_arity4_mudg1 :: StateT (RTestSOMetaUnifDGraph s) (ST s) Bool
 target_arity4_mudg1 = do
 	{
-		on_dgraph (newEqDGSONode target_arity4_term1);
-		on_dgraph (newEqDGSONode target_arity4_term2);
-		on_dgraph (newEqDGSONode target_arity4_term3);
-		on_dgraph (newEqDGSONode target_arity4_term4);
-		on_dgraph (newEqDGSONode target_arity4_term5);
-		on_dgraph (newEqDGSONode target_arity4_term6);
+		on_dgraph (newEqDGSONode (FSONode target_arity4_term1));
+		on_dgraph (newEqDGSONode (FSONode target_arity4_term2));
+		on_dgraph (newEqDGSONode (FSONode target_arity4_term3));
+		on_dgraph (newEqDGSONode (FSONode target_arity4_term4));
+		on_dgraph (newEqDGSONode (FSONode target_arity4_term5));
+		on_dgraph (newEqDGSONode (FSONode target_arity4_term6));
 		on_vdgraph metaunif_check_target_arity_so
 	}
 
@@ -2682,49 +1943,49 @@ occurs_check1_term1 :: SOMetatermF
 occurs_check1_term1 = read "f1[1]"
 
 occurs_check1_tid1 :: SOMetaUnifRelSoId s
-occurs_check1_tid1 = relbwEqDGSoId occurs_check1_term1
+occurs_check1_tid1 = relbwEqDGSoId (FSONode occurs_check1_term1)
 
 occurs_check1_term2 :: SOMetatermF
 occurs_check1_term2 = read "f2[1]"
 
 occurs_check1_tid2 :: SOMetaUnifRelSoId s
-occurs_check1_tid2 = relbwEqDGSoId occurs_check1_term2
+occurs_check1_tid2 = relbwEqDGSoId (FSONode occurs_check1_term2)
 
 occurs_check1_term3 :: SOMetatermF
 occurs_check1_term3 = read "f3[1]"
 
 occurs_check1_tid3 :: SOMetaUnifRelSoId s
-occurs_check1_tid3 = relbwEqDGSoId occurs_check1_term3
+occurs_check1_tid3 = relbwEqDGSoId (FSONode occurs_check1_term3)
 
 occurs_check1_term4 :: SOMetatermF
 occurs_check1_term4 = read "f4[1]"
 
 occurs_check1_tid4 :: SOMetaUnifRelSoId s
-occurs_check1_tid4 = relbwEqDGSoId occurs_check1_term4
+occurs_check1_tid4 = relbwEqDGSoId (FSONode occurs_check1_term4)
 
 occurs_check1_term5 :: SOMetatermF
 occurs_check1_term5 = read "f5[1]"
 
 occurs_check1_tid5 :: SOMetaUnifRelSoId s
-occurs_check1_tid5 = relbwEqDGSoId occurs_check1_term5
+occurs_check1_tid5 = relbwEqDGSoId (FSONode occurs_check1_term5)
 
 occurs_check1_term6 :: SOMetatermF
 occurs_check1_term6 = read "f6[1]"
 
 occurs_check1_tid6 :: SOMetaUnifRelSoId s
-occurs_check1_tid6 = relbwEqDGSoId occurs_check1_term6
+occurs_check1_tid6 = relbwEqDGSoId (FSONode occurs_check1_term6)
 
 occurs_check1_sig :: SOMetaSignature
-occurs_check1_sig = SOSignature (Signature [] [EnumProc.Empty, read "f1[1]" --> read "f2[1]" --> read "f3[1]" --> read "f4[1]" --> read "f5[1]" --> read "f6[1]" --> EnumProc.Empty] EnumProc.Empty) EnumProc.Empty
+occurs_check1_sig = SOSignature (Signature [] [EnumProc.Empty, read "f1[1]" --> read "f2[1]" --> read "f3[1]" --> read "f4[1]" --> read "f5[1]" --> read "f6[1]" --> EnumProc.Empty] EnumProc.Empty) EnumProc.Empty EnumProc.Empty EnumProc.Empty
 
 occurs_check1_mudg1 :: StateT (RTestSOMetaUnifDGraph s) (ST s) Bool
 occurs_check1_mudg1 = do
 	{
-		on_dgraph (newEqDGSONode occurs_check1_term1);
-		on_dgraph (newEqDGSONode occurs_check1_term2);
-		on_dgraph (newEqDGSONode occurs_check1_term3);
-		on_dgraph (newEqDGSONode occurs_check1_term4);
-		on_dgraph (newEqDGSONode occurs_check1_term5);
+		on_dgraph (newEqDGSONode (FSONode occurs_check1_term1));
+		on_dgraph (newEqDGSONode (FSONode occurs_check1_term2));
+		on_dgraph (newEqDGSONode (FSONode occurs_check1_term3));
+		on_dgraph (newEqDGSONode (FSONode occurs_check1_term4));
+		on_dgraph (newEqDGSONode (FSONode occurs_check1_term5));
 		on_dgraph (newEqDGSOEdge occurs_check1_tid6 [occurs_check1_tid1] occurs_check1_tid2); 
 		on_dgraph (newEqDGSOEdge occurs_check1_tid6 [occurs_check1_tid2] occurs_check1_tid3);
 		on_dgraph (newEqDGSOEdge occurs_check1_tid6 [occurs_check1_tid3] occurs_check1_tid4);
@@ -2884,10 +2145,10 @@ factorize1_soterm1 :: SOMetatermF
 factorize1_soterm1 = read "f1[1]"
 
 factorize1_sotid1 :: SOMetaUnifRelSoId s
-factorize1_sotid1 = relbwEqDGSoId factorize1_soterm1
+factorize1_sotid1 = relbwEqDGSoId (FSONode factorize1_soterm1)
 
 factorize1_sig :: SOMetaSignature
-factorize1_sig = SOSignature (Signature [] [EnumProc.Empty, read "f1[1]" --> EnumProc.Empty] (read "x0" --> read "x1" --> read "x2" --> EnumProc.Empty)) EnumProc.Empty
+factorize1_sig = SOSignature (Signature [] [EnumProc.Empty, read "f1[1]" --> EnumProc.Empty] (read "x0" --> read "x1" --> read "x2" --> EnumProc.Empty)) EnumProc.Empty EnumProc.Empty EnumProc.Empty
 
 factorize1_mudg1 :: RSOMetaUnifDGraph
 factorize1_mudg1 = RESUnifVDGraph (snd <$> runStateT (mzoom lens_esunifdgraph_dgraph (do
@@ -2924,28 +2185,28 @@ factorize2_term1 :: SOMetatermF
 factorize2_term1 = read "F0[1]"
 
 factorize2_tid1 :: SOMetaUnifRelSoId s
-factorize2_tid1 = relbwEqDGSoId factorize2_term1
+factorize2_tid1 = relbwEqDGSoId (FSONode factorize2_term1)
 
 factorize2_term2 :: SOMetatermF
 factorize2_term2 = read "F1[1]"
 
 factorize2_tid2 :: SOMetaUnifRelSoId s
-factorize2_tid2 = relbwEqDGSoId factorize2_term2
+factorize2_tid2 = relbwEqDGSoId (FSONode factorize2_term2)
 
 factorize2_term3 :: SOMetatermF
 factorize2_term3 = read "F2[1]"
 
 factorize2_tid3 :: SOMetaUnifRelSoId s
-factorize2_tid3 = relbwEqDGSoId factorize2_term3
+factorize2_tid3 = relbwEqDGSoId (FSONode factorize2_term3)
 
 factorize2_soterm1 :: SOMetatermF
 factorize2_soterm1 = read "f1[1]"
 
 factorize2_sotid1 :: SOMetaUnifRelSoId s
-factorize2_sotid1 = relbwEqDGSoId factorize2_soterm1
+factorize2_sotid1 = relbwEqDGSoId (FSONode factorize2_soterm1)
 
 factorize2_sig :: SOMetaSignature
-factorize2_sig = SOSignature (Signature [] [EnumProc.Empty, read "f1[1]" --> EnumProc.Empty] EnumProc.Empty) (read "F0[1]" --> read "F1[1]" --> read "F2[1]" --> EnumProc.Empty)
+factorize2_sig = SOSignature (Signature [] [EnumProc.Empty, read "f1[1]" --> EnumProc.Empty] EnumProc.Empty) (read "F0[1]" --> read "F1[1]" --> read "F2[1]" --> EnumProc.Empty) EnumProc.Empty EnumProc.Empty
 
 factorize2_mudg1 :: RSOMetaUnifDGraph
 factorize2_mudg1 = RESUnifVDGraph (snd <$> runStateT (mzoom lens_esunifdgraph_dgraph (do
@@ -3000,16 +2261,16 @@ factorize3_soterm1 :: SOMetatermF
 factorize3_soterm1 = read "f1[1]"
 
 factorize3_sotid1 :: SOMetaUnifRelSoId s
-factorize3_sotid1 = relbwEqDGSoId factorize3_soterm1
+factorize3_sotid1 = relbwEqDGSoId (FSONode factorize3_soterm1)
 
 factorize3_soterm2 :: SOMetatermF
 factorize3_soterm2 = read "f2[1]"
 
 factorize3_sotid2 :: SOMetaUnifRelSoId s
-factorize3_sotid2 = relbwEqDGSoId factorize3_soterm2
+factorize3_sotid2 = relbwEqDGSoId (FSONode factorize3_soterm2)
 
 factorize3_sig :: SOMetaSignature
-factorize3_sig = SOSignature (Signature [] [EnumProc.Empty, read "f1[1]" --> read "f2[1]" --> EnumProc.Empty] (read "x0" --> read "x1" --> read "x2" --> EnumProc.Empty)) EnumProc.Empty
+factorize3_sig = SOSignature (Signature [] [EnumProc.Empty, read "f1[1]" --> read "f2[1]" --> EnumProc.Empty] (read "x0" --> read "x1" --> read "x2" --> EnumProc.Empty)) EnumProc.Empty EnumProc.Empty EnumProc.Empty
 
 factorize3_mudg1 :: RSOMetaUnifDGraph
 factorize3_mudg1 = RESUnifVDGraph (snd <$> runStateT (mzoom lens_esunifdgraph_dgraph (do
@@ -3043,34 +2304,34 @@ factorize4_term1 :: SOMetatermF
 factorize4_term1 = read "F0[1]"
 
 factorize4_tid1 :: SOMetaUnifRelSoId s
-factorize4_tid1 = relbwEqDGSoId factorize4_term1
+factorize4_tid1 = relbwEqDGSoId (FSONode factorize4_term1)
 
 factorize4_term2 :: SOMetatermF
 factorize4_term2 = read "F1[1]"
 
 factorize4_tid2 :: SOMetaUnifRelSoId s
-factorize4_tid2 = relbwEqDGSoId factorize4_term2
+factorize4_tid2 = relbwEqDGSoId (FSONode factorize4_term2)
 
 factorize4_term3 :: SOMetatermF
 factorize4_term3 = read "F2[1]"
 
 factorize4_tid3 :: SOMetaUnifRelSoId s
-factorize4_tid3 = relbwEqDGSoId factorize4_term3
+factorize4_tid3 = relbwEqDGSoId (FSONode factorize4_term3)
 
 factorize4_soterm1 :: SOMetatermF
 factorize4_soterm1 = read "f1[1]"
 
 factorize4_sotid1 :: SOMetaUnifRelSoId s
-factorize4_sotid1 = relbwEqDGSoId factorize4_soterm1
+factorize4_sotid1 = relbwEqDGSoId (FSONode factorize4_soterm1)
 
 factorize4_soterm2 :: SOMetatermF
 factorize4_soterm2 = read "f2[1]"
 
 factorize4_sotid2 :: SOMetaUnifRelSoId s
-factorize4_sotid2 = relbwEqDGSoId factorize4_soterm2
+factorize4_sotid2 = relbwEqDGSoId (FSONode factorize4_soterm2)
 
 factorize4_sig :: SOMetaSignature
-factorize4_sig = SOSignature (Signature [] [EnumProc.Empty, read "f1[1]" --> read "f2[1]" --> EnumProc.Empty] EnumProc.Empty) (read "F0[1]" --> read "F1[1]" --> read "F2[1]" --> EnumProc.Empty)
+factorize4_sig = SOSignature (Signature [] [EnumProc.Empty, read "f1[1]" --> read "f2[1]" --> EnumProc.Empty] EnumProc.Empty) (read "F0[1]" --> read "F1[1]" --> read "F2[1]" --> EnumProc.Empty) EnumProc.Empty EnumProc.Empty
 
 factorize4_mudg1 :: RSOMetaUnifDGraph
 factorize4_mudg1 = RESUnifVDGraph (snd <$> runStateT (mzoom lens_esunifdgraph_dgraph (do
@@ -3158,16 +2419,16 @@ factorize5_soterm1 :: SOMetatermF
 factorize5_soterm1 = read "f1[2]"
 
 factorize5_sotid1 :: SOMetaUnifRelSoId s
-factorize5_sotid1 = relbwEqDGSoId factorize5_soterm1
+factorize5_sotid1 = relbwEqDGSoId (FSONode factorize5_soterm1)
 
 factorize5_soterm2 :: SOMetatermF
 factorize5_soterm2 = read "f2[1]"
 
 factorize5_sotid2 :: SOMetaUnifRelSoId s
-factorize5_sotid2 = relbwEqDGSoId factorize5_soterm2
+factorize5_sotid2 = relbwEqDGSoId (FSONode factorize5_soterm2)
 
 factorize5_sig :: SOMetaSignature
-factorize5_sig = SOSignature (Signature [] [EnumProc.Empty, read "f1[1]" --> read "f2[1]" --> EnumProc.Empty] (read "x0" --> read "x1" --> read "x2" --> read "x3" --> read "x4" --> read "x5" --> read "x6" --> read "x7" --> read "x8" --> EnumProc.Empty)) EnumProc.Empty
+factorize5_sig = SOSignature (Signature [] [EnumProc.Empty, read "f1[1]" --> read "f2[1]" --> EnumProc.Empty] (read "x0" --> read "x1" --> read "x2" --> read "x3" --> read "x4" --> read "x5" --> read "x6" --> read "x7" --> read "x8" --> EnumProc.Empty)) EnumProc.Empty EnumProc.Empty EnumProc.Empty
 
 factorize5_mudg1 :: RSOMetaUnifDGraph
 factorize5_mudg1 = RESUnifVDGraph (snd <$> runStateT (mzoom lens_esunifdgraph_dgraph (do
@@ -3276,13 +2537,13 @@ factorize6_soterm1 :: SOMetatermF
 factorize6_soterm1 = read "f1[1]"
 
 factorize6_sotid1 :: SOMetaUnifRelSoId s
-factorize6_sotid1 = relbwEqDGSoId factorize6_soterm1
+factorize6_sotid1 = relbwEqDGSoId (FSONode factorize6_soterm1)
 
 factorize6_soterm2 :: SOMetatermF
 factorize6_soterm2 = read "F0[2]"
 
 factorize6_sotid2 :: SOMetaUnifRelSoId s
-factorize6_sotid2 = relbwEqDGSoId factorize6_soterm2
+factorize6_sotid2 = relbwEqDGSoId (FSONode factorize6_soterm2)
 
 factorize6_soterm3 :: SOMetatermF
 factorize6_soterm3 = read "f1[1]{pi1}"
@@ -3297,7 +2558,7 @@ factorize6_exp2 :: SOMetaUnifFOExp
 factorize6_exp2 = read "F1[2](u0 x1, u0 x2)"
 
 factorize6_sig :: SOMetaSignature
-factorize6_sig = SOSignature (Signature [] [EnumProc.Empty, read "f1[1]" --> EnumProc.Empty] (read "x0" --> read "x1" --> read "x2" --> read "x3" --> EnumProc.Empty)) (read "F0[2]" --> EnumProc.Empty)
+factorize6_sig = SOSignature (Signature [] [EnumProc.Empty, read "f1[1]" --> EnumProc.Empty] (read "x0" --> read "x1" --> read "x2" --> read "x3" --> EnumProc.Empty)) (read "F0[2]" --> EnumProc.Empty) EnumProc.Empty EnumProc.Empty
 
 factorize6_mudg1 :: RSOMetaUnifDGraph
 factorize6_mudg1 = RESUnifVDGraph (snd <$> runStateT (mzoom lens_esunifdgraph_dgraph (do
@@ -3401,13 +2662,13 @@ factorize7_soterm1 :: SOMetatermF
 factorize7_soterm1 = read "f1[2]"
 
 factorize7_sotid1 :: SOMetaUnifRelSoId s
-factorize7_sotid1 = relbwEqDGSoId factorize7_soterm1
+factorize7_sotid1 = relbwEqDGSoId (FSONode factorize7_soterm1)
 
 factorize7_soterm2 :: SOMetatermF
 factorize7_soterm2 = read "F0[1]"
 
 factorize7_sotid2 :: SOMetaUnifRelSoId s
-factorize7_sotid2 = relbwEqDGSoId factorize7_soterm2
+factorize7_sotid2 = relbwEqDGSoId (FSONode factorize7_soterm2)
 
 factorize7_soterm3 :: SOMetatermF
 factorize7_soterm3 = read "F1[1]"
@@ -3425,7 +2686,7 @@ factorize7_exp3 :: SOMetaUnifFOExp
 factorize7_exp3 = read "F2[1](u0 x2)"
 
 factorize7_sig :: SOMetaSignature
-factorize7_sig = SOSignature (Signature [] [EnumProc.Empty, read "f1[2]" --> EnumProc.Empty] (read "x0" --> read "x1" --> read "x2" --> read "x3" --> EnumProc.Empty)) (read "F0[1]" --> EnumProc.Empty)
+factorize7_sig = SOSignature (Signature [] [EnumProc.Empty, read "f1[2]" --> EnumProc.Empty] (read "x0" --> read "x1" --> read "x2" --> read "x3" --> EnumProc.Empty)) (read "F0[1]" --> EnumProc.Empty) EnumProc.Empty EnumProc.Empty
 
 factorize7_mudg1 :: RSOMetaUnifDGraph
 factorize7_mudg1 = RESUnifVDGraph (snd <$> runStateT (mzoom lens_esunifdgraph_dgraph (do
@@ -3529,13 +2790,13 @@ factorize8_soterm1 :: SOMetatermF
 factorize8_soterm1 = read "f1[2]"
 
 factorize8_sotid1 :: SOMetaUnifRelSoId s
-factorize8_sotid1 = relbwEqDGSoId factorize8_soterm1
+factorize8_sotid1 = relbwEqDGSoId (FSONode factorize8_soterm1)
 
 factorize8_soterm2 :: SOMetatermF
 factorize8_soterm2 = read "F0[15]"
 
 factorize8_sotid2 :: SOMetaUnifRelSoId s
-factorize8_sotid2 = relbwEqDGSoId factorize8_soterm2
+factorize8_sotid2 = relbwEqDGSoId (FSONode factorize8_soterm2)
 
 factorize8_soterm3 :: SOMetatermF
 factorize8_soterm3 = read "F1[15]"
@@ -3553,7 +2814,7 @@ factorize8_exp3 :: SOMetaUnifFOExp
 factorize8_exp3 = read "F2[15](u0 x2)"
 
 factorize8_sig :: SOMetaSignature
-factorize8_sig = SOSignature (Signature [] [EnumProc.Empty, read "f1[2]" --> EnumProc.Empty] (read "x0" --> read "x1" --> read "x2" --> read "x3" --> EnumProc.Empty)) (read "F0[15]" --> EnumProc.Empty)
+factorize8_sig = SOSignature (Signature [] [EnumProc.Empty, read "f1[2]" --> EnumProc.Empty] (read "x0" --> read "x1" --> read "x2" --> read "x3" --> EnumProc.Empty)) (read "F0[15]" --> EnumProc.Empty) EnumProc.Empty EnumProc.Empty
 
 factorize8_mudg1 :: RSOMetaUnifDGraph
 factorize8_mudg1 = RESUnifVDGraph (snd <$> runStateT (mzoom lens_esunifdgraph_dgraph (do
@@ -3655,25 +2916,25 @@ factorize9_soterm1 :: SOMetatermF
 factorize9_soterm1 = read "f1[1]"
 
 factorize9_sotid1 :: SOMetaUnifRelSoId s
-factorize9_sotid1 = relbwEqDGSoId factorize9_soterm1
+factorize9_sotid1 = relbwEqDGSoId (FSONode factorize9_soterm1)
 
 factorize9_soterm2 :: SOMetatermF
 factorize9_soterm2 = read "f2[2]"
 
 factorize9_sotid2 :: SOMetaUnifRelSoId s
-factorize9_sotid2 = relbwEqDGSoId factorize9_soterm2
+factorize9_sotid2 = relbwEqDGSoId (FSONode factorize9_soterm2)
 
 factorize9_soterm3 :: SOMetatermF
 factorize9_soterm3 = read "F0[2]"
 
 factorize9_sotid3 :: SOMetaUnifRelSoId s
-factorize9_sotid3 = relbwEqDGSoId factorize9_soterm3
+factorize9_sotid3 = relbwEqDGSoId (FSONode factorize9_soterm3)
 
 factorize9_soterm4 :: SOMetatermF
 factorize9_soterm4 = read "F1[1]"
 
 factorize9_sotid4 :: SOMetaUnifRelSoId s
-factorize9_sotid4 = relbwEqDGSoId factorize9_soterm4
+factorize9_sotid4 = relbwEqDGSoId (FSONode factorize9_soterm4)
 
 factorize9_exp1 :: SOMetaUnifSOExp
 factorize9_exp1 = read "f1[1]{F3[2]}"
@@ -3685,7 +2946,7 @@ factorize9_exp3 :: SOMetaUnifSOExp
 factorize9_exp3 = read "f2[1]{F3[2]}"
 
 factorize9_sig :: SOMetaSignature
-factorize9_sig = SOSignature (Signature [] [EnumProc.Empty, read "f1[1]" --> read "f2[1]" --> EnumProc.Empty, read "f3[2]" --> EnumProc.Empty] (read "x0" --> read "x1" --> read "x2" --> EnumProc.Empty)) (read "F0[2]" --> read "F1[1]" --> EnumProc.Empty)
+factorize9_sig = SOSignature (Signature [] [EnumProc.Empty, read "f1[1]" --> read "f2[1]" --> EnumProc.Empty, read "f3[2]" --> EnumProc.Empty] (read "x0" --> read "x1" --> read "x2" --> EnumProc.Empty)) (read "F0[2]" --> read "F1[1]" --> EnumProc.Empty) EnumProc.Empty EnumProc.Empty
 
 factorize9_mudg1 :: RSOMetaUnifDGraph
 factorize9_mudg1 = RESUnifVDGraph (snd <$> runStateT (mzoom lens_esunifdgraph_dgraph (do
@@ -3816,37 +3077,37 @@ factorize10_soterm1 :: SOMetatermF
 factorize10_soterm1 = read "f1[1]"
 
 factorize10_sotid1 :: SOMetaUnifRelSoId s
-factorize10_sotid1 = relbwEqDGSoId factorize10_soterm1
+factorize10_sotid1 = relbwEqDGSoId (FSONode factorize10_soterm1)
 
 factorize10_soterm2 :: SOMetatermF
 factorize10_soterm2 = read "F0[1]"
 
 factorize10_sotid2 :: SOMetaUnifRelSoId s
-factorize10_sotid2 = relbwEqDGSoId factorize10_soterm2
+factorize10_sotid2 = relbwEqDGSoId (FSONode factorize10_soterm2)
 
 factorize10_soterm3 :: SOMetatermF
 factorize10_soterm3 = read "F1[1]"
 
 factorize10_sotid3 :: SOMetaUnifRelSoId s
-factorize10_sotid3 = relbwEqDGSoId factorize10_soterm3
+factorize10_sotid3 = relbwEqDGSoId (FSONode factorize10_soterm3)
 
 factorize10_soterm4 :: SOMetatermF
 factorize10_soterm4 = read "F2[1]"
 
 factorize10_sotid4 :: SOMetaUnifRelSoId s
-factorize10_sotid4 = relbwEqDGSoId factorize10_soterm4
+factorize10_sotid4 = relbwEqDGSoId (FSONode factorize10_soterm4)
 
 factorize10_soterm5 :: SOMetatermF
 factorize10_soterm5 = read "F3[1]"
 
 factorize10_sotid5 :: SOMetaUnifRelSoId s
-factorize10_sotid5 = relbwEqDGSoId factorize10_soterm5
+factorize10_sotid5 = relbwEqDGSoId (FSONode factorize10_soterm5)
 
 factorize10_soterm6 :: SOMetatermF
 factorize10_soterm6 = read "F4[1]"
 
 factorize10_sotid6 :: SOMetaUnifRelSoId s
-factorize10_sotid6 = relbwEqDGSoId factorize10_soterm6
+factorize10_sotid6 = relbwEqDGSoId (FSONode factorize10_soterm6)
 
 factorize10_exp1 :: SOMetaUnifSOExp
 factorize10_exp1 = read "f1[1]{F7[1]}"
@@ -3855,7 +3116,7 @@ factorize10_exp2 :: SOMetaUnifSOExp
 factorize10_exp2 = read "pi0"
 
 factorize10_sig :: SOMetaSignature
-factorize10_sig = SOSignature (Signature [] [EnumProc.Empty, read "f1[1]" --> EnumProc.Empty] (read "x0" --> read "x1" --> read "x2" --> read "x3" --> read "x4" --> read "x5" --> read "x6" --> read "x7" --> read "x8" --> EnumProc.Empty)) (read "F0[1]" --> read "F1[1]" --> read "F2[1]" --> read "F3[1]" --> read "F4[1]" --> EnumProc.Empty)
+factorize10_sig = SOSignature (Signature [] [EnumProc.Empty, read "f1[1]" --> EnumProc.Empty] (read "x0" --> read "x1" --> read "x2" --> read "x3" --> read "x4" --> read "x5" --> read "x6" --> read "x7" --> read "x8" --> EnumProc.Empty)) (read "F0[1]" --> read "F1[1]" --> read "F2[1]" --> read "F3[1]" --> read "F4[1]" --> EnumProc.Empty) EnumProc.Empty EnumProc.Empty
 
 factorize10_mudg1 :: RSOMetaUnifDGraph
 factorize10_mudg1 = RESUnifVDGraph (snd <$> runStateT (mzoom lens_esunifdgraph_dgraph (do
@@ -3941,22 +3202,22 @@ factorize11_soterm1 :: SOMetatermF
 factorize11_soterm1 = read "f1[1]"
 
 factorize11_sotid1 :: SOMetaUnifRelSoId s
-factorize11_sotid1 = relbwEqDGSoId factorize11_soterm1
+factorize11_sotid1 = relbwEqDGSoId (FSONode factorize11_soterm1)
 
 factorize11_soterm2 :: SOMetatermF
 factorize11_soterm2 = read "F0[1]"
 
 factorize11_sotid2 :: SOMetaUnifRelSoId s
-factorize11_sotid2 = relbwEqDGSoId factorize11_soterm2
+factorize11_sotid2 = relbwEqDGSoId (FSONode factorize11_soterm2)
 
 factorize11_soterm3 :: SOMetatermF
 factorize11_soterm3 = read "pi0"
 
 factorize11_sotid3 :: SOMetaUnifRelSoId s
-factorize11_sotid3 = relbwEqDGSoId factorize11_soterm3
+factorize11_sotid3 = relbwEqDGSoId (FSONode factorize11_soterm3)
 
 factorize11_sig :: SOMetaSignature
-factorize11_sig = SOSignature (Signature [] [EnumProc.Empty, read "f1[1]" --> EnumProc.Empty] EnumProc.Empty) (read "F0[1]" --> EnumProc.Empty)
+factorize11_sig = SOSignature (Signature [] [EnumProc.Empty, read "f1[1]" --> EnumProc.Empty] EnumProc.Empty) (read "F0[1]" --> EnumProc.Empty) EnumProc.Empty EnumProc.Empty
 
 factorize11_mudg1 :: RSOMetaUnifDGraph
 factorize11_mudg1 = RESUnifVDGraph (snd <$> runStateT (mzoom lens_esunifdgraph_dgraph (do
@@ -4019,22 +3280,22 @@ factorize12_soterm1 :: SOMetatermF
 factorize12_soterm1 = read "f1[1]"
 
 factorize12_sotid1 :: SOMetaUnifRelSoId s
-factorize12_sotid1 = relbwEqDGSoId factorize12_soterm1
+factorize12_sotid1 = relbwEqDGSoId (FSONode factorize12_soterm1)
 
 factorize12_soterm2 :: SOMetatermF
 factorize12_soterm2 = read "F0[1]"
 
 factorize12_sotid2 :: SOMetaUnifRelSoId s
-factorize12_sotid2 = relbwEqDGSoId factorize12_soterm2
+factorize12_sotid2 = relbwEqDGSoId (FSONode factorize12_soterm2)
 
 factorize12_soterm3 :: SOMetatermF
 factorize12_soterm3 = read "f2[1]"
 
 factorize12_sotid3 :: SOMetaUnifRelSoId s
-factorize12_sotid3 = relbwEqDGSoId factorize12_soterm3
+factorize12_sotid3 = relbwEqDGSoId (FSONode factorize12_soterm3)
 
 factorize12_sig :: SOMetaSignature
-factorize12_sig = SOSignature (Signature [] [EnumProc.Empty, read "f1[1]" --> read "f2[1]" --> EnumProc.Empty] EnumProc.Empty) (read "F0[1]" --> EnumProc.Empty)
+factorize12_sig = SOSignature (Signature [] [EnumProc.Empty, read "f1[1]" --> read "f2[1]" --> EnumProc.Empty] EnumProc.Empty) (read "F0[1]" --> EnumProc.Empty) EnumProc.Empty EnumProc.Empty
 
 factorize12_mudg1 :: RSOMetaUnifDGraph
 factorize12_mudg1 = RESUnifVDGraph (snd <$> runStateT (mzoom lens_esunifdgraph_dgraph (do
@@ -4082,22 +3343,22 @@ factorize13_soterm1 :: SOMetatermF
 factorize13_soterm1 = read "f1[1]"
 
 factorize13_sotid1 :: SOMetaUnifRelSoId s
-factorize13_sotid1 = relbwEqDGSoId factorize13_soterm1
+factorize13_sotid1 = relbwEqDGSoId (FSONode factorize13_soterm1)
 
 factorize13_soterm2 :: SOMetatermF
 factorize13_soterm2 = read "F0[1]"
 
 factorize13_sotid2 :: SOMetaUnifRelSoId s
-factorize13_sotid2 = relbwEqDGSoId factorize13_soterm2
+factorize13_sotid2 = relbwEqDGSoId (FSONode factorize13_soterm2)
 
 factorize13_soterm3 :: SOMetatermF
 factorize13_soterm3 = read "pi0"
 
 factorize13_sotid3 :: SOMetaUnifRelSoId s
-factorize13_sotid3 = relbwEqDGSoId factorize13_soterm3
+factorize13_sotid3 = relbwEqDGSoId (FSONode factorize13_soterm3)
 
 factorize13_sig :: SOMetaSignature
-factorize13_sig = SOSignature (Signature [] [EnumProc.Empty, read "f1[1]" --> EnumProc.Empty] EnumProc.Empty) (read "F0[1]" --> EnumProc.Empty)
+factorize13_sig = SOSignature (Signature [] [EnumProc.Empty, read "f1[1]" --> EnumProc.Empty] EnumProc.Empty) (read "F0[1]" --> EnumProc.Empty) EnumProc.Empty EnumProc.Empty
 
 factorize13_mudg1 :: RSOMetaUnifDGraph
 factorize13_mudg1 = RESUnifVDGraph (snd <$> runStateT (mzoom lens_esunifdgraph_dgraph (do
@@ -4160,31 +3421,31 @@ factorize14_soterm1 :: SOMetatermF
 factorize14_soterm1 = read "f1[1]"
 
 factorize14_sotid1 :: SOMetaUnifRelSoId s
-factorize14_sotid1 = relbwEqDGSoId factorize14_soterm1
+factorize14_sotid1 = relbwEqDGSoId (FSONode factorize14_soterm1)
 
 factorize14_soterm2 :: SOMetatermF
 factorize14_soterm2 = read "F0[1]"
 
 factorize14_sotid2 :: SOMetaUnifRelSoId s
-factorize14_sotid2 = relbwEqDGSoId factorize14_soterm2
+factorize14_sotid2 = relbwEqDGSoId (FSONode factorize14_soterm2)
 
 factorize14_soterm3 :: SOMetatermF
 factorize14_soterm3 = read "F1[1]"
 
 factorize14_sotid3 :: SOMetaUnifRelSoId s
-factorize14_sotid3 = relbwEqDGSoId factorize14_soterm3
+factorize14_sotid3 = relbwEqDGSoId (FSONode factorize14_soterm3)
 
 factorize14_soterm4 :: SOMetatermF
 factorize14_soterm4 = read "pi0"
 
 factorize14_sotid4 :: SOMetaUnifRelSoId s
-factorize14_sotid4 = relbwEqDGSoId factorize14_soterm4
+factorize14_sotid4 = relbwEqDGSoId (FSONode factorize14_soterm4)
 
 factorize14_exp1 :: SOMetaUnifSOExp
 factorize14_exp1 = read "f1[1]{pi0}"
 
 factorize14_sig :: SOMetaSignature
-factorize14_sig = SOSignature (Signature [] [EnumProc.Empty, read "f1[1]" --> EnumProc.Empty] EnumProc.Empty) (read "F0[1]" --> read "F1[1]" --> EnumProc.Empty)
+factorize14_sig = SOSignature (Signature [] [EnumProc.Empty, read "f1[1]" --> EnumProc.Empty] EnumProc.Empty) (read "F0[1]" --> read "F1[1]" --> EnumProc.Empty) EnumProc.Empty EnumProc.Empty
 
 factorize14_mudg1 :: RSOMetaUnifDGraph
 factorize14_mudg1 = RESUnifVDGraph (snd <$> runStateT (mzoom lens_esunifdgraph_dgraph (do
@@ -4347,7 +3608,7 @@ unifsys1_nsols :: Int
 unifsys1_nsols = 20
 
 unifsys1_sig :: SOMetaSignature
-unifsys1_sig = SOSignature (Signature [] [EnumProc.Empty, read "f0[1]" --> EnumProc.Empty] (read "x0" --> read "x1" --> EnumProc.Empty)) (read "F0[1]" --> EnumProc.Empty)
+unifsys1_sig = SOSignature (Signature [] [EnumProc.Empty, read "f0[1]" --> EnumProc.Empty] (read "x0" --> read "x1" --> EnumProc.Empty)) (read "F0[1]" --> EnumProc.Empty) EnumProc.Empty EnumProc.Empty
 
 unifsys1_eq1 :: SOMetaUnifEquation
 unifsys1_eq1 = read "u0 x0 = u0 F0[1](x1)"
@@ -4359,16 +3620,16 @@ unifsys1_as :: AnswerSet SOMetaUnifSystem SOMetaUnifSysSolution
 unifsys1_as = ImplicitAS unifsys1_sys
 
 unifsys1_sol1 :: SOMetaUnifSysSolution
-unifsys1_sol1 = fromList [(read "F0[1]", read "f0[1]")]
+unifsys1_sol1 = UnifSysSolution (fromList [(read "F0[1]", read "f0[1]")]) (fromList [])
 
 unifsys1_sol2 :: SOMetaUnifSysSolution
-unifsys1_sol2 = fromList [(read "F0[1]", read "f0[1]{f0[1]}")]
+unifsys1_sol2 = UnifSysSolution (fromList [(read "F0[1]", read "f0[1]{f0[1]}")]) (fromList [])
 
 unifsys1_sol3 :: SOMetaUnifSysSolution
-unifsys1_sol3 = fromList [(read "F0[1]", read "f0[1]{f0[1]{f0[1]{f0[1]{f0[1]{f0[1]}}}}}")]
+unifsys1_sol3 = UnifSysSolution (fromList [(read "F0[1]", read "f0[1]{f0[1]{f0[1]{f0[1]{f0[1]{f0[1]}}}}}")]) (fromList [])
 
 unifsys1_sol4 :: SOMetaUnifSysSolution
-unifsys1_sol4 = fromList [(read "F0[1]", read "pi1")]
+unifsys1_sol4 = UnifSysSolution (fromList [(read "F0[1]", read "pi1")]) (fromList [])
 	
 unifsys1_t1 :: AutomatedTest
 unifsys1_t1 = check_en_any_usol unifsys1_nsols "Checking F0[1] = f0[1] is explicitly a solution" (\title -> \sol -> check_usol title unifsys1_sol1 sol) unifsys1_as
@@ -4404,7 +3665,7 @@ unifsys2_nsols :: Int
 unifsys2_nsols = 20
 
 unifsys2_sig :: SOMetaSignature
-unifsys2_sig = SOSignature (Signature [] [EnumProc.Empty, EnumProc.Empty, read "f0[2]" --> EnumProc.Empty] (read "x0" --> read "x1" --> read "x2" --> EnumProc.Empty)) (read "F0[2]" --> EnumProc.Empty)
+unifsys2_sig = SOSignature (Signature [] [EnumProc.Empty, EnumProc.Empty, read "f0[2]" --> EnumProc.Empty] (read "x0" --> read "x1" --> read "x2" --> EnumProc.Empty)) (read "F0[2]" --> EnumProc.Empty) EnumProc.Empty EnumProc.Empty
 
 unifsys2_eq1 :: SOMetaUnifEquation
 unifsys2_eq1 = read "u0 x0 = u0 F0[2](x1,x2)"
@@ -4416,25 +3677,25 @@ unifsys2_as :: AnswerSet SOMetaUnifSystem SOMetaUnifSysSolution
 unifsys2_as = ImplicitAS unifsys2_sys
 
 unifsys2_sol1 :: SOMetaUnifSysSolution
-unifsys2_sol1 = fromList [(read "F0[2]", read "f0[2]")]
+unifsys2_sol1 = UnifSysSolution (fromList [(read "F0[2]", read "f0[2]")]) (fromList [])
 
 unifsys2_sol2 :: SOMetaUnifSysSolution
-unifsys2_sol2 = fromList [(read "F0[2]", read "f0[2]{f0[2],pi0}")]
+unifsys2_sol2 = UnifSysSolution (fromList [(read "F0[2]", read "f0[2]{f0[2],pi0}")]) (fromList [])
 
 unifsys2_sol3 :: SOMetaUnifSysSolution
-unifsys2_sol3 = fromList [(read "F0[2]", read "f0[2]{f0[2]{pi0,pi0},pi1}")]
+unifsys2_sol3 = UnifSysSolution (fromList [(read "F0[2]", read "f0[2]{f0[2]{pi0,pi0},pi1}")]) (fromList [])
 
 unifsys2_sol4 :: SOMetaUnifSysSolution
-unifsys2_sol4 = fromList [(read "F0[2]", read "pi1")]
+unifsys2_sol4 = UnifSysSolution (fromList [(read "F0[2]", read "pi1")]) (fromList [])
 
 unifsys2_sol5 :: SOMetaUnifSysSolution
-unifsys2_sol5 = fromList [(read "F0[2]", read "pi0")]
+unifsys2_sol5 = UnifSysSolution (fromList [(read "F0[2]", read "pi0")]) (fromList [])
 
 unifsys2_sol6 :: SOMetaUnifSysSolution
-unifsys2_sol6 = fromList [(read "F0[2]", read "pi2")]
+unifsys2_sol6 = UnifSysSolution (fromList [(read "F0[2]", read "pi2")]) (fromList [])
 
 unifsys2_sol7 :: SOMetaUnifSysSolution
-unifsys2_sol7 = fromList [(read "F0[2]", read "f0[2]{pi0,pi2}")]
+unifsys2_sol7 = UnifSysSolution (fromList [(read "F0[2]", read "f0[2]{pi0,pi2}")]) (fromList [])
 	
 unifsys2_t1 :: AutomatedTest
 unifsys2_t1 = check_en_any_usol unifsys1_nsols "Checking F0[2] = f0[2] is explicitly a solution" (\title -> \sol -> check_usol title unifsys2_sol1 sol) unifsys2_as
@@ -4488,7 +3749,7 @@ unifsys3_nsols :: Int
 unifsys3_nsols = 20
 
 unifsys3_sig :: SOMetaSignature
-unifsys3_sig = SOSignature (Signature [] [EnumProc.Empty, read "f0[1]" --> read "f1[1]" --> EnumProc.Empty] (read "x0" --> read "x1" --> read "x2" --> EnumProc.Empty)) (read "F0[1]" --> EnumProc.Empty)
+unifsys3_sig = SOSignature (Signature [] [EnumProc.Empty, read "f0[1]" --> read "f1[1]" --> EnumProc.Empty] (read "x0" --> read "x1" --> read "x2" --> EnumProc.Empty)) (read "F0[1]" --> EnumProc.Empty) EnumProc.Empty EnumProc.Empty
 
 unifsys3_eq1 :: SOMetaUnifEquation
 unifsys3_eq1 = read "u0 x0 = u0 f0[1](x1)"
@@ -4506,13 +3767,13 @@ unifsys3_as :: AnswerSet SOMetaUnifSystem SOMetaUnifSysSolution
 unifsys3_as = ImplicitAS unifsys3_sys
 
 unifsys3_sol1 :: SOMetaUnifSysSolution
-unifsys3_sol1 = fromList [(read "F0[1]", read "f0[1]{f1[1]}")]
+unifsys3_sol1 = UnifSysSolution (fromList [(read "F0[1]", read "f0[1]{f1[1]}")]) (fromList [])
 
 unifsys3_sol2 :: SOMetaUnifSysSolution
-unifsys3_sol2 = fromList [(read "F0[1]", read "f1[1]{f0[1]}")]
+unifsys3_sol2 = UnifSysSolution (fromList [(read "F0[1]", read "f1[1]{f0[1]}")]) (fromList [])
 
 unifsys3_sol3 :: SOMetaUnifSysSolution
-unifsys3_sol3 = fromList [(read "F0[1]", read "f0[1]")]
+unifsys3_sol3 = UnifSysSolution (fromList [(read "F0[1]", read "f0[1]")]) (fromList [])
 
 unifsys3_t1 :: AutomatedTest
 unifsys3_t1 = check_exactly_exp_as "Checking that the equation system has exactly 1 solution" 1 unifsys3_as
@@ -4542,7 +3803,7 @@ unifsys4_nsols :: Int
 unifsys4_nsols = 20
 
 unifsys4_sig :: SOMetaSignature
-unifsys4_sig = SOSignature (Signature [] [EnumProc.Empty, EnumProc.Empty, read "f0[2]" --> EnumProc.Empty] (read "x0" --> read "x1" --> read "x2" --> EnumProc.Empty)) (read "F0[1]" --> EnumProc.Empty)
+unifsys4_sig = SOSignature (Signature [] [EnumProc.Empty, EnumProc.Empty, read "f0[2]" --> EnumProc.Empty] (read "x0" --> read "x1" --> read "x2" --> EnumProc.Empty)) (read "F0[1]" --> EnumProc.Empty) EnumProc.Empty EnumProc.Empty
 
 unifsys4_eq1 :: SOMetaUnifEquation
 unifsys4_eq1 = read "u0 x0 = u0 f0[2](x1,x2)"
@@ -4560,19 +3821,19 @@ unifsys4_as :: AnswerSet SOMetaUnifSystem SOMetaUnifSysSolution
 unifsys4_as = ImplicitAS unifsys4_sys
 
 unifsys4_sol1 :: SOMetaUnifSysSolution
-unifsys4_sol1 = fromList [(read "F0[1]", read "pi0")]
+unifsys4_sol1 = UnifSysSolution (fromList [(read "F0[1]", read "pi0")]) (fromList [])
 
 unifsys4_sol2 :: SOMetaUnifSysSolution
-unifsys4_sol2 = fromList [(read "F0[1]", read "f0[2]{pi0,pi0}")]
+unifsys4_sol2 = UnifSysSolution (fromList [(read "F0[1]", read "f0[2]{pi0,pi0}")]) (fromList [])
 
 unifsys4_sol3 :: SOMetaUnifSysSolution
-unifsys4_sol3 = fromList [(read "F0[1]", read "f0[2]{pi0,f0[2]{pi0,pi0}}")]
+unifsys4_sol3 = UnifSysSolution (fromList [(read "F0[1]", read "f0[2]{pi0,f0[2]{pi0,pi0}}")]) (fromList [])
 
 unifsys4_sol4 :: SOMetaUnifSysSolution
-unifsys4_sol4 = fromList [(read "F0[1]", read "pi1")]
+unifsys4_sol4 = UnifSysSolution (fromList [(read "F0[1]", read "pi1")]) (fromList [])
 
 unifsys4_sol5 :: SOMetaUnifSysSolution
-unifsys4_sol5 = fromList [(read "F0[1]", read "f0[2]")]
+unifsys4_sol5 = UnifSysSolution (fromList [(read "F0[1]", read "f0[2]")]) (fromList [])
 
 unifsys4_t1 :: AutomatedTest
 unifsys4_t1 = check_min_exp_as "Checking that the equation system has at least 20 solutions" 20 unifsys4_as
@@ -4614,7 +3875,7 @@ unifsys5_nsols :: Int
 unifsys5_nsols = 20
 
 unifsys5_sig :: SOMetaSignature
-unifsys5_sig = SOSignature (Signature [] [EnumProc.Empty, EnumProc.Empty, read "f0[2]" --> EnumProc.Empty] (read "x0" --> read "x1" --> read "x2" --> EnumProc.Empty)) (EnumProc.Empty)
+unifsys5_sig = SOSignature (Signature [] [EnumProc.Empty, EnumProc.Empty, read "f0[2]" --> EnumProc.Empty] (read "x0" --> read "x1" --> read "x2" --> EnumProc.Empty)) (EnumProc.Empty) EnumProc.Empty EnumProc.Empty
 
 unifsys5_eq1 :: SOMetaUnifEquation
 unifsys5_eq1 = read "u0 x0 = u0 f0[2](x1,x2)"
@@ -4638,7 +3899,7 @@ unifsys6_nsols :: Int
 unifsys6_nsols = 20
 
 unifsys6_sig :: SOMetaSignature
-unifsys6_sig = SOSignature (Signature [] [EnumProc.Empty, read "f0[2]" --> read "f1[2]" --> EnumProc.Empty] (read "x0" --> read "x1" --> read "x2" --> EnumProc.Empty)) (EnumProc.Empty)
+unifsys6_sig = SOSignature (Signature [] [EnumProc.Empty, read "f0[2]" --> read "f1[2]" --> EnumProc.Empty] (read "x0" --> read "x1" --> read "x2" --> EnumProc.Empty)) (EnumProc.Empty) EnumProc.Empty EnumProc.Empty
 
 unifsys6_eq1 :: SOMetaUnifEquation
 unifsys6_eq1 = read "u0 x0 = u0 f0[2](x1,x2)"
@@ -4662,7 +3923,7 @@ unifsys7_nsols :: Int
 unifsys7_nsols = 20
 
 unifsys7_sig :: SOMetaSignature
-unifsys7_sig = SOSignature (Signature [] [EnumProc.Empty, EnumProc.Empty, read "f0[2]" --> read "f1[2]" --> EnumProc.Empty] (read "x0" --> read "x1" --> read "x2" --> read "x3" --> EnumProc.Empty)) (read "F0[2]" --> EnumProc.Empty)
+unifsys7_sig = SOSignature (Signature [] [EnumProc.Empty, EnumProc.Empty, read "f0[2]" --> read "f1[2]" --> EnumProc.Empty] (read "x0" --> read "x1" --> read "x2" --> read "x3" --> EnumProc.Empty)) (read "F0[2]" --> EnumProc.Empty) EnumProc.Empty EnumProc.Empty
 
 unifsys7_eq1 :: SOMetaUnifEquation
 unifsys7_eq1 = read "u0 x0 = u0 f0[2](x1,x2)"
@@ -4689,13 +3950,13 @@ unifsys7_chsys1 :: [SOMetaUnifEquation]
 unifsys7_chsys1 = [unifsys7_cheq1_1]
 
 unifsys7_sol1 :: SOMetaUnifSysSolution
-unifsys7_sol1 = fromList [(read "F0[2]", read "f0[2]{pi0,pi1}")]
+unifsys7_sol1 = UnifSysSolution (fromList [(read "F0[2]", read "f0[2]{pi0,pi1}")]) (fromList [])
 
 unifsys7_sol2 :: SOMetaUnifSysSolution
-unifsys7_sol2 = fromList [(read "F0[2]", read "f0[2]{pi1,pi0}")]
+unifsys7_sol2 = UnifSysSolution (fromList [(read "F0[2]", read "f0[2]{pi1,pi0}")]) (fromList [])
 
 unifsys7_sol3 :: SOMetaUnifSysSolution
-unifsys7_sol3 = fromList [(read "F0[2]", read "f0[2]{pi1,pi1}")]
+unifsys7_sol3 = UnifSysSolution (fromList [(read "F0[2]", read "f0[2]{pi1,pi1}")]) (fromList [])
 
 unifsys7_t1 :: AutomatedTest
 unifsys7_t1 = check_min_exp_as "Checking that the equation system has at least 1 solution" 1 unifsys7_as
@@ -4719,7 +3980,7 @@ unifsys8_nsols :: Int
 unifsys8_nsols = 20
 
 unifsys8_sig :: SOMetaSignature
-unifsys8_sig = SOSignature (Signature [] [EnumProc.Empty, EnumProc.Empty, read "f0[2]" --> read "f1[2]" --> EnumProc.Empty] (read "x0" --> read "x1" --> read "x2" --> read "x3" --> EnumProc.Empty)) (read "F0[2]" --> EnumProc.Empty)
+unifsys8_sig = SOSignature (Signature [] [EnumProc.Empty, EnumProc.Empty, read "f0[2]" --> read "f1[2]" --> EnumProc.Empty] (read "x0" --> read "x1" --> read "x2" --> read "x3" --> EnumProc.Empty)) (read "F0[2]" --> EnumProc.Empty) EnumProc.Empty EnumProc.Empty
 
 unifsys8_eq1 :: SOMetaUnifEquation
 unifsys8_eq1 = read "u0 x0 = u0 f0[2](x1,x2)"
@@ -4746,13 +4007,13 @@ unifsys8_chsys1 :: [SOMetaUnifEquation]
 unifsys8_chsys1 = [unifsys8_cheq1_1]
 
 unifsys8_sol1 :: SOMetaUnifSysSolution
-unifsys8_sol1 = fromList [(read "F0[2]", read "f0[2]{pi0,pi1}")]
+unifsys8_sol1 = UnifSysSolution (fromList [(read "F0[2]", read "f0[2]{pi0,pi1}")]) (fromList [])
 
 unifsys8_sol2 :: SOMetaUnifSysSolution
-unifsys8_sol2 = fromList [(read "F0[2]", read "f0[2]{pi1,pi0}")]
+unifsys8_sol2 = UnifSysSolution (fromList [(read "F0[2]", read "f0[2]{pi1,pi0}")]) (fromList [])
 
 unifsys8_sol3 :: SOMetaUnifSysSolution
-unifsys8_sol3 = fromList [(read "F0[2]", read "f0[2]{pi1,pi1}")]
+unifsys8_sol3 = UnifSysSolution (fromList [(read "F0[2]", read "f0[2]{pi1,pi1}")]) (fromList [])
 
 unifsys8_t1 :: AutomatedTest
 unifsys8_t1 = check_min_exp_as "Checking that the equation system has at least 1 solution" 1 unifsys8_as
@@ -4776,7 +4037,7 @@ unifsys9_nsols :: Int
 unifsys9_nsols = 20
 
 unifsys9_sig :: SOMetaSignature
-unifsys9_sig = SOSignature (Signature [] [EnumProc.Empty, EnumProc.Empty, read "f0[2]" --> read "f1[2]" --> EnumProc.Empty] (read "x0" --> read "x1" --> read "x2" --> read "x3" --> EnumProc.Empty)) (read "F0[2]" --> EnumProc.Empty)
+unifsys9_sig = SOSignature (Signature [] [EnumProc.Empty, EnumProc.Empty, read "f0[2]" --> read "f1[2]" --> EnumProc.Empty] (read "x0" --> read "x1" --> read "x2" --> read "x3" --> EnumProc.Empty)) (read "F0[2]" --> EnumProc.Empty) EnumProc.Empty EnumProc.Empty
 
 unifsys9_eq1 :: SOMetaUnifEquation
 unifsys9_eq1 = read "u0 x0 = u0 f0[2](x1,x2)"
@@ -4803,19 +4064,19 @@ unifsys9_chsys1 :: [SOMetaUnifEquation]
 unifsys9_chsys1 = [unifsys9_cheq1_1]
 
 unifsys9_sol1 :: SOMetaUnifSysSolution
-unifsys9_sol1 = fromList [(read "F0[2]", read "f0[2]{pi0,pi1}")]
+unifsys9_sol1 = UnifSysSolution (fromList [(read "F0[2]", read "f0[2]{pi0,pi1}")]) (fromList [])
 
 unifsys9_sol2 :: SOMetaUnifSysSolution
-unifsys9_sol2 = fromList [(read "F0[2]", read "f0[2]{pi1,pi0}")]
+unifsys9_sol2 = UnifSysSolution (fromList [(read "F0[2]", read "f0[2]{pi1,pi0}")]) (fromList [])
 
 unifsys9_sol3 :: SOMetaUnifSysSolution
-unifsys9_sol3 = fromList [(read "F0[2]", read "f0[2]{pi1,pi1}")]
+unifsys9_sol3 = UnifSysSolution (fromList [(read "F0[2]", read "f0[2]{pi1,pi1}")]) (fromList [])
 
 unifsys9_sol4 :: SOMetaUnifSysSolution
-unifsys9_sol4 = fromList [(read "F0[2]", read "pi0")]
+unifsys9_sol4 = UnifSysSolution (fromList [(read "F0[2]", read "pi0")]) (fromList [])
 
 unifsys9_sol5 :: SOMetaUnifSysSolution
-unifsys9_sol5 = fromList [(read "F0[2]", read "pi1")]
+unifsys9_sol5 = UnifSysSolution (fromList [(read "F0[2]", read "pi1")]) (fromList [])
 
 unifsys9_t1 :: AutomatedTest
 unifsys9_t1 = check_min_exp_as "Checking that the equation system has at least 1 solution" 1 unifsys9_as
@@ -4845,7 +4106,7 @@ unifsys10_nsols :: Int
 unifsys10_nsols = 4
 
 unifsys10_sig :: SOMetaSignature
-unifsys10_sig = SOSignature (Signature [] [EnumProc.Empty, read "f2[1]" --> EnumProc.Empty, read "f0[2]" --> read "f1[2]" --> EnumProc.Empty] (read "x0" --> read "x1" --> read "x2" --> read "x3" --> EnumProc.Empty)) (read "F0[2]" --> EnumProc.Empty)
+unifsys10_sig = SOSignature (Signature [] [EnumProc.Empty, read "f2[1]" --> EnumProc.Empty, read "f0[2]" --> read "f1[2]" --> EnumProc.Empty] (read "x0" --> read "x1" --> read "x2" --> read "x3" --> EnumProc.Empty)) (read "F0[2]" --> EnumProc.Empty) EnumProc.Empty EnumProc.Empty
 
 unifsys10_eq1 :: SOMetaUnifEquation
 unifsys10_eq1 = read "u0 x0 = u0 f0[2](x1,x2)"
@@ -4872,13 +4133,13 @@ unifsys10_chsys1 :: [SOMetaUnifEquation]
 unifsys10_chsys1 = [unifsys10_cheq1_1]
 
 unifsys10_sol1 :: SOMetaUnifSysSolution
-unifsys10_sol1 = fromList [(read "F0[2]", read "f0[2]{pi0,pi1}")]
+unifsys10_sol1 = UnifSysSolution (fromList [(read "F0[2]", read "f0[2]{pi0,pi1}")]) (fromList [])
 
 unifsys10_sol2 :: SOMetaUnifSysSolution
-unifsys10_sol2 = fromList [(read "F0[2]", read "f0[2]{pi1,pi0}")]
+unifsys10_sol2 = UnifSysSolution (fromList [(read "F0[2]", read "f0[2]{pi1,pi0}")]) (fromList [])
 
 unifsys10_sol3 :: SOMetaUnifSysSolution
-unifsys10_sol3 = fromList [(read "F0[2]", read "f0[2]{pi0,pi0}")]
+unifsys10_sol3 = UnifSysSolution (fromList [(read "F0[2]", read "f0[2]{pi0,pi0}")]) (fromList [])
 
 unifsys10_t1 :: AutomatedTest
 unifsys10_t1 = check_min_exp_as "Checking that the equation system has at least 1 solution" 1 unifsys10_as
@@ -4902,7 +4163,7 @@ unifsys11_nsols :: Int
 unifsys11_nsols = 20
 
 unifsys11_sig :: SOMetaSignature
-unifsys11_sig = SOSignature (Signature [] [EnumProc.Empty, read "f2[1]" --> EnumProc.Empty, read "f0[2]" --> read "f1[2]" --> EnumProc.Empty] (read "x0" --> read "x1" --> read "x2" --> read "x3" --> EnumProc.Empty)) (read "F0[2]" --> EnumProc.Empty)
+unifsys11_sig = SOSignature (Signature [] [EnumProc.Empty, read "f2[1]" --> EnumProc.Empty, read "f0[2]" --> read "f1[2]" --> EnumProc.Empty] (read "x0" --> read "x1" --> read "x2" --> read "x3" --> EnumProc.Empty)) (read "F0[2]" --> EnumProc.Empty) EnumProc.Empty EnumProc.Empty
 
 unifsys11_eq1 :: SOMetaUnifEquation
 unifsys11_eq1 = read "u0 x0 = u0 f0[2](x1,x2)"
@@ -4929,7 +4190,7 @@ unifsys12_nsols :: Int
 unifsys12_nsols = 20
 
 unifsys12_sig :: SOMetaSignature
-unifsys12_sig = SOSignature (Signature [] [EnumProc.Empty, read "f2[1]" --> EnumProc.Empty, read "f0[2]" --> read "f1[2]" --> EnumProc.Empty] (read "x0" --> read "x1" --> read "x2" --> read "x3" --> EnumProc.Empty)) (read "F0[2]" --> EnumProc.Empty)
+unifsys12_sig = SOSignature (Signature [] [EnumProc.Empty, read "f2[1]" --> EnumProc.Empty, read "f0[2]" --> read "f1[2]" --> EnumProc.Empty] (read "x0" --> read "x1" --> read "x2" --> read "x3" --> EnumProc.Empty)) (read "F0[2]" --> EnumProc.Empty) EnumProc.Empty EnumProc.Empty
 
 unifsys12_eq1 :: SOMetaUnifEquation
 unifsys12_eq1 = read "u0 x0 = u0 f0[2](x1,x2)"
@@ -4953,13 +4214,13 @@ unifsys12_chsys1 :: [SOMetaUnifEquation]
 unifsys12_chsys1 = [unifsys12_cheq1_1]
 
 unifsys12_sol1 :: SOMetaUnifSysSolution
-unifsys12_sol1 = fromList [(read "F0[2]", read "f0[2]{pi0,pi1}")]
+unifsys12_sol1 = UnifSysSolution (fromList [(read "F0[2]", read "f0[2]{pi0,pi1}")]) (fromList [])
 
 unifsys12_sol2 :: SOMetaUnifSysSolution
-unifsys12_sol2 = fromList [(read "F0[2]", read "f0[2]{pi1,pi0}")]
+unifsys12_sol2 = UnifSysSolution (fromList [(read "F0[2]", read "f0[2]{pi1,pi0}")]) (fromList [])
 
 unifsys12_sol3 :: SOMetaUnifSysSolution
-unifsys12_sol3 = fromList [(read "F0[2]", read "f0[2]{pi0,pi0}")]
+unifsys12_sol3 = UnifSysSolution (fromList [(read "F0[2]", read "f0[2]{pi0,pi0}")]) (fromList [])
 
 unifsys12_t1 :: AutomatedTest
 unifsys12_t1 = check_min_exp_as "Checking that the equation system has at least 1 solution" 1 unifsys12_as
@@ -4979,6 +4240,51 @@ unifsys12_t5 = check_not_imp_usol "Checking F0[2] = f0[2]{pi0,pi0} is not implic
 unifsys12_tests :: String
 unifsys12_tests = combine_test_results [unifsys12_t1,unifsys12_t2,unifsys12_t3,unifsys12_t4,unifsys12_t5]
 
+unifsys13_nsols :: Int
+unifsys13_nsols = 20
+
+unifsys13_sig :: SOMetaSignature
+unifsys13_sig = SOSignature (Signature [EnumProc.Empty, EnumProc.Empty, read "p0[2]" --> EnumProc.Empty] [EnumProc.Empty, read "f2[1]" --> EnumProc.Empty, read "f0[2]" --> read "f1[2]" --> EnumProc.Empty] (read "x0" --> read "x1" --> read "x2" --> read "x3" --> EnumProc.Empty)) (read "F0[2]" --> EnumProc.Empty) (read "P0[2]" --> EnumProc.Empty) EnumProc.Empty
+
+unifsys13_eq1 :: SOMetaUnifEquation
+unifsys13_eq1 = read "u0 x0 = u0 f0[2](x1,x2)"
+
+unifsys13_eq2 :: SOMetaUnifEquation
+unifsys13_eq2 = read "u1 x0 = u1 f2[1](x1)"
+
+unifsys13_eq3 :: SOMetaUnifEquation
+unifsys13_eq3 = read "u1 u0 P0[2](f2[1](x2),x2) ~ u1 u0 p0[2](x1,x2)"
+
+unifsys13_sys :: SOMetaUnifSystem
+unifsys13_sys = USys unifsys13_sig [unifsys13_eq1,unifsys13_eq2,unifsys13_eq3]
+
+unifsys13_as :: AnswerSet SOMetaUnifSystem SOMetaUnifSysSolution
+unifsys13_as = ImplicitAS unifsys13_sys
+
+unifsys13_sol1 :: SOMetaUnifSysSolution
+unifsys13_sol1 = UnifSysSolution (fromList []) (fromList [(read "P0[2]", read "p0[2]{pi0,pi1}")])
+
+unifsys13_sol2 :: SOMetaUnifSysSolution
+unifsys13_sol2 = UnifSysSolution (fromList []) (fromList [(read "P0[2]", read "p0[2]{pi1,pi0}")])
+
+unifsys13_sol3 :: SOMetaUnifSysSolution
+unifsys13_sol3 = UnifSysSolution (fromList []) (fromList [(read "P0[2]", read "p0[2]{pi0,pi0}")])
+
+unifsys13_t1 :: AutomatedTest
+unifsys13_t1 = check_min_exp_as "Checking that the equation system has at least 1 solution" 1 unifsys13_as
+
+unifsys13_t3 :: AutomatedTest
+unifsys13_t3 = check_imp_usol "Checking P0[2] = p0[2]{pi0,pi1} is implicitly a solution" unifsys13_sol1 unifsys13_as
+
+unifsys13_t4 :: AutomatedTest
+unifsys13_t4 = check_not_imp_usol "Checking P0[2] = p0[2]{pi1,pi0} is not implicitly a solution" unifsys13_sol2 unifsys13_as
+
+unifsys13_t5 :: AutomatedTest
+unifsys13_t5 = check_not_imp_usol "Checking P0[2] = p0[2]{pi0,pi0} is not implicitly a solution" unifsys13_sol3 unifsys13_as
+
+unifsys13_tests :: String
+unifsys13_tests = combine_test_results [unifsys13_t1,unifsys13_t3,unifsys13_t4,unifsys13_t5]
+
 
 
 unifsys_test :: IO ()
@@ -4993,7 +4299,8 @@ unifsys_test = putStr "EXAMPLE 1\n\n" >> putStr unifsys1_tests >>
 		putStr "EXAMPLE 9\n\n" >> putStr unifsys9_tests >>
 		putStr "EXAMPLE 10\n\n" >> putStr unifsys10_tests >>
 		putStr "EXAMPLE 11\n\n" >> putStr unifsys11_tests >>
-		putStr "EXAMPLE 12\n\n" >> putStr unifsys12_tests
+		putStr "EXAMPLE 12\n\n" >> putStr unifsys12_tests >>
+		putStr "EXAMPLE 13\n\n" >> putStr unifsys13_tests
 
 
 

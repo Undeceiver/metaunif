@@ -167,7 +167,7 @@ type QueryInput q v t r = (t,Query q v r)
 runBaseQIn :: Queriable q v t r s => BaseQueryInput q v t r -> AnswerSet s (v := r)
 runBaseQIn (t,s,q) = runBaseQ t s q
 
-runQuery :: (Queriable q v t r s, Eq v, Substitutable r v r, Substitutable q v r, Ord v, ImplicitF s (v := r) s (v := r) (QArgumentMap v r), ImplicitF s (v := r) s (v := r) (BaseQueryInput q v t r), ImplicitF (AnswerSet s (v := r), AnswerSet s (v := r)) (v := r, v := r) s (v := r) ProductQOP, Eq r) => t -> Query q v r -> AnswerSet s (v := r)
+runQuery :: (Queriable q v t r s, Eq v, Substitutable r v r, Substitutable q v r, Ord v, FullImplicitF s (v := r) s (v := r) (QArgumentMap v r), FullImplicitF s (v := r) s (v := r) (BaseQueryInput q v t r), FullImplicitF (AnswerSet s (v := r), AnswerSet s (v := r)) (v := r, v := r) s (v := r) ProductQOP, Eq r) => t -> Query q v r -> AnswerSet s (v := r)
 runQuery t (BaseQ vs q) = runBaseQ t vs q
 runQuery t (SequentialQ q1 m q2) = (runQuery t q2) >>= (\m2 -> runQuery t (Data.List.foldr (\(v,f) -> subst v (f m2)) q1 (assocs m)))
 runQuery t (ImplicitQ q1 m q2) = (runQuery t q2) ?>>= m ?>>= (t,q1)
@@ -179,14 +179,14 @@ runQuery t (IntersectionQ q1 m q2) = ExplicitAS (SingleAS <$> (eintersectAll ((\
 instance (Queriable q v t r s, Eq v, Substitutable r v r, Substitutable q v r, Ord v) => Functional (BaseQueryInput q v t r) (v := r) (AnswerSet s (v := r)) where
 	tofun (t,s,q) m = runBaseQ t s (Data.List.foldr (\(v,r) -> subst v r) q (assocs m))
 
-instance (Queriable q v t r s, Eq v, Substitutable r v r, Substitutable q v r, Ord v, Implicit s (v := r), ImplicitF s (v := r) s (v := r) (BaseQueryInput q v t r), ImplicitF s (v := r) s (v := r) (QArgumentMap v r), ImplicitF (AnswerSet s (v := r), AnswerSet s (v := r)) (v := r, v := r) s (v := r) ProductQOP, Eq r) => ImplicitF s (v := r) s (v := r) (QueryInput q v t r) where
+instance (Queriable q v t r s, Eq v, Substitutable r v r, Substitutable q v r, Ord v, Implicit s (v := r), FullImplicitF s (v := r) s (v := r) (BaseQueryInput q v t r), FullImplicitF s (v := r) s (v := r) (QArgumentMap v r), FullImplicitF (AnswerSet s (v := r), AnswerSet s (v := r)) (v := r, v := r) s (v := r) ProductQOP, Eq r) => ImplicitF s s (v := r) (QueryInput q v t r) where
 	composeImplicit s (t,(BaseQ vs q)) = composeImplicit s (t,vs,q)
 	composeImplicit s (t,(SequentialQ q1 m q2)) = (composeImplicit s (t,q2)) >>= (\m2 -> runQuery t (Data.List.foldr (\(v,f) -> subst v (f m2)) q1 (assocs m)))
 	composeImplicit s (t,(ImplicitQ q1 m q2)) = (composeImplicit s (t,q2)) ?>>= m ?>>= (t,q1)
 	composeImplicit s (t,(ProductQ q1 q2)) = (tupleAS (composeImplicit s (t,q1)) (composeImplicit s (t,q2))) ?>>= ProductQOP
 	composeImplicit s (t,(IntersectionQ q1 m q2)) = ExplicitAS (SingleAS <$> (eintersectAll ((\m2 -> diagEnumAS (runQuery t (Data.List.foldr (\(v,f) -> subst v (f m2)) q1 (assocs m)))) <$> (diagEnumAS (composeImplicit s (t,q2))))))
 
-instance (Queriable q v t r s, Eq v, Substitutable r v r, Substitutable q v r, Ord v, ImplicitF s (v := r) s (v := r) (QArgumentMap v r), ImplicitF s (v := r) s (v := r) (BaseQueryInput q v t r), ImplicitF (AnswerSet s (v := r), AnswerSet s (v := r)) (v := r, v := r) s (v := r) ProductQOP, Eq r) => Functional (QueryInput q v t r) (v := r) (AnswerSet s (v := r)) where
+instance (Queriable q v t r s, Eq v, Substitutable r v r, Substitutable q v r, Ord v, FullImplicitF s (v := r) s (v := r) (QArgumentMap v r), FullImplicitF s (v := r) s (v := r) (BaseQueryInput q v t r), FullImplicitF (AnswerSet s (v := r), AnswerSet s (v := r)) (v := r, v := r) s (v := r) ProductQOP, Eq r) => Functional (QueryInput q v t r) (v := r) (AnswerSet s (v := r)) where
 	tofun (t,q) m = runQuery t (Data.List.foldr (\(v,r) -> subst v r) q (assocs m))
 
 data LogicQuery cnf t = Entails cnf | Satisfies cnf cnf | Equals t t | NotEquals t t deriving Functor

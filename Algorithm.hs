@@ -49,6 +49,9 @@ comp x = alg (\_ -> x)
 ecomp :: EnumProc a -> Computation a
 ecomp x = fork (\_ -> x)
 
+emptycomp :: Computation a
+emptycomp = fork (\_ -> EnumProc.Empty)
+
 (...) :: (b .-> c) -> (a .-> b) -> (a .-> c)
 x ... y = AlgStep x y
 infixr 0 ...

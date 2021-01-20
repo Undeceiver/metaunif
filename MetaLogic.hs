@@ -183,8 +183,17 @@ instance Read SOAMVariable where
 instance HasArity SOAMVariable where
 	arity (SOAMVar _ a) = a
 
---instance Variabilizable SOAMVariable where 
---	get_var (SOAMVar x _) = IntVar x
+instance ChangeArity SOAMVariable where
+	change_arity (SOAMVar idx a) b = SOAMVar idx b
+
+-- This instance is potentially problematic due to the arity issue. But we need it because the Unification library for some reason requires variable
+-- Just remember that whenever a second-order variable is extracted from a unifier, we need to re-adjust the arity with respect to the signature.
+instance Variabilizable SOAMVariable where 
+	from_var (IntVar x) = SOAMVar x 0
+	get_var (SOAMVar x _) = IntVar x
+
+instance Variable SOAMVariable where
+	getVarID = getVarID_gen
 
 type SOMetaatomP = SOAtom OPredicate OFunction SOAMVariable SOMVariable
 type SOMetaatom = SOMetawrapA CAtomPF CTermF OPredicate OFunction OVariable SOAMVariable SOMVariable
@@ -348,18 +357,33 @@ instance Read SOMetaTermDependant where
 				[(TDDirect (fst r),(snd r))])
 		}
 
-type SOMetaUnifDGraph s = ESUnifVDGraph s CTermF OPredicate OFunction OVariable SOMVariable UnifVariable
-type SOMetaUnifRelFoId s = ESUnifRelFoId s CTermF OFunction OVariable SOMVariable UnifVariable
-type SOMetaUnifRelSoId s = ESUnifRelSoId s CTermF OFunction OVariable SOMVariable UnifVariable
-type RSOMetaUnifDGraph = RESUnifVDGraph CTermF OPredicate OFunction OVariable SOMVariable UnifVariable
-type SOMetaUnifSysSolution = UnifSysSolution OFunction SOMVariable
-type SOMetaUnifEquation = UnifEquation CTermF OFunction OVariable SOMVariable UnifVariable
-type SOMetaUnifSystem = FullUnifSystem CTermF OPredicate OFunction OVariable SOMVariable UnifVariable
+type SOMetaAtomDependant = AtomDependant CAtomPF CTermF LambdaCNF SOPredicate OPredicate OFunction OVariable SOAMVariable SOMVariable UnifVariable
+instance Read SOMetaAtomDependant where
+	readsPrec _ xs =
+		case stripPrefix "u" xs of
+		{
+			Just rest -> (let r = (head (reads ('u':rest))::(UnifVariable,String))
+				-- We expect exactly one space between the unifier and the inner dependant
+				in (let r2 = (head (reads (tail (snd r)))::(SOMetaAtomDependant,String))
+					in [(ADUnif (fst r) (fst r2),(snd r2))]));
+			Nothing -> (let r = (head (reads xs))::(CombSOMetaatom,String) in
+				[(ADDirect (fst r),(snd r))])
+		}
+
+type SOMetaUnifDGraph s = ESUnifVDGraph s CTermF SOPredicate OPredicate OFunction OVariable SOAMVariable SOMVariable UnifVariable
+type SOMetaUnifRelFoId s = ESUnifRelFoId s CTermF OPredicate OFunction OVariable SOAMVariable SOMVariable UnifVariable
+type SOMetaUnifRelSoId s = ESUnifRelSoId s CTermF OPredicate OFunction OVariable SOAMVariable SOMVariable UnifVariable
+type RSOMetaUnifDGraph = RESUnifVDGraph CTermF SOPredicate OPredicate OFunction OVariable SOAMVariable SOMVariable UnifVariable
+type SOMetaUnifSysSolution = UnifSysSolution OPredicate OFunction SOAMVariable SOMVariable
+type SOMetaUnifEquation = UnifEquation CAtomPF CTermF LambdaCNF SOPredicate OPredicate OFunction OVariable SOAMVariable SOMVariable UnifVariable
+type SOMetaUnifSystem = FullUnifSystem CAtomPF CTermF LambdaCNF SOPredicate OPredicate OFunction OVariable SOAMVariable SOMVariable UnifVariable
 
 -- This could be done better using readsPrec
 instance Read SOMetaUnifEquation where
-	readsPrec _ xs = if (isNothing mb_eqidx) then (error "The equation has no '=' symbol!") else [(TermUnif (read (trim pre)) (read (trim post)),[])]
-		where mb_eqidx = Data.List.findIndex (== '=') xs; eqidx = fromJust mb_eqidx; (pre,(_:post)) = Data.List.splitAt eqidx xs
+	readsPrec _ xs = if (isNothing mb_eqidx) then (if (isNothing mb_symidx) then (error "The equation has no '=' or '~' symbol!") else [(AtomUnif (read (trim sympre)) (read (trim sympost)),[])]) else [(TermUnif (read (trim eqpre)) (read (trim eqpost)),[])]
+		where 
+			mb_eqidx = Data.List.findIndex (== '=') xs; eqidx = fromJust mb_eqidx; (eqpre,(_:eqpost)) = Data.List.splitAt eqidx xs;
+			mb_symidx = Data.List.findIndex (== '~') xs; symidx = fromJust mb_symidx; (sympre,(_:sympost)) = Data.List.splitAt symidx xs
 
 
 metaunif_vertical_commute :: StateT (SOMetaUnifDGraph s) (ST s) ()
@@ -447,8 +471,8 @@ metaunif_normalize :: AnswerSet RSOMetaUnifDGraph SOMetaUnifSysSolution -> Answe
 metaunif_normalize = depgraph_normalize
 
 
-type SOMetaUnifFOExp = FOTermDependantExp CTermF OFunction OVariable SOMVariable UnifVariable
-type SOMetaUnifSOExp = SOTermDependantExp OFunction SOMVariable
+type SOMetaUnifFOExp = FOTermDependantExp CTermF OPredicate OFunction OVariable SOAMVariable SOMVariable UnifVariable
+type SOMetaUnifSOExp = SOTermDependantExp OPredicate OFunction SOAMVariable SOMVariable
 
 instance Read SOMetaUnifFOExp where
 	readsPrec _ xs = 
@@ -456,15 +480,48 @@ instance Read SOMetaUnifFOExp where
 		{
 			Just _ -> (let r = (head (reads xs)::(SOMetaTermDependant,String))
 					in [(FOTDExp (fst r),(snd r))]);
-			Nothing -> (let r = (head (reads xs)::(SOMetatermF,String))
-					in (let r2 = read_term_list (snd r)
-						in [(FOEdgeExp (fst r) (fst r2),(snd r2))]))
+			Nothing -> case stripPrefix "f" xs of
+				{
+					Just _ -> (let r = (head (reads xs)::(SOMetatermF,String))
+							in (let r2 = read_term_list (snd r)
+								in [(FOEdgeExp (FSONode (fst r)) (fst r2),(snd r2))]));
+					Nothing -> case stripPrefix "F" xs of
+						{
+							Just _ -> (let r = (head (reads xs)::(SOMetatermF,String))
+									in (let r2 = read_term_list (snd r)
+										in [(FOEdgeExp (FSONode (fst r)) (fst r2),(snd r2))]));
+							Nothing -> case stripPrefix "pi" xs of
+								{
+									Just _ -> (let r = (head (reads xs)::(SOMetatermF,String))
+											in (let r2 = read_term_list (snd r)
+												in [(FOEdgeExp (FSONode (fst r)) (fst r2),(snd r2))]));
+									Nothing -> (let r = (head (reads xs)::(SOMetaatomP,String))
+											in (let r2 = read_term_list (snd r)
+												in [(FOEdgeExp (PSONode (fst r)) (fst r2),(snd r2))]))
+								}
+						}						
+				}
 		}
 
 instance Read SOMetaUnifSOExp where
 	readsPrec _ xs = 
-		let r = (head (reads xs)::(SOMetatermF,String))
-			in [(separate_sot_dependant_exp (normalize (fst r)),(snd r))]
+		case stripPrefix "f" xs of
+		{
+			Just _ -> (let r = (head (reads xs)::(SOMetatermF,String))
+					in [(separate_sot_dependant_exp (normalize (fst r)),(snd r))]);
+			Nothing -> case stripPrefix "F" xs of
+				{
+					Just _ -> (let r = (head (reads xs)::(SOMetatermF,String))
+							in [(separate_sot_dependant_exp (normalize (fst r)),(snd r))]);
+					Nothing -> case stripPrefix "pi" xs of
+						{
+							Just _ -> (let r = (head (reads xs)::(SOMetatermF,String))
+									in [(separate_sot_dependant_exp (normalize (fst r)),(snd r))]);
+							Nothing -> (let r = (head (reads xs)::(SOMetaatomP,String))
+									in [(separate_soa_dependant_exp (normalize (fst r)),(snd r))])
+						}
+				}
+		}
 
 
 -- Queries in this meta-logic.
@@ -472,7 +529,7 @@ type SOMetaliteral = VarLiteral CAtomPF CTermF SOPredicate OPredicate OFunction 
 type GroundSOMetaliteral = GroundLiteral CAtomPF CTermF OPredicate OFunction -- = Literal GroundSOMetaatom
 type SOMetaclause = Clause CAtomPF CTermF SOPredicate OPredicate OFunction OVariable SOAMVariable SOMVariable -- = [SOMetaliteral]
 type SOMetaCNF = CNF CAtomPF CTermF SOPredicate OPredicate OFunction OVariable SOAMVariable SOMVariable -- = [SOMetaclause]
-type SOMetaSignature = SOSignature OPredicate OFunction OVariable SOMVariable
+type SOMetaSignature = SOSignature SOPredicate OPredicate OFunction OVariable SOAMVariable SOMVariable
 
 type SOMetaQVar = CESQVar SOAMVariable SOMVariable
 type SOMetaQSol = CESQSol OPredicate OFunction

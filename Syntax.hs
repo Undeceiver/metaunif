@@ -326,6 +326,12 @@ instance (HasArity fn, HasArity sov) => HasArity (FlippedBifunctor UTerm sov (SO
 inject_groundsot :: GroundSOT fn -> SOTerm fn sov
 inject_groundsot (Fix x) = UTerm (fmap inject_groundsot x)
 
+is_groundsot :: SOTerm fn sov -> Bool
+is_groundsot (UVar _) = False
+is_groundsot (UTerm (SOF (ConstF _))) = True
+is_groundsot (UTerm (SOF (Proj _))) = True
+is_groundsot (UTerm (SOF (CompF h sots))) = is_groundsot h && all is_groundsot sots
+
 to_groundsot :: SOTerm fn sov -> GroundSOT fn
 to_groundsot (UVar _) = error "Trying to convert a second-order variable into a constant second-order term!"
 to_groundsot (UTerm t) = Fix (to_groundsot <$> t)
@@ -413,9 +419,20 @@ instance (HasArity fn, HasArity sov) => Normalizable (SOTerm fn sov) (SOTerm fn 
 
 
 
-newtype SOTermP pd f p = SOP (SOTermPF pd p f) deriving Eq
+newtype SOTermP pd f p = SOP (SOTermPF pd p f) deriving (Ord, Eq)
 type GroundSOA pd fn = Fix (SOTermP pd (GroundSOT fn))
 type SOAtom pd fn soav sov = UTerm (SOTermP pd (SOTerm fn sov)) soav
+
+isvar_soa :: SOAtom pd fn soav sov -> Bool
+isvar_soa (UVar _) = True
+isvar_soa (UTerm _) = False
+
+soa_min_arity :: (HasArity fn, HasArity pd, HasArity pmv, HasArity fmv) => SOAtom pd fn pmv fmv -> Int
+soa_min_arity (UVar _) = 0
+soa_min_arity (UTerm (SOP (ConstF x))) = arity x
+soa_min_arity (UTerm (SOP (Proj idx))) = error "Atoms should not be projections!!! (soa_min_arity)"
+soa_min_arity (UTerm (SOP (CompF h sts))) = Prelude.foldr (\i -> \m -> max (sot_min_arity i) m) 0 sts
+
 
 instance Bifunctor (SOTermP pd) where
 	bimap f g (SOP sotermpf) = SOP (bimap g f sotermpf)
@@ -438,6 +455,19 @@ instance (HasArity pd, HasArity fn, HasArity soav, HasArity sov) => HasArity (Fl
 
 inject_groundsoa :: GroundSOA pd fn -> SOAtom pd fn soav sov
 inject_groundsoa (Fix x) = UTerm (bimap inject_groundsot inject_groundsoa x)
+
+is_groundsoa :: SOAtom pd fn soav sov -> Bool
+is_groundsoa (UVar _) = False
+is_groundsoa (UTerm (SOP (ConstF _))) = True
+is_groundsoa (UTerm (SOP (Proj _))) = True
+is_groundsoa (UTerm (SOP (CompF h sots))) = is_groundsoa h && all is_groundsot sots
+
+to_groundsoa :: SOAtom pd fn soav sov -> GroundSOA pd fn
+to_groundsoa (UVar _) = error "Trying to convert a second-order predicate variable into a constant second-order predicate!"
+to_groundsoa (UTerm (SOP (ConstF p))) = Fix (SOP (ConstF p))
+to_groundsoa (UTerm (SOP (Proj idx))) = Fix (SOP (Proj idx))
+to_groundsoa (UTerm (SOP (CompF h sots))) = Fix (SOP (CompF (to_groundsoa h) (to_groundsot <$> sots)))
+
 
 apply_soatom :: (HasArity fn, HasArity pd) => (pd -> [t] -> p) -> (fn -> [t] -> t) -> GroundSOA pd fn -> [t] -> p
 apply_soatom cp cf p args = apply_soatom_checkarity pp args (apply_soatom_actual cp cf pp args) where pp = normalize p
@@ -502,6 +532,16 @@ instance (HasArity pd, HasArity soav, HasArity fn, HasArity sov) => Normalizable
 													}
 
 
+
+
+instance (Eq fmv) => Substitutable (SOAtom pd fn pmv fmv) fmv (SOTerm fn fmv) where
+	subst fmv sot (UVar pv) = UVar pv
+	subst fmv sot (UTerm (SOP (ConstF p))) = UTerm (SOP (ConstF p))
+	subst fmv sot (UTerm (SOP (Proj idx))) = UTerm (SOP (Proj idx))
+	subst fmv sot (UTerm (SOP (CompF h sots))) = UTerm (SOP (CompF (subst fmv sot h) (subst fmv sot <$> sots)))
+
+instance (Eq fmv) => Substitutable (SOAtom pd fn pmv fmv) fmv (GroundSOT fn) where
+	subst fmv sot soa = subst fmv gsot soa where gsot = inject_groundsot sot :: SOTerm fn fmv
 
 newtype SOMetawrap (t :: * -> * -> *) fn v mv = SOMetawrap {fromSOMetawrap :: UTerm (t (SOTerm fn mv)) v}
 
@@ -653,6 +693,12 @@ instance (HasArity pd, HasArity fn, HasArity pmv, HasArity fmv, SimpleTerm a, Si
 	inject_normal = id
 	normalize (SOMetawrapA a) = SOMetawrapA (normalize_metawrapa_helper nh (Prelude.map (FlippedBifunctor . fromSOMetawrap) ts)) where (h,ts) = unbuild_term a; nh = normalize h
 
+instance (SimpleTerm a, SimpleTerm t, Eq fmv, Eq fn) => Substitutable (SOMetawrapA a t pd fn v pmv fmv) fmv (SOTerm fn fmv) where
+	subst sov sot (SOMetawrapA a) = SOMetawrapA (build_term (subst sov sot p) (subst sov sot <$> sts)) where (p,sts) = unbuild_term a
+
+instance (SimpleTerm a, SimpleTerm t, Eq fmv, Eq fn) => Substitutable (SOMetawrapA a t pd fn v pmv fmv) fmv (GroundSOT fn) where
+	subst sov gsot somwa = subst sov sot somwa where sot = inject_groundsot gsot :: SOTerm fn fmv
+
 normalize_metawrapa_helper :: (HasArity pd, HasArity fn, HasArity pmv, HasArity fmv, SimpleTerm a, SimpleTerm t) => SOAtom pd fn pmv fmv -> [FlippedBifunctor UTerm v (t (SOTerm fn fmv))] -> a (SOAtom pd fn pmv fmv) (SOMetawrap t fn v fmv)
 normalize_metawrapa_helper (UVar soav) ts = normalize_metawrapa_build_atom (UVar soav, Prelude.map normalize_metawrap_helper2 ts)
 normalize_metawrapa_helper (UTerm (SOP (ConstF p))) ts = normalize_metawrapa_build_atom (UTerm (SOP (ConstF p)),Prelude.map normalize_metawrap_helper2 ts)
@@ -682,7 +728,7 @@ somw (UTerm x) = SOMetawrap (UTerm (bimap (UTerm . SOF . ConstF) (fromSOMetawrap
 
 somv :: (SimpleTerm t) => mv -> [SOMetawrap t fn v mv] -> SOMetawrap t fn v mv
 somv mv ts = SOMetawrap (UTerm (build_term (UVar mv) (Prelude.map fromSOMetawrap ts)))
-
+ 
 -- First-order atoms in which the universe of discourse are second-order atoms.
 -- We provide a very simple case, which is the one we need: Only second-order predicates (no functions) and only applied on object-level predicates (not functions, although the predicates could be composites containing functions).
 -- We allow the inclusion of an additional inner layer in the first-second-order predicates. This will likely be a lambda-CNF structure, allowing to express properties of conjunctions, disjunctions, negations and the like. But we try to keep it parametric at this level for now. This is represented by the s type parameter.
@@ -697,6 +743,12 @@ instance (HasArity pd, HasArity pmv, HasArity fn, HasArity fmv, Functor (a mpd),
 	inject_normal = id
 	normalize (FirstSOAAtom x) = FirstSOAAtom (fmap (fmap normalize) x)
 
+instance (SimpleTerm a, Eq fn, Eq fmv, Functor s) => Substitutable (FirstSOAAtom a s mpd pd fn pmv fmv) fmv (SOTerm fn fmv) where
+	subst sov sot (FirstSOAAtom a) = FirstSOAAtom (build_term p ((subst sov sot <$>) <$> sts)) where (p,sts) = unbuild_term a
+
+instance (SimpleTerm a, Eq fn, Eq fmv, Functor s) => Substitutable (FirstSOAAtom a s mpd pd fn pmv fmv) fmv (GroundSOT fn) where
+	subst sov gsot fsoa = subst sov sot fsoa where sot = inject_groundsot gsot :: SOTerm fn fmv
+
 
 data CombSOAtom (a :: * -> * -> *) (t :: * -> * -> *) (s :: * -> *) mpd pd fn v pmv fmv = NSOAtom (SOMetawrapA a t pd fn v pmv fmv) | FSOAtom (FirstSOAAtom a s mpd pd fn pmv fmv)
 
@@ -710,6 +762,14 @@ instance (HasArity pd, HasArity pmv, HasArity fn, HasArity fmv, Functor (a mpd),
 	inject_normal = id
 	normalize (NSOAtom x) = NSOAtom (normalize x)
 	normalize (FSOAtom x) = FSOAtom (normalize x)
+
+instance (SimpleTerm a, SimpleTerm t, Eq fn, Eq fmv, Functor s) => Substitutable (CombSOAtom a t s mpd pd fn v pmv fmv) fmv (SOTerm fn fmv) where
+	subst sov sot (NSOAtom somwa) = NSOAtom (subst sov sot somwa)
+	subst sov sot (FSOAtom fsoa) = FSOAtom (subst sov sot fsoa)
+
+instance (SimpleTerm a, SimpleTerm t, Eq fn, Eq fmv, Functor s) => Substitutable (CombSOAtom a t s mpd pd fn v pmv fmv) fmv (GroundSOT fn) where
+	subst sov sot (NSOAtom somwa) = NSOAtom (subst sov sot somwa)
+	subst sov sot (FSOAtom fsoa) = FSOAtom (subst sov sot fsoa)
 
 
 -- Missing: Ground metawrap terms. If necessary.
@@ -936,45 +996,57 @@ enum_funcs_next sig prev = uns_ecollapse (all_funcs >>= (\fn -> Fix . SOF . (Com
 enum_terms :: (Eq fn, HasArity fn, SimpleTerm t, Functor (t (GroundSOT fn))) => Signature pd fn v -> EnumProc (GroundT t fn)
 enum_terms sig = plain_ggsomw <$> ggsomws where fs = enum_funcs 0 sig; ggsomws = (\f -> GGSOMetawrap (Fix (build_term f []))) <$> fs
 
-data SOSignature pd fn v sov = SOSignature {fosig :: Signature pd fn v, sovars :: EnumProc sov}
+data SOSignature mpd pd fn v pmv fmv = SOSignature {fosig :: Signature pd fn v, sovars :: EnumProc fmv, pvars :: EnumProc pmv, sopreds :: EnumProc mpd}
 
-lens_fosig :: Lens' (SOSignature pd fn v sov) (Signature pd fn v)
-lens_fosig = lens fosig (\prev -> \new -> SOSignature new (sovars prev))
+lens_fosig :: Lens' (SOSignature mpd pd fn v pmv fmv) (Signature pd fn v)
+lens_fosig = lens fosig (\prev -> \new -> SOSignature new (sovars prev) (pvars prev) (sopreds prev))
 
-lens_sovars :: Lens' (SOSignature pd fn v sov) (EnumProc sov)
-lens_sovars = lens sovars (\prev -> \new -> SOSignature (fosig prev) new)
+lens_sovars :: Lens' (SOSignature mpd pd fn v pmv fmv) (EnumProc fmv)
+lens_sovars = lens sovars (\prev -> \new -> SOSignature (fosig prev) new (pvars prev) (sopreds prev))
 
-fopreds :: SOSignature pd fn v sov -> [EnumProc pd]
+lens_pvars :: Lens' (SOSignature mpd pd fn v pmv fmv) (EnumProc pmv)
+lens_pvars = lens pvars (\prev -> \new -> SOSignature (fosig prev) (sovars prev) new (sopreds prev))
+
+lens_sopreds :: Lens' (SOSignature mpd pd fn v pmf fmv) (EnumProc mpd)
+lens_sopreds = lens sopreds (\prev -> \new -> SOSignature (fosig prev) (sovars prev) (pvars prev) new)
+
+fopreds :: SOSignature mpd pd fn v pmv fmv -> [EnumProc pd]
 fopreds = preds . fosig
 
-fofuncs :: SOSignature pd fn v sov -> [EnumProc fn]
+fofuncs :: SOSignature mpd pd fn v pmv fmv -> [EnumProc fn]
 fofuncs = funcs . fosig
 
-fovars :: SOSignature pd fn v sov -> EnumProc v
+fovars :: SOSignature mpd pd fn v pmv fmv -> EnumProc v
 fovars = vars. fosig 
 
-instance (Show pd, Show fn, Show v, Show sov) => Show (SOSignature pd fn v sov) where
-	show sig = "Predicates:" ++ (show (preds (fosig sig))) ++ ", Function symbols:" ++ (show (funcs (fosig sig))) ++ ", F.O. variables:" ++ (show (vars (fosig sig))) ++ ", S.O. variables:" ++ (show (sovars sig))
+instance (Show mpd, Show pd, Show fn, Show v, Show pmv, Show fmv) => Show (SOSignature mpd pd fn v pmv fmv) where
+	show sig = "Predicates:" ++ (show (preds (fosig sig))) ++ ", Function symbols:" ++ (show (funcs (fosig sig))) ++ ", F.O. variables:" ++ (show (vars (fosig sig))) ++ ", S.O. variables:" ++ (show (sovars sig)) ++ ", Predicate variables:" ++ (show (pvars sig)) ++ ", S.O. predicates:" ++ (show (sopreds sig))
 
-enum_constfofuncs :: (Eq fn, HasArity fn) => Int -> SOSignature pd fn v sov -> EnumProc (GroundSOT fn)
+enum_constfofuncs :: (Eq fn, HasArity fn) => Int -> SOSignature mpd pd fn v pmv fmv -> EnumProc (GroundSOT fn)
 --enum_constfofuncs aty sig = (Fix . SOF . ConstF) <$> (econcat (Prelude.map ((funcs (fosig sig)) !!) [0..aty]))
 enum_constfofuncs aty sig = (Fix . SOF . ConstF) <$> (econcat (Prelude.map (errAt "enum_constfofuncs !!" fs) [0..(min aty ((length fs) - 1))])) where fs = funcs (fosig sig)
 
-enum_all_constfofuncs :: (Eq fn, HasArity fn) => SOSignature pd fn v sov -> EnumProc (GroundSOT fn)
+enum_all_constfofuncs :: (Eq fn, HasArity fn) => SOSignature mpd pd fn v pmv fmv -> EnumProc (GroundSOT fn)
 enum_all_constfofuncs sig = econcat ((\aty -> enum_constfofuncs aty sig) <$> [0..maxaty]) where maxaty = (length (fofuncs sig)) - 1
 
-enum_fofuncs :: (Eq fn, HasArity fn) => Int -> SOSignature pd fn v sov -> EnumProc (GroundSOT fn)
+enum_fofuncs :: (Eq fn, HasArity fn) => Int -> SOSignature mpd pd fn v pmv fmv -> EnumProc (GroundSOT fn)
 enum_fofuncs aty = (enum_funcs aty) . fosig
 
-enum_foterms :: (Eq fn, HasArity fn, SimpleTerm t, Functor (t (GroundSOT fn))) => SOSignature pd fn v sov -> EnumProc (GroundT t fn)
+enum_foterms :: (Eq fn, HasArity fn, SimpleTerm t, Functor (t (GroundSOT fn))) => SOSignature mpd pd fn v pmv fmv -> EnumProc (GroundT t fn)
 enum_foterms = enum_terms . fosig
+
+enum_constfopreds :: (Eq fn, Eq pd, HasArity fn, HasArity pd) => Int -> SOSignature mpd pd fn v pmv fmv -> EnumProc (GroundSOA pd fn)
+enum_constfopreds aty sig = (Fix . SOP . ConstF) <$> (econcat (Prelude.map (errAt "enum_constfopreds !!" pds) [0..(min aty ((length pds) - 1))])) where pds = preds (fosig sig)
+
+enum_all_constfopreds :: (Eq fn, Eq pd, HasArity fn, HasArity pd) => SOSignature mpd pd fn v pmv fmv -> EnumProc (GroundSOA pd fn)
+enum_all_constfopreds sig = econcat ((\aty -> enum_constfopreds aty sig) <$> [0..maxaty]) where maxaty = (length (fopreds sig)) - 1
 
 
 -- Functions to refresh second-order variables where necessary.
-refresh_somv :: (Eq sov, ChangeArity sov) => SOSignature pd fn v sov -> sov -> sov
+refresh_somv :: (Eq fmv, ChangeArity fmv) => SOSignature mpd pd fn v pmv fmv -> fmv -> fmv
 refresh_somv sig v = refresh_somv_vars (sovars sig) v
 
-refresh_somv_vars :: (Eq sov, ChangeArity sov) => EnumProc sov -> sov -> sov
+refresh_somv_vars :: (Eq fmv, ChangeArity fmv) => EnumProc fmv -> fmv -> fmv
 refresh_somv_vars EnumProc.Empty v = v
 refresh_somv_vars Halt v = v
 refresh_somv_vars (Error str) v = error str
@@ -982,13 +1054,13 @@ refresh_somv_vars (Continue x) v = refresh_somv_vars x v
 refresh_somv_vars (Produce v1 x) v2 | v1 == v2 = change_arity v2 (arity v1)
 refresh_somv_vars (Produce _ x) v = refresh_somv_vars x v
 
-refresh_somv_soterm :: (Eq fn, Eq sov, ChangeArity sov) => SOSignature pd fn v sov -> SOTerm fn sov -> SOTerm fn sov
+refresh_somv_soterm :: (Eq fn, Eq fmv, ChangeArity fmv) => SOSignature mpd pd fn v pmv fmv -> SOTerm fn fmv -> SOTerm fn fmv
 refresh_somv_soterm sig t = (refresh_somv sig) <$> t
 
-apply_somvunif :: (Eq fn, Eq sov, ChangeArity sov, Variabilizable sov, Variable sov) => SOSignature pd fn v sov -> MaybeUnifier (SOTermF fn) sov (UFailure (SOTermF fn) sov) -> SOTerm fn sov -> Maybe (SOTerm fn sov)
+apply_somvunif :: (Eq fn, Eq fmv, ChangeArity fmv, Variabilizable fmv, Variable fmv) => SOSignature mpd pd fn v pmv fmv -> MaybeUnifier (SOTermF fn) fmv (UFailure (SOTermF fn) fmv) -> SOTerm fn fmv -> Maybe (SOTerm fn fmv)
 apply_somvunif sig u t = (refresh_somv_soterm sig) <$> ru where ru = u $= t
 
-new_sovar :: (Variabilizable sov, ChangeArity sov, Monad m) => Int -> StateT (SOSignature pd fn v sov) m sov
+new_sovar :: (Variabilizable fmv, ChangeArity fmv, Monad m) => Int -> StateT (SOSignature mpd pd fn v pmv fmv) m fmv
 new_sovar aty = do
 	{
 		sosig <- get;
@@ -999,3 +1071,61 @@ new_sovar aty = do
 		put nsosig;
 		return newvaraty
 	}
+
+new_psovar :: (Variabilizable pmv, ChangeArity pmv, Monad m) => Int -> StateT (SOSignature mpd pd fn v pmv fmv) m pmv
+new_psovar aty = do
+	{
+		sosig <- get;
+		let {fmaxvar = (\psov -> \prev -> max prev ((getVarID . get_var) $ psov))};
+		let {maxvaridx = Prelude.foldr fmaxvar (-1) (pvars sosig)};
+		let {newvar = (from_var . IntVar) $ (maxvaridx + 1); newvaraty = change_arity newvar aty};
+		let {nsosig = lens_pvars ..~ (newvaraty -->) $ sosig};
+		put nsosig;
+		return newvaraty
+	}
+
+
+data Literal t = PosLit t | NegLit t deriving (Eq, Ord, Functor)
+
+atom_from_literal :: Literal t -> t
+atom_from_literal (PosLit x) = x
+atom_from_literal (NegLit x) = x
+
+instance Read t => Read (Literal t) where
+	readsPrec _ xs =
+		case stripPrefix "+" xs of
+		{
+			Just rest -> (let r = (head (reads rest)::(t,String))
+				in [(PosLit (fst r), (snd r))]);
+			Nothing ->
+		case stripPrefix "-" xs of
+		{
+			Just rest -> (let r = (head (reads rest)::(t,String))
+				in [(NegLit (fst r), (snd r))]);
+			Nothing -> error ("Cannot read literal: " ++ xs)
+		}}
+
+instance Foldable Literal where
+	foldr f i (PosLit x) = f x i
+	foldr f i (NegLit x) = f x i
+
+instance Traversable Literal where
+	traverse f (PosLit x) = (pure PosLit) <*> f x
+	traverse f (NegLit x) = (pure NegLit) <*> f x
+
+-- This is the basic instance, that matches syntactically equal elements.
+instance Unifiable Literal where
+	zipMatch (PosLit l) (PosLit r) = Just (PosLit (Right (l,r)))
+	zipMatch (NegLit l) (NegLit r) = Just (NegLit (Right (l,r)))
+	zipMatch _ _ = Nothing
+
+instance Show t => Show (Literal t) where
+	show (PosLit x) = "+" ++ (show x)
+	show (NegLit x) = "-" ++ (show x)
+
+newtype NormalizeLiteral t = NormalizeLiteral {fromNormalizeLiteral :: Literal t}
+instance Normalizable a b => Normalizable (NormalizeLiteral a) (NormalizeLiteral b) where
+	inject_normal (NormalizeLiteral (PosLit x)) = NormalizeLiteral (PosLit (inject_normal x))
+	inject_normal (NormalizeLiteral (NegLit x)) = NormalizeLiteral (NegLit (inject_normal x))
+	normalize (NormalizeLiteral (PosLit x)) = NormalizeLiteral (PosLit (normalize x))
+	normalize (NormalizeLiteral (NegLit x)) = NormalizeLiteral (NegLit (normalize x))

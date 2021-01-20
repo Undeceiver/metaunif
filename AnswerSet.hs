@@ -8,6 +8,7 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE QuantifiedConstraints #-}
+{-# LANGUAGE ConstraintKinds #-}
 -- Important note: By answer set here we really refer to what in databases is usually thought of as a "result set". It is not trivially the same thing as answer sets in answer set programming. We chose not to change this name because result set would not be that much more clear and it would imply changing a large amount of stuff.
 module AnswerSet where
 
@@ -24,8 +25,10 @@ class Implicit (s :: *) (t :: *) | s -> t where
 diagEnumImplicit :: Implicit s t => s -> EnumProc t
 diagEnumImplicit s = (enumImplicit s) \$ ()
 
-class (Implicit sa a, Implicit sb b, Functional f a (AnswerSet sb b)) => ImplicitF (sa :: *) (a :: *) (sb :: *) (b :: *) (f :: *) | f sa -> sb, f a -> b where
+class ImplicitF (sa :: *) (sb :: *) (b :: *) (f :: *) | f sa -> sb where
 	composeImplicit :: sa -> f -> AnswerSet sb b
+
+type FullImplicitF sa a sb b f = (Implicit sa a, Implicit sb b, Functional f a (AnswerSet sb b), ImplicitF sa sb b f)
 
 -- Any functional can be "composed implicitly" by doing it absolutely explicitly. This is the most inefficient thing to do, but it can always be done. Only use when no more clever thing can be done.
 composeImplicitDefault :: (Implicit sa a, Functional f a (AnswerSet sb b)) => sa -> f -> AnswerSet sb b
@@ -79,7 +82,7 @@ implicitOnly (ImplicitAS s) = comp s
 explicitAS :: EnumProc a -> AnswerSet s a
 explicitAS en = ExplicitAS (fmap SingleAS en)
 
-(?>>=) :: (ImplicitF sa a sb b f, Functional f a (AnswerSet sb b)) => AnswerSet sa a -> f -> AnswerSet sb b
+(?>>=) :: FullImplicitF sa a sb b f => AnswerSet sa a -> f -> AnswerSet sb b
 (SingleAS x) ?>>= f = tofun f x
 (ExplicitAS en) ?>>= f = ExplicitAS (fmap (?>>= f) en)
 (ImplicitAS s) ?>>= f = composeImplicit s f
@@ -150,7 +153,7 @@ instance (Implicit sa a, Functional (Invertible sa sb a b) a (AnswerSet (Inversi
 		}
 	enumImplicit (Inversion f a) = (enumAS a) >>= (\x -> enumAS (fun f x))
 
-instance (Implicit sa a, Functional (Invertible sa sb a b) a (AnswerSet (Inversion sa sb a b) b), Eq a, Eq b) => ImplicitF sa a (Inversion sa sb a b) b (Invertible sa sb a b) where
+instance (Implicit sa a, Eq a, Eq b) => ImplicitF sa (Inversion sa sb a b) b (Invertible sa sb a b) where
 	composeImplicit sa f = ImplicitAS (Inversion f (ImplicitAS sa))
 
 instance (Implicit sa a, Eq a, Eq b) => Functional (Invertible sa sb a b) a (AnswerSet (Inversion sa sb a b) b) where

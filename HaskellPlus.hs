@@ -237,6 +237,10 @@ m_concat = traverse_collect concat
 m_filter :: Monad m => (a -> m Bool) -> [a] -> m [a]
 m_filter f l = traverse_collect ((Prelude.map fromJust) . (Prelude.filter isJust)) (\a -> do {b <- f a; if b then (return (Just a)) else (return Nothing)}) l
 
+-- This could be done even more generic by adding m in several places (e.g. inside t or in the second argument of the first argument), but this is what we need for now.
+traverse_foldr :: (Monad m, Traversable t) => (a -> b -> m b) -> m b -> t a -> m b
+traverse_foldr f mb ta = Prelude.foldr g mb ta where g = (\ga -> \gmb -> gmb >>= (f ga))
+
 type JState s = State s ()
 jstate :: (s -> s) -> JState s
 jstate f = state (\s -> ((),f s))
@@ -639,3 +643,6 @@ errAt str (x:xs) i = errAt str xs (i-1)
 headErr :: String -> [a] -> a
 headErr str [] = error str
 headErr str (x:xs) = x
+
+
+
