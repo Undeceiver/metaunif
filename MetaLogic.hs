@@ -3,7 +3,7 @@
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE UndecidableInstances #-}
+--{-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveFoldable #-}
@@ -39,15 +39,22 @@ import EnumProc
 import Control.Monad.ST
 import Control.Monad.State
 import AnswerSet
+import Resolution
+import SOResolution
+import Algorithm
+import Heuristics
 
 -- We may use these so we leave them, but these are the old flat meta-variables approach. Check the new second-order approach instead.
 
 -- Second-order approach to meta-variables
-data SOMVariable = SOMVar Int Int deriving (Ord)
+data SOMVariable = SOMVar Int Int
 
 -- Equality does not check arity, just in case we use the Variabilizable instance in the wrong way.
 instance Eq SOMVariable where
 	(SOMVar i _) == (SOMVar j _) = i == j
+
+instance Ord SOMVariable where
+	(SOMVar i _) <= (SOMVar j _) = i <= j
 
 instance Show SOMVariable where
 	show (SOMVar x a) = "F" ++ (show x) ++ "[" ++ (show a) ++ "]"
@@ -527,6 +534,7 @@ instance Read SOMetaUnifSOExp where
 -- Queries in this meta-logic.
 type SOMetaliteral = VarLiteral CAtomPF CTermF SOPredicate OPredicate OFunction OVariable SOAMVariable SOMVariable -- = Literal CombSOMetaatom
 type GroundSOMetaliteral = GroundLiteral CAtomPF CTermF OPredicate OFunction -- = Literal GroundSOMetaatom
+type SOMetaUnifLiteral = Literal (AtomDependant CAtomPF CTermF LambdaCNF SOPredicate OPredicate OFunction OVariable SOAMVariable SOMVariable UnifVariable)
 type SOMetaclause = Clause CAtomPF CTermF SOPredicate OPredicate OFunction OVariable SOAMVariable SOMVariable -- = [SOMetaliteral]
 type SOMetaCNF = CNF CAtomPF CTermF SOPredicate OPredicate OFunction OVariable SOAMVariable SOMVariable -- = [SOMetaclause]
 type SOMetaSignature = SOSignature SOPredicate OPredicate OFunction OVariable SOAMVariable SOMVariable
@@ -608,3 +616,36 @@ instance Read SOMetaQParcSol where
 				in [(ParcCESQSol (Left (fst r)), (snd r))]);			
 			Nothing -> error ("Cannot read ground term or atom: " ++ xs)
 		}}}}
+
+resolution_heuristic :: SOResGreedyFactorH CAtomPF CTermF LambdaCNF SOPredicate OPredicate OFunction OVariable SOAMVariable SOMVariable UnifVariable
+resolution_heuristic = SOResGreedyFactorH
+
+resolve_to_constraints_metacnf :: SOMetaSignature -> SOMetaCNF -> Computation (Maybe [SOMetaUnifEquation])
+resolve_to_constraints_metacnf sig cnf = result
+	where
+		f1 = (ADDirect <$>) :: SOMetaliteral -> SOMetaUnifLiteral;
+		f2 = (f1 <$>) :: [SOMetaliteral] -> [SOMetaUnifLiteral];
+		f3 = (f2 <$>) :: [[SOMetaliteral]] -> [[SOMetaUnifLiteral]];
+		ucnf = f3 cnf :: [[SOMetaUnifLiteral]];
+		resolved = res_computeresolve resolution_heuristic ucnf :: StateT UnifVariable Computation (Maybe [SOMetaUnifEquation]);
+		runstated = runStateT resolved (UnifVar 0);
+		result = fst <$> runstated
+
+resolution_execorder :: DFS
+resolution_execorder = DFS
+
+unification_execorder :: Diagonalize
+unification_execorder = default_diag
+
+-- This provides an actual enumeration.
+resolve_and_unify_metacnf :: SOMetaSignature -> SOMetaCNF -> EnumProc SOMetaUnifSysSolution
+resolve_and_unify_metacnf sig cnf = result
+	where
+		compres = resolve_to_constraints_metacnf sig cnf;
+		rig_compres = rigidify_alg resolution_execorder compres;
+		fullsystems = fmap (fmap (\unifeqs -> USys sig unifeqs)) rig_compres;
+		f_sols = (\mb_fullsys -> case mb_fullsys of {Nothing -> comp Nothing; Just fullsys -> Just <$> enumAS (ImplicitAS fullsys)});
+		c_sols = cunfactor f_sols;
+		result_comp = c_sols ... fullsystems;
+		enum_maybe = runcomp unification_execorder result_comp;
+		result = fromJust <$> efilter isJust enum_maybe

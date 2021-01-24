@@ -273,11 +273,13 @@ type ESMGUConstraints t pd fn v sov = (Ord sov, SimpleTerm t, Eq fn, HasArity fn
 
 -- We work with a clear mapping between levels and unifier variables. This makes things a lot easier.
 type ESMGUConstraintsU t pd fn v sov uv = (ESMGUConstraints t pd fn v sov, Show uv, Ord uv)
-type ESMGUConstraintsUPmv t pd fn v pmv fmv uv = (ESMGUConstraintsU t pd fn v fmv uv, Ord pd, Ord pmv, Eq pd, Eq pmv, Show pmv, Show pd, HasArity pd, HasArity pmv, Variable pmv, Variabilizable pmv, ChangeArity pmv)
+type ESMGUConstraintsPdPmv pd pmv = (Ord pd, Ord pmv, Eq pd, Eq pmv, Show pmv, Show pd, HasArity pd, HasArity pmv, Variable pmv, Variabilizable pmv, ChangeArity pmv)
+type ESMGUConstraintsUPmv t pd fn v pmv fmv uv = (ESMGUConstraintsU t pd fn v fmv uv, ESMGUConstraintsPdPmv pd pmv)
 type ESMGUConstraintsA a = (SimpleTerm a)
 type ESMGUConstraintsAMpd a mpd = (ESMGUConstraintsA a, Functor (a mpd), Eq mpd, Ord mpd)
 type ESMGUConstraintsSS ss = (Functor ss, Unifiable ss)
-type ESMGUConstraintsALL a t ss mpd pd fn v pmv fmv uv = (ESMGUConstraintsUPmv t pd fn v pmv fmv uv, ESMGUConstraintsAMpd a mpd, ESMGUConstraintsSS ss, Eq (a mpd (ss (SOAtom pd fn pmv fmv))), Eq (a (SOAtom pd fn pmv fmv) (SOMetawrap t fn v fmv)))
+type ESMGUConstraintsAMpdSs a t ss mpd pd fn v pmv fmv = (ESMGUConstraints t pd fn v fmv, ESMGUConstraintsSS ss, ESMGUConstraintsAMpd a mpd, Eq (a mpd (ss (SOAtom pd fn pmv fmv))), Eq (a (SOAtom pd fn pmv fmv) (SOMetawrap t fn v fmv)), ESMGUConstraintsPdPmv pd pmv)
+type ESMGUConstraintsALL a t ss mpd pd fn v pmv fmv uv = (ESMGUConstraintsU t pd fn v fmv uv, ESMGUConstraintsAMpdSs a t ss mpd pd fn v pmv fmv)
 
 -- As first order nodes we use TermDependants, but we use empty ones for atoms, since we do not have atom variables anyway.
 data ESUnifDGSONode pd fn pmv fmv = FSONode (SOTerm fn fmv) | PSONode (SOAtom pd fn pmv fmv) deriving (Ord, Eq)

@@ -16,6 +16,7 @@
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE PolyKinds #-}
+{-# LANGUAGE QuantifiedConstraints #-}
 module SOResolution where
 
 import Control.Exception
@@ -53,40 +54,96 @@ import Debug.Trace
 import Safe (maximumMay, minimumMay)
 import GlobalTrace
 import ESUnification
+import Heuristics
+import Resolution
 
-data AUnifSysSolution pd fn pmv fmv = AUnifSysSolution {f_syssol :: UnifSysSolution fn fmv, p_syssol :: pmv := GroundSOA pd fn}
+type ResConstraintsU uv = (Variable uv, Variabilizable uv)
+type ResConstraintsALL a t ss mpd pd fn v pmv fmv uv = (ESMGUConstraintsALL a t ss mpd pd fn v pmv fmv uv, ResConstraintsU uv)
 
-lens_f_syssol :: Lens' (AUnifSysSolution pd fn pmv fmv) (UnifSysSolution fn fmv)
-lens_f_syssol = lens f_syssol (\prev -> \new -> AUnifSysSolution new (p_syssol prev))
+instance ResConstraintsALL a t ss mpd pd fn v pmv fmv uv => PreResLiteral (AtomDependant a t ss mpd pd fn v pmv fmv uv) where
+	--resolvable :: AtomDependant a t ss mpd pd fn v pmv fmv uv -> AtomDependant a t ss mpd pd fn v pmv fmv uv -> Bool
+	resolvable lad rad = resolvable_nounif la ra where (_,la) = decompose_ad lad; (_,ra) = decompose_ad rad
 
-lens_p_syssol :: Lens' (AUnifSysSolution pd fn pmv fmv) (pmv := GroundSOA pd fn)
-lens_p_syssol = lens p_syssol (\prev -> \new -> AUnifSysSolution (f_syssol prev) new)
 
--- In a partial function variable instantiation, occurs check issues may occur. We avoid these (which are dealt with in graphs, and thus we do not need them).
--- We can, however, and require, a partial predicate variable instantiation. Thus, we explicitly avoid this partial predicate variable instantiation having any sort of function instantiation in it, precisely because of the occurs check issue mentioned above.
--- For the same reason, we also assume that there are no predicate variable instantiations to other predicate variables. This stuff is dealt with BELOW.
-type ParcAUnifSysSolution pd fn pmv fmv = pmv := SOAtom pd fn pmv fmv
+-- The unifiers do not affect the heads of atoms, and we are only looking at the heads of atoms to check unifiability, so this is really about looking under the unifier variables.
+resolvable_nounif :: ESMGUConstraintsAMpdSs a t ss mpd pd fn v pmv fmv => CombSOAtom a t ss mpd pd fn v pmv fmv -> CombSOAtom a t ss mpd pd fn v pmv fmv -> Bool 
+resolvable_nounif (FSOAtom _) (NSOAtom _) = False
+resolvable_nounif (NSOAtom _) (FSOAtom _) = False
+-- "First second-order atoms" are only unifiable if they have the same head. That's how far we check here.
+resolvable_nounif (FSOAtom (FirstSOAAtom lfsoa)) (FSOAtom (FirstSOAAtom rfsoa)) = lh == rh where (lh,_) = unbuild_term lfsoa; (rh,_) = unbuild_term rfsoa
+-- For actual second-order atoms, we check the head of the normalized atoms and compare them.
+-- Variables are unifiable with anything.
+-- Projections cannot appear in atoms.
+-- Constants are only unifiable with themselves.
+-- Compositions cannot appear on normalized terms.
+-- So if it's not a variable, it needs to be exactly the same.
+resolvable_nounif (NSOAtom lnsoa) (NSOAtom rnsoa) = case lh of
+						{
+							UVar _ -> True;
+							UTerm x -> case rh of
+							{
+								UVar _ -> True;
+								UTerm y -> x == y
+							}
+						}
+		where
+			nlnsoa = normalize lnsoa;
+			nrnsoa = normalize rnsoa;
+			(lh,_) = unbuild_term (fromSOMetawrapA nlnsoa);
+			(rh,_) = unbuild_term (fromSOMetawrapA nrnsoa);
 
-composeParcAUnifSysSolution :: Eq fmv => ParcAUnifSysSolution pd fn pmv fmv -> UnifSysSolution fn fmv -> AUnifSysSolution pd fn pmv fmv
-composeParcAUnifSysSolution puss uss = AUnifSysSolution uss ((to_groundsoa . subst_all uss) <$> puss)
 
-data ParcInstAUnifSystem t mpd pd fn v pmv fmv uv = PIAUS {piaus_parcsol :: ParcAUnifSysSolution pd fn pmv fmv, piaus_usys :: FullUnifSystem t mpd pd fn v pmv fmv uv}
 
-lens_piaus_parcsol :: Lens' (ParcInstAUnifSystem t mpd pd fn v pmv fmv uv) (ParcAUnifSysSolution pd fn pmv fmv)
-lens_piaus_parcsol = lens piaus_parcsol (\prev -> \new -> PIAUS new (piaus_usys prev))
+instance ResConstraintsALL a t ss mpd pd fn v pmv fmv uv => ResLiteral (AtomDependant a t ss mpd pd fn v pmv fmv uv) (UnifSystem a t ss mpd pd fn v pmv fmv uv) (StateT uv) where
+	--resolve :: Monad m => [AtomDependant a t ss mpd pd fn v pmv fmv uv] -> [AtomDependant a t ss mpd pd fn v pmv fmv uv] -> StateT uv m (UnifSystem a t ss mpd pd fn v pmv fmv uv,AtomDependant a t ss mpd pd fn v pmv fmv uv -> AtomDependant a t ss mpd pd fn v pmv fmv uv)
+	resolve poslits neglits = do
+		{
+			uv <- get;
+			
+			let {(mlit:rposlits) = poslits};
 
-lens_piaus_usys :: Lens' (ParcInstAUnifSystem t mpd pd fn v pmv fmv uv) (FullUnifSystem t mpd pd fn v pmv fmv uv)
-lens_piaus_usys = lens piaus_usys (\prev -> \new -> PIAUS (piaus_parcsol prev) new)
+			let {r = fmap (\lit -> AtomUnif (ADUnif uv lit) (ADUnif uv mlit)) (rposlits++neglits)};
 
-instance ESMGUConstraintsUPmv t pd fn v pmv fmv uv => Implicit (ParcInstAUnifSystem t mpd pd fn v pmv fmv uv) (AUnifSysSolution pd fn pmv fmv) where
-	-- checkImplicit :: ParcInstAUnifSystem t mpd pd fn v pmv fmv uv -> AUnifSysSolution pd fn pmv fmv -> Computation Bool
-	-- I have not spent the time checking that this function is necessarily correct, but for sure it is most of the time. If it is not, it is probably due to alpha-equivalence.
-	-- We are checking, first, that the function unification system associated to the partially instantiated overall unification system has the function part of the solution as a solution.
-	-- Then, we also check that the partial instantiation applied to the function part of the unification solution returns a predicate instantiation that equals the predicate instantiation of the given solution.
-	-- We actually check these in the opposite order.
-	checkImplicit piaus ausys = if prev then (checkImplicit (piaus_usys piaus) (f_syssol ausys)) else (return False) where prev = ((p_syssol (composeParcAUnifSysSolution (piaus_parcsol piaus) (f_syssol ausys))) == (p_syssol ausys))
-	-- This one, on the other hand, should be 100% correct.
-	-- enumImplicit :: ParcInstAUnifSystem t mpd pd fn v pmv fmv uv -> Computation (AUnifSysSolution pd fn pmv fmv)
-	enumImplicit piaus = composeParcAUnifSysSolution (piaus_parcsol piaus) <$> (enumAS (ImplicitAS (piaus_usys piaus)))
+			let {u = ADUnif uv};
+
+			let {nuv = next_uv uv};
+			put nuv;
+
+			return (r,u)
+		}
+
+next_uv :: ResConstraintsU uv => uv -> uv
+next_uv uv = from_var (IntVar ((getVarID uv) + 1))
+
+data SOResGreedyFactorH a t ss mpd pd fn v pmv fmv uv = SOResGreedyFactorH
+
+instance HeuristicsI (SOResGreedyFactorH a t ss mpd pd fn v pmv fmv uv) [Literal (AtomDependant a t ss mpd pd fn v pmv fmv uv)] Computation where
+	heur_inform h _ = return h
+
+instance HeuristicsC (SOResGreedyFactorH a t ss mpd pd fn v pmv fmv uv) () (ResStep (AtomDependant a t ss mpd pd fn v pmv fmv uv)) Computation where
+	heur_choose h _ steps = if (Prelude.null wstepidxs_ord) then (return (Nothing,h)) else (ecomp (uns_enum_from_list (((,h) . Just) <$> wstepidxs_ord)))
+		where
+			wsteps = build_soresgreedyfactorstep <$> steps;
+			wstepidxs = [0..((length wsteps) - 1)];
+			wstepidxs_ord = sortOn (wsteps !!) wstepidxs;
+
+-- We look for the step which leaves the smallest possible clause.
+greedyfactor_step_measure :: ResStep (AtomDependant a t ss mpd pd fn v pmv fmv uv) -> Int
+greedyfactor_step_measure step = poscl_len - poscl_rem + negcl_len - negcl_rem where poscl_len = length (resclause_lits ((resstep_clauses step) !! (resstep_poscl step))); negcl_len = length (resclause_lits ((resstep_clauses step) !! (resstep_negcl step))); poscl_rem = length (resstep_poslits step); negcl_rem = length (resstep_neglits step)
+
+data SOResGreedyFactorStep a t ss mpd pd fn v pmv fmv uv = SOResGreedyFactorStep {fromSOResGreedyFactorStep :: ResStep (AtomDependant a t ss mpd pd fn v pmv fmv uv), mSOResGreedyFactorStep :: Int}
+
+build_soresgreedyfactorstep :: ResStep (AtomDependant a t ss mpd pd fn v pmv fmv uv) -> SOResGreedyFactorStep a t ss mpd pd fn v pmv fmv uv
+build_soresgreedyfactorstep step = SOResGreedyFactorStep step (greedyfactor_step_measure step)
+
+instance Eq (SOResGreedyFactorStep a t ss mpd pd fn v pmv fmv uv) where
+	s1 == s2 = (mSOResGreedyFactorStep s1) == (mSOResGreedyFactorStep s2)
+
+instance Ord (SOResGreedyFactorStep a t ss mpd pd fn v pmv fmv uv) where
+	s1 <= s2 = (mSOResGreedyFactorStep s1) <= (mSOResGreedyFactorStep s2)
+
+instance Heuristics (SOResGreedyFactorH a t ss mpd pd fn v pmv fmv uv) [Literal (AtomDependant a t ss mpd pd fn v pmv fmv uv)] () (ResStep (AtomDependant a t ss mpd pd fn v pmv fmv uv)) Computation where
+
+
 
 

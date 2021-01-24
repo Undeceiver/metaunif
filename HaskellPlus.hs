@@ -100,6 +100,11 @@ replaceAt 0 x (y:ys) = x:ys
 replaceAt n x [] = error "No such position in the list"
 replaceAt n x (y:ys) = y:(replaceAt (n-1) x ys)
 
+removeAt :: Int -> [a] -> [a]
+removeAt 0 (y:ys) = ys
+removeAt n [] = error "No such position in the list"
+removeAt n (y:ys) = y:(removeAt (n-1) ys)
+
 applyBy :: Functor f => (a -> Bool) -> (a -> a) -> f a -> f a
 applyBy p f = fmap (\a -> if (p a) then (f a) else a)
 

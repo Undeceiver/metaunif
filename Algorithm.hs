@@ -4,7 +4,7 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE UndecidableInstances #-}
+--{-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveFoldable #-}
@@ -140,6 +140,9 @@ runorder x (AlgEval f) y = f x y
 runcomp :: ExecOrder t => t -> (() .-> a) -> EnumProc a
 runcomp x alg = runorder x alg ()
 
+-- Sets the specified order within this algorithm, rigidly so that it cannot be undone within this part of the algorithm later.
+rigidify_alg :: ExecOrder t => t -> (a .-> b) -> (a .-> b)
+rigidify_alg x alg = fork (runorder x alg)
 
 data DFS = DFS
 

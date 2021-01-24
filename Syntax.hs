@@ -419,7 +419,7 @@ instance (HasArity fn, HasArity sov) => Normalizable (SOTerm fn sov) (SOTerm fn 
 
 
 
-newtype SOTermP pd f p = SOP (SOTermPF pd p f) deriving (Ord, Eq)
+newtype SOTermP pd f p = SOP (SOTermPF pd p f) deriving (Eq, Ord)
 type GroundSOA pd fn = Fix (SOTermP pd (GroundSOT fn))
 type SOAtom pd fn soav sov = UTerm (SOTermP pd (SOTerm fn sov)) soav
 
@@ -558,6 +558,9 @@ plain_gsomw x = plain_gsomw_norm . fromGSOMetawrap . normalize $ x
 plain_gsomw_norm :: (HasArity fn, SimpleTerm t) => UTerm (t (GroundSOT fn)) v -> UTerm (t fn) v
 plain_gsomw_norm (UVar v) = UVar v
 plain_gsomw_norm (UTerm t) = (case h of {Fix (SOF (ConstF fn)) -> UTerm (build_term fn (plain_gsomw_norm <$> args))}) where (h,args) = unbuild_term t
+
+instance (Eq (t (GroundSOT fn) (UTerm (t (GroundSOT fn)) v)), Eq v) => Eq (GSOMetawrap t fn v) where
+	GSOMetawrap x == GSOMetawrap y = x == y
 
 -- Similar situation.
 newtype GGSOMetawrap (t :: * -> * -> *) fn = GGSOMetawrap {fromGGSOMetawrap :: Fix (t (GroundSOT fn))}

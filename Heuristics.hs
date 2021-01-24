@@ -3,7 +3,7 @@
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE UndecidableInstances #-}
+--{-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveFoldable #-}
@@ -30,7 +30,7 @@ class Monad m => HeuristicsI (h :: *) (i :: *) (m :: * -> *) | h -> m i where
 	heur_inform :: h -> i -> m h
 
 class Monad m => HeuristicsC (h :: *) (l :: *) (c :: *) (m :: * -> *) | h -> m, h c -> l where
-	heur_choose :: h -> l -> [c] -> m (Maybe c, h)
+	heur_choose :: h -> l -> [c] -> m (Maybe Int, h)
 
 class (HeuristicsI h i m, HeuristicsC h l c m) => Heuristics h i l c m where
 	-- No methods other than the ones from the two classes above.
@@ -50,7 +50,7 @@ instance Monad (MHeuristic i l c) where
 m_heur_inform :: i -> MHeuristic i l c ()
 m_heur_inform i = MHeuristic (StateT (\h -> do {rh <- heur_inform h i; return ((),rh)}))
 
-m_heur_choose :: l -> [c] -> MHeuristic i l c (Maybe c)
+m_heur_choose :: l -> [c] -> MHeuristic i l c (Maybe Int)
 m_heur_choose l cs = MHeuristic (StateT (\h -> heur_choose h l cs))
 
 m_heur_compute :: Heuristics h i l c m => h -> MHeuristic i l c a -> m a
