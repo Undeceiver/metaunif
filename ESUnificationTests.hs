@@ -113,26 +113,6 @@ check_not_soexp :: SOMetaSignature -> String -> (forall s. StateT (RTestSOMetaUn
 check_not_soexp sig title stmudg exp t = AT title (if result then (ATR True "The dependant does not match the expression in the graph.") else (ATR False "The dependant matches the expression in the graph, but it should not.")) where checked = do {stmudg; on_vdgraph (match_soexp exp (relbwEqDGSoId (FSONode t)))}; result = not (getStateTSTValue checked (emptyRMUDG sig))
 
 
--- For answer sets
-check_min_as :: String -> Int -> AnswerSet s t -> AutomatedTest
-check_min_as title n as = if l < n then (AT title (ATR False ("Expected at least " ++ (show n) ++ " results, but could only find " ++ (show l) ++ "."))) else (AT title (ATR True ("Correctly found at least " ++ (show n) ++ " results."))) where l = uns_produce_next (elength (etake n ((implicitOnly as) \$ ())))
-
-check_max_as :: String -> Int -> AnswerSet s t -> AutomatedTest
-check_max_as title n as = if l > n then (AT title (ATR False ("Expected at most " ++ (show n) ++ " results, but found " ++ (show l) ++ "."))) else (AT title (ATR True ("Correctly found less than " ++ (show n) ++ " results."))) where l = uns_produce_next (elength (etake (n+1) ((implicitOnly as) \$ ())))
-
-check_exactly_as :: String -> Int -> AnswerSet s t -> AutomatedTest
-check_exactly_as title n as = if l /= n then (AT title (ATR False ("Expected exactly " ++ (show n) ++ " results, but found " ++ (show l) ++ " instead."))) else (AT title (ATR True ("Correctly found exactly " ++ (show n) ++ " results."))) where l = uns_produce_next (elength (etake (n+1) ((implicitOnly as) \$ ())))
-
-check_min_exp_as :: String -> Int -> AnswerSet s t -> AutomatedTest
-check_min_exp_as title n as = if l < n then (AT title (ATR False ("Expected at least " ++ (show n) ++ " results, but could only find " ++ (show l) ++ "."))) else (AT title (ATR True ("Correctly found at least " ++ (show n)  ++ " results."))) where l = uns_produce_next (elength (etake n ((enumAS as) \$ ())))
-
-check_max_exp_as :: String -> Int -> AnswerSet s t -> AutomatedTest
-check_max_exp_as title n as = if l > n then (AT title (ATR False ("Expected at most " ++ (show n) ++ " results, but found " ++ (show l) ++ "."))) else (AT title (ATR True ("Correctly found less than " ++ (show n)  ++ " results."))) where l = uns_produce_next (elength (etake (n+1) ((enumAS as) \$ ())))
-
-check_exactly_exp_as :: String -> Int -> AnswerSet s t -> AutomatedTest
-check_exactly_exp_as title n as = if l /= n then (AT title (ATR False ("Expected exactly " ++ (show n) ++ " results, but found " ++ (show l) ++ " instead."))) else (AT title (ATR True ("Correctly found exactly " ++ (show n)  ++ " results."))) where l = uns_produce_next (elength (etake (n+1) ((enumAS as) \$ ())))
-
-
 
 check_any_resuvdg :: Int -> String -> (forall a. String -> (forall s. StateT (RTestSOMetaUnifDGraph s) (ST s) a) -> AutomatedTest) -> AnswerSet RSOMetaUnifDGraph SOMetaUnifSysSolution -> AutomatedTest
 check_any_resuvdg maxen title ftest as = case filtered of {EnumProc.Empty -> AT title (ATR False ("None of the first " ++ (show maxen) ++ " results produced passed the check.")); Produce at _ -> at} where imp = etake maxen ((implicitOnly as) \$ ()); impat = (\resuvdg -> ftest title (StateT (\rtest -> (((),) . RTestSOMetaUnifDGraph) <$> (fromRESUnifVDGraph resuvdg)))) <$> imp; filtered = uns_ecollapse (efilter (\(AT title (ATR res str)) -> res) impat)

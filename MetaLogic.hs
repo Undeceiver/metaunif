@@ -634,6 +634,9 @@ resolve_to_constraints_metacnf sig cnf = result
 resolution_execorder :: DFS
 resolution_execorder = DFS
 
+resolve_to_constraints_metacnf_enum :: SOMetaSignature -> SOMetaCNF -> EnumProc [SOMetaUnifEquation]
+resolve_to_constraints_metacnf_enum sig cnf = fromJust <$> efilter isJust (runcomp resolution_execorder (resolve_to_constraints_metacnf sig cnf))
+
 unification_execorder :: Diagonalize
 unification_execorder = default_diag
 
@@ -649,3 +652,6 @@ resolve_and_unify_metacnf sig cnf = result
 		result_comp = c_sols ... fullsystems;
 		enum_maybe = runcomp unification_execorder result_comp;
 		result = fromJust <$> efilter isJust enum_maybe
+
+
+

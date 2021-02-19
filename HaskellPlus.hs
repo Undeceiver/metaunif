@@ -31,6 +31,7 @@ import Control.Monad.State
 import Control.Monad.ST
 import Data.Functor.Compose
 import Data.UnionFind.ST
+import Control.Monad.Except
 
 -- Here I put functions/types that I feel should be part of Haskell but aren't. It is likely that at least half of them ACTUALLY are part of Haskell, but I wasn't smart enough to find them.
 
@@ -138,6 +139,16 @@ mb_concat [] = Just []
 mb_concat (Nothing:xs) = Nothing
 mb_concat ((Just x):xs) = (mb_concat xs) >>= (Just . (x++))
 
+-- All possible ways to pick out one element from a list.
+setlist_conss :: [a] -> [(a,[a])]
+setlist_conss [] = []
+setlist_conss (x:xs) = first:others
+	where
+		first = (x,xs);
+		fx = (\(y,ys) -> (y,(x:ys)));
+		rec = setlist_conss xs;
+		others = fx <$> rec
+
 -- foldMap with semigroups, with an initial element
 foldMapSG :: (Foldable f, Functor f, Semigroup m) => (a -> m) -> m -> f a -> m
 foldMapSG f i ts = Prelude.foldr (<>) i (f <$> ts)
@@ -200,6 +211,10 @@ instance (Eq v, Eq (t (UTerm t v))) => Eq (UTerm t v) where
 fromJustErr :: String -> Maybe a -> a
 fromJustErr str Nothing = error str
 fromJustErr str (Just x) = x
+
+mb_from_filter :: (a -> Bool) -> a -> Maybe a
+mb_from_filter f x | f x = Just x
+mb_from_filter f x = Nothing
 
 
 -- Monad utilities
@@ -649,5 +664,52 @@ headErr :: String -> [a] -> a
 headErr str [] = error str
 headErr str (x:xs) = x
 
+-- To be able to do this with kinds, we need to use/assume extensionality of kinds!
+--type KindPair (a :: ka) (b :: kb) (f :: ka -> kb -> *) = f a b
+
+--type KCurry (tf :: (KindPair ka kb) -> kc) (ta :: ka) (tb :: kb) = kc
+--type KUncurry (tf :: ka -> kb -> kc) (tp :: (KindPair ka kb)) = kc
+
+--type KindPair (a :: ka) (b :: kb) = ((ka -> kb -> *) -> *)
+
+--type KCurry (tf :: (KindPair ka kb) -> kc) = ka -> kb -> kc
+--type KUncurry (tf :: ka -> kb -> kc) = (KindPair ka kb) -> kc
+
+--ftest :: KCurry (KUncurry (,)) Int Int -> (Int, Int)
+--ftest = id
+--ftest = undefined
 
 
+-- A simple error monad to deal with errors easily.
+data SimpleMonadError e a = SMError e | SMOk a
+
+instance Functor (SimpleMonadError e) where
+	fmap f (SMError e) = SMError e
+	fmap f (SMOk a) = SMOk (f a)
+
+instance Semigroup e => Semigroup (SimpleMonadError e a) where
+	(SMError e1) <> (SMError e2) = SMError (e1 <> e2)
+	(SMError e1) <> (SMOk _) = SMError e1
+	(SMOk _) <> (SMError e2) = SMError e2
+	(SMOk _) <> (SMOk _) = error "There was an error, but then there were not any errors. This is unexpected, and we should have never arrived here."
+
+instance Semigroup e => Applicative (SimpleMonadError e) where
+	pure x = SMOk x
+	(SMError e1) <*> (SMError e2) = SMError (e1 <> e2)
+	(SMError e) <*> (SMOk _) = SMError e
+	(SMOk _) <*> (SMError e) = SMError e
+	(SMOk f) <*> (SMOk x) = SMOk (f x)
+
+instance Semigroup e => Monad (SimpleMonadError e) where
+	return = pure
+	(SMError e) >>= f = SMError e
+	(SMOk x) >>= f = f x
+
+fromSME :: Show e => SimpleMonadError e a -> a
+fromSME (SMError e) = error (show e)
+fromSME (SMOk x) = x
+
+instance Semigroup e => MonadError e (SimpleMonadError e) where
+	throwError e = SMError e
+	catchError (SMOk a) handler = SMOk a
+	catchError (SMError e) handler = handler e

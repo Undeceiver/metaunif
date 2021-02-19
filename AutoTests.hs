@@ -8,6 +8,9 @@ import Control.DeepSeq
 import Data.Time.Clock
 import Data.Time.Calendar
 import System.Timeout
+import AnswerSet
+import Algorithm
+import EnumProc
 
 
 -- Automated testing
@@ -109,3 +112,42 @@ timeout_test_failfast_rec n actual_comp = case (timeout_test_failfast_rec (n-1) 
 
 doprint :: IO String -> IO ()
 doprint op = do {r <- op; putStr r}
+
+
+
+-- For answer sets
+check_min_as :: String -> Int -> AnswerSet s t -> AutomatedTest
+check_min_as title n as = if l < n then (AT title (ATR False ("Expected at least " ++ (show n) ++ " results, but could only find " ++ (show l) ++ "."))) else (AT title (ATR True ("Correctly found at least " ++ (show n) ++ " results."))) where l = uns_produce_next (elength (etake n ((implicitOnly as) \$ ())))
+
+check_max_as :: String -> Int -> AnswerSet s t -> AutomatedTest
+check_max_as title n as = if l > n then (AT title (ATR False ("Expected at most " ++ (show n) ++ " results, but found " ++ (show l) ++ "."))) else (AT title (ATR True ("Correctly found less than " ++ (show n) ++ " results."))) where l = uns_produce_next (elength (etake (n+1) ((implicitOnly as) \$ ())))
+
+check_exactly_as :: String -> Int -> AnswerSet s t -> AutomatedTest
+check_exactly_as title n as = if l /= n then (AT title (ATR False ("Expected exactly " ++ (show n) ++ " results, but found " ++ (show l) ++ " instead."))) else (AT title (ATR True ("Correctly found exactly " ++ (show n) ++ " results."))) where l = uns_produce_next (elength (etake (n+1) ((implicitOnly as) \$ ())))
+
+check_min_exp_as :: String -> Int -> AnswerSet s t -> AutomatedTest
+check_min_exp_as title n as = if l < n then (AT title (ATR False ("Expected at least " ++ (show n) ++ " results, but could only find " ++ (show l) ++ "."))) else (AT title (ATR True ("Correctly found at least " ++ (show n)  ++ " results."))) where l = uns_produce_next (elength (etake n ((enumAS as) \$ ())))
+
+check_max_exp_as :: String -> Int -> AnswerSet s t -> AutomatedTest
+check_max_exp_as title n as = if l > n then (AT title (ATR False ("Expected at most " ++ (show n) ++ " results, but found " ++ (show l) ++ "."))) else (AT title (ATR True ("Correctly found less than " ++ (show n)  ++ " results."))) where l = uns_produce_next (elength (etake (n+1) ((enumAS as) \$ ())))
+
+check_exactly_exp_as :: String -> Int -> AnswerSet s t -> AutomatedTest
+check_exactly_exp_as title n as = if l /= n then (AT title (ATR False ("Expected exactly " ++ (show n) ++ " results, but found " ++ (show l) ++ " instead."))) else (AT title (ATR True ("Correctly found exactly " ++ (show n)  ++ " results."))) where l = uns_produce_next (elength (etake (n+1) ((enumAS as) \$ ())))
+
+
+-- For enum procs
+check_min_enum :: String -> Int -> EnumProc a -> AutomatedTest
+check_min_enum title n en = if l < n then (AT title (ATR False ("Expected at least " ++ (show n) ++ " results, but could only find " ++  (show l) ++ "."))) else (AT title (ATR True ("Correctly found at least " ++ (show n) ++ " results."))) where l = uns_produce_next (elength (etake n en))
+
+check_max_enum :: String -> Int -> EnumProc a -> AutomatedTest
+check_max_enum title n en = if l > n then (AT title (ATR False ("Expected at most " ++ (show n) ++ " results, but found " ++  (show l) ++ "."))) else (AT title (ATR True ("Correctly found less than " ++ (show n) ++ " results."))) where l = uns_produce_next (elength (etake (n + 1) en))
+
+check_exactly_enum :: String -> Int -> EnumProc a -> AutomatedTest
+check_exactly_enum title n en = if l /= n then (AT title (ATR False ("Expected exactly " ++ (show n) ++ " results, but found " ++  (show l) ++ " instead."))) else (AT title (ATR True ("Correctly found exactly " ++ (show n) ++ " results."))) where l = uns_produce_next (elength (etake (n+1) en))
+
+check_any_enum :: Int -> String -> (String -> a -> AutomatedTest) -> EnumProc a -> AutomatedTest
+check_any_enum maxen title ftest en = case filtered of {EnumProc.Empty -> AT title (ATR False ("None of the first " ++ (show maxen) ++ " results produced passed the check.")); Produce at _ -> at} where tk = etake maxen en; tkat = ftest title <$> tk; filtered = uns_ecollapse (efilter (\(AT title (ATR res str)) -> res) tkat)
+
+check_all_enum :: Int -> String -> (String -> a -> AutomatedTest) -> EnumProc a -> AutomatedTest
+check_all_enum maxen title ftest en = case filtered of {EnumProc.Empty -> AT title (ATR True ("All of the first " ++ (show maxen) ++ " results produced passed the check.")); Produce at _ -> AT title (ATR False ("Found a result amongst the first " ++ (show maxen) ++ " produced that did not pass the check."))} where tk = etake maxen en; tkat = ftest title <$> tk; filtered = uns_ecollapse (efilter (\(AT title (ATR res str)) -> not res) tkat)
+
