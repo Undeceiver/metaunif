@@ -122,6 +122,8 @@ instance (Show (a mpd (s (SOAtom pd fn pmv fmv))), Show (a (SOAtom pd fn pmv fmv
 	show (ADUnif uv ad) = (show uv) ++ " " ++ (show ad)
 
 deriving instance (Eq (a (SOAtom pd fn pmv fmv) (SOMetawrap t fn v fmv)), Eq (a mpd (s (SOAtom pd fn pmv fmv))), Eq pmv, Eq fmv, Eq uv) => Eq (AtomDependant a t s mpd pd fn v pmv fmv uv)
+deriving instance (Ord (a (SOAtom pd fn pmv fmv) (SOMetawrap t fn v fmv)), Ord (a mpd (s (SOAtom pd fn pmv fmv))), Ord pmv, Ord fmv, Ord uv) => Ord (AtomDependant a t s mpd pd fn v pmv fmv uv)
+
 
 
 data UnifEquation a t ss mpd pd fn v pmv fmv uv = TermUnif (TermDependant t fn v fmv uv) (TermDependant t fn v fmv uv) | AtomUnif (AtomDependant a t ss mpd pd fn v pmv fmv uv) (AtomDependant a t ss mpd pd fn v pmv fmv uv)

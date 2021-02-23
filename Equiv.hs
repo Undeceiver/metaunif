@@ -25,7 +25,12 @@ import Data.Maybe
 import Control.Lens
 
 -- You cannot undo equivalences!
-data Equiv t = Equiv {fromEquiv :: t := t}
+data Equiv t = Equiv (t := t)
+--data Equiv t where
+--	Equiv :: Ord t => t := t -> Equiv t
+
+fromEquiv :: Equiv t -> t := t
+fromEquiv (Equiv x) = x
 
 lens_equiv :: Lens' (Equiv t) (t := t)
 lens_equiv f (Equiv m) = fmap (\r -> Equiv r) (f m) 
@@ -52,7 +57,7 @@ get_equiv_class eq x = lx:(Prelude.filter (\y -> y =~ lx $ eq) ks)
 		ks = keys (fromEquiv eq);
 
 make_equiv :: Ord t => Equiv t -> t -> t -> Equiv t
-make_equiv eq x y | (eq !-> x) == y = eq
+make_equiv eq x y | (eq !-> x) == (eq !-> y) = eq
 make_equiv eq x y = (lens_equiv . (at (eq !-> x))) .~ (Just y) $ eq
 
 (=:~) :: Ord t => t -> t -> Equiv t -> Equiv t

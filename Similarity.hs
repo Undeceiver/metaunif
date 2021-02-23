@@ -55,6 +55,44 @@ instructure_multisimilarities :: (Similarity t, Ord a) => [t a] -> Computation (
 instructure_multisimilarities [] = emptycomp
 instructure_multisimilarities (ta:tas) = multisimilarities (ta:tas) >>= (\eq -> return (multisimilarities_as_structure eq 0 ta))
 
+-- Note that this blends together all the a's in the left and all the b's in the left, as any other similarity probably would. This one is for certain, though, so if any a appears on several s's on the left, they are all considered the same, and the same for the b's. This is actually useful in most practical cases, though.
+-- It's like merging namespaces for variables.	
+composite_similarities :: (Similarity t, Similarity s, Ord a, Ord b, Ord (s a), Ord (s b)) => t (s a) -> t (s b) -> Computation (Equiv (Either a b))
+composite_similarities tsa tsb = simss >>= composite_similarities_fromequiv
+	where
+		simss = similarities tsa tsb;
+
+composite_similarities_fromequiv :: (Similarity s, Ord a, Ord b, Ord (s a), Ord (s b)) => Equiv (Either (s a) (s b)) -> Computation (Equiv (Either a b))
+composite_similarities_fromequiv eq = concatequivs
+	where
+		cs = get_equiv_classes eq;
+		cequivs = traverse composite_similarities_fromequiv_class cs;
+		concatequivs = mconcat <$> cequivs;
+		
+composite_similarities_fromequiv_class :: (Similarity s, Ord a, Ord b) => [Either (s a) (s b)] -> Computation (Equiv (Either a b))
+composite_similarities_fromequiv_class c = case ls of
+	{
+		(hl:tls) -> case rs of
+		{
+			(hr:trs) -> do {vxsimt <- similarities hl hr; vlsimst <- lsimst; vrsimst <- rsimst; return (vxsimt <> vlsimst <> vrsimst)};
+			[] -> rsimst
+		};
+		[] -> case rs of
+		{
+			(hr:trs) -> lsimst;
+			[] -> comp empty_equiv
+		}
+	}
+	where
+		ls = fmap (fromLeftErr "composite_similarities_fromequiv: Left: Shouldn't happen") (Prelude.filter isLeft c);
+		rs = fmap (fromRightErr "composite_similarities_fromequiv: Right: Shouldn't happen") (Prelude.filter isRight c);
+		lsims = multisimilarities ls;
+		rsims = multisimilarities rs;
+		lsimst = fmap (fmap_equiv (Left . snd)) lsims;
+		rsimst = fmap (fmap_equiv (Right . snd)) rsims;
+		
+
+
 -- Lists have different ways to consider their similarities, so we use wrappers to identify which one we are using.
 newtype PosSimilarList a = PosSimilarList {fromPosSimilarList :: [a]} deriving (Eq, Ord, Functor, Foldable, Traversable)
 
@@ -112,5 +150,46 @@ c_alpha_eq t1 t2 = (not . fsim) <$> sims
 		fcl = (\cl -> (length (Prelude.filter isLeft cl) > 1) || (length (Prelude.filter isRight cl) > 1));
 		fsim = (\eq -> any fcl (get_equiv_classes eq))
 
+c_alpha_eq_wsim :: (Traversable t, Ord a, Ord b) => (t a -> t b -> Computation (Equiv (Either a b))) -> t a -> t b -> Computation Bool
+c_alpha_eq_wsim sim t1 t2 = (not . fsim) <$> sims
+	where
+		sims = sim t1 t2;
+		fcl = (\cl -> (length (Prelude.filter isLeft cl) > 1) || (length (Prelude.filter isRight cl) > 1));
+		fsim = (\eq -> any fcl (get_equiv_classes eq))
+
 alpha_eq :: (Traversable t, Similarity t, Ord a, Ord b) => t a -> t b -> Bool
 alpha_eq t1 t2 = uns_produce_next (eany (return . id) (c_alpha_eq t1 t2 \$ ()))
+
+alpha_eq_wsim :: (Traversable t, Ord a, Ord b) => (t a -> t b -> Computation (Equiv (Either a b))) -> t a -> t b -> Bool
+alpha_eq_wsim sim t1 t2 = uns_produce_next (eany (return . id) (c_alpha_eq_wsim sim t1 t2 \$ ()))
+
+(=@=) :: (Traversable t, Similarity t, Ord a, Ord b) => t a -> t b -> Bool
+(=@=) = alpha_eq
+
+infixl 7 =@=
+
+-- Cannot implement this as an actual class, as it would require Equiv to be a Functor, which it can't because of the Ord constraint.
+-- This similarity matches the structure of the equivalences. Which means, it associates elements in the left equivalence with elements in the right equivalence, such that equivalences in the left are mapped to equivalences in the right, while distinctness in both sides is also preserved (so equivalence class sets are the same size)
+equiv_similarities :: (Ord a, Ord b) => Equiv a -> Equiv b -> Computation (Equiv (Either a b))
+equiv_similarities eq1 eq2 = equiv_similarities_classes (get_equiv_classes eq1) (get_equiv_classes eq2)
+
+equiv_similarities_classes :: (Ord a, Ord b) => [[a]] -> [[b]] -> Computation (Equiv (Either a b))
+equiv_similarities_classes eqs1 eqs2 = composite_similarities (SetSimilarList (SetSimilarList <$> eqs1)) (SetSimilarList (SetSimilarList <$> eqs2))
+
+-- We can produce an instance for the double list, though
+newtype EquivClasses a = EquivClasses {fromEquivClasses :: [[a]]} deriving (Eq, Show, Ord)
+
+equivclasses :: Ord a => Equiv a -> EquivClasses a
+equivclasses x = EquivClasses (get_equiv_classes x)
+
+instance Functor EquivClasses where
+	fmap g = EquivClasses . (fmap2 g) . fromEquivClasses
+
+instance Foldable EquivClasses where
+	foldr g z (EquivClasses eqs) = homofoldr2 g eqs z
+
+instance Traversable EquivClasses where
+	traverse g (EquivClasses eqs) = EquivClasses <$> (traverse2 g eqs)
+
+instance Similarity EquivClasses where
+	similarities (EquivClasses eqs1) (EquivClasses eqs2) = equiv_similarities_classes eqs1 eqs2

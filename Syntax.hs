@@ -691,6 +691,7 @@ instance Show (a (SOAtom pd fn pmv fmv) (SOMetawrap t fn v fmv)) => Show (SOMeta
 	show (SOMetawrapA x) = show x
 
 deriving instance Eq (a (SOAtom pd fn pmv fmv) (SOMetawrap t fn v fmv)) => Eq (SOMetawrapA a t pd fn v pmv fmv)
+deriving instance Ord (a (SOAtom pd fn pmv fmv) (SOMetawrap t fn v fmv)) => Ord (SOMetawrapA a t pd fn v pmv fmv)
 	
 instance (HasArity pd, HasArity fn, HasArity pmv, HasArity fmv, SimpleTerm a, SimpleTerm t) => Normalizable (SOMetawrapA a t pd fn v pmv fmv) (SOMetawrapA a t pd fn v pmv fmv) where
 	inject_normal = id
@@ -741,6 +742,7 @@ instance Show (a mpd (s (SOAtom pd fn pmv fmv))) => Show (FirstSOAAtom a s mpd p
 	show (FirstSOAAtom x) = show x
 
 deriving instance Eq (a mpd (s (SOAtom pd fn pmv fmv))) => Eq (FirstSOAAtom a s mpd pd fn pmv fmv)
+deriving instance Ord (a mpd (s (SOAtom pd fn pmv fmv))) => Ord (FirstSOAAtom a s mpd pd fn pmv fmv)
 
 instance (HasArity pd, HasArity pmv, HasArity fn, HasArity fmv, Functor (a mpd), Functor s) => Normalizable (FirstSOAAtom a s mpd pd fn pmv fmv) (FirstSOAAtom a s mpd pd fn pmv fmv) where
 	inject_normal = id
@@ -760,6 +762,7 @@ instance (Show (a mpd (s (SOAtom pd fn pmv fmv))), Show (a (SOAtom pd fn pmv fmv
 	show (FSOAtom x) = show x
 
 deriving instance (Eq (a (SOAtom pd fn pmv fmv) (SOMetawrap t fn v fmv)), Eq (a mpd (s (SOAtom pd fn pmv fmv)))) => Eq (CombSOAtom a t s mpd pd fn v pmv fmv)
+deriving instance (Ord (a (SOAtom pd fn pmv fmv) (SOMetawrap t fn v fmv)), Ord (a mpd (s (SOAtom pd fn pmv fmv)))) => Ord (CombSOAtom a t s mpd pd fn v pmv fmv)
 
 instance (HasArity pd, HasArity pmv, HasArity fn, HasArity fmv, Functor (a mpd), Functor s, SimpleTerm a, SimpleTerm t) => Normalizable (CombSOAtom a t s mpd pd fn v pmv fmv) (CombSOAtom a t s mpd pd fn v pmv fmv) where
 	inject_normal = id

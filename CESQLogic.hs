@@ -34,6 +34,9 @@ import Data.Map.Strict
 import Syntax
 import AnswerSet
 import QueryLogic
+import Equiv
+import Similarity
+import Algorithm
 
 -- Here are all our assumptions / simplifications:
 --	- A literal is either an atom or its negation.
@@ -165,18 +168,31 @@ testtypes = runQuery
 type LambdaLiteral pd = Literal pd
 
 -- These newtypes are so unnecessary though.
-newtype LambdaClause pd = LambdaClause [LambdaLiteral pd]
+newtype LambdaClause pd = LambdaClause [LambdaLiteral pd] 
 newtype LambdaCNF pd = LambdaCNF [LambdaClause pd]
 
 -- These equalities should be replaced by permutation-invariant equality.
 deriving instance Eq pd => Eq (LambdaClause pd)
+deriving instance Ord pd => Ord (LambdaClause pd)
 deriving instance Functor LambdaClause
 deriving instance Foldable LambdaClause
 deriving instance Traversable LambdaClause
 deriving instance Eq pd => Eq (LambdaCNF pd)
+deriving instance Ord pd => Ord (LambdaCNF pd)
 deriving instance Functor LambdaCNF
 deriving instance Foldable LambdaCNF
 deriving instance Traversable LambdaCNF
+
+instance Similarity Literal where
+	similarities (PosLit l1) (PosLit l2) = comp (((Left l1) =:~ (Right l2)) $ empty_equiv)
+	similarities (NegLit l1) (NegLit l2) = comp (((Left l1) =:~ (Right l2)) $ empty_equiv)
+	similarities _ _ = emptycomp
+
+instance Similarity LambdaClause where
+	similarities (LambdaClause cl1) (LambdaClause cl2) = composite_similarities (SetSimilarList cl1) (SetSimilarList cl2)
+
+instance Similarity LambdaCNF where
+	similarities (LambdaCNF cnf1) (LambdaCNF cnf2) = composite_similarities (SetSimilarList cnf1) (SetSimilarList cnf2)
 
 instance Show pd => Show (LambdaClause pd) where
 	show (LambdaClause x) = show x

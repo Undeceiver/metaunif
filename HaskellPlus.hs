@@ -149,6 +149,28 @@ setlist_conss (x:xs) = first:others
 		rec = setlist_conss xs;
 		others = fx <$> rec
 
+fmap2 :: (Functor t, Functor s) => (a -> b) -> t (s a) -> t (s b)
+fmap2 f = fmap (fmap f)
+
+fmap3 :: (Functor t, Functor s, Functor u) => (a -> b) -> t (s (u a)) -> t (s (u b))
+fmap3 f = fmap (fmap2 f)
+
+-- Used to fold using fold as a function
+homofoldr :: Foldable t => (a -> b -> b) -> t a -> b -> b
+homofoldr g t z = Prelude.foldr g z t
+
+homofoldr2 :: (Foldable t, Foldable s) => (a -> b -> b) -> t (s a) -> b -> b
+homofoldr2 g = homofoldr (homofoldr g)
+
+homofoldr3 :: (Foldable t, Foldable s, Foldable u) => (a -> b -> b) -> t (s (u a)) -> b -> b
+homofoldr3 g = homofoldr (homofoldr2 g)
+
+traverse2 :: (Applicative f, Traversable t, Traversable s) => (a -> f b) -> t (s a) -> f (t (s b))
+traverse2 f = traverse (traverse f)
+
+traverse3 :: (Applicative f, Traversable t, Traversable s, Traversable u) => (a -> f b) -> t (s (u a)) -> f (t (s (u b)))
+traverse3 f = traverse (traverse2 f)
+
 -- foldMap with semigroups, with an initial element
 foldMapSG :: (Foldable f, Functor f, Semigroup m) => (a -> m) -> m -> f a -> m
 foldMapSG f i ts = Prelude.foldr (<>) i (f <$> ts)
@@ -211,6 +233,14 @@ instance (Eq v, Eq (t (UTerm t v))) => Eq (UTerm t v) where
 fromJustErr :: String -> Maybe a -> a
 fromJustErr str Nothing = error str
 fromJustErr str (Just x) = x
+
+fromLeftErr :: String -> Either a b -> a
+fromLeftErr str (Left x) = x
+fromLeftErr str (Right _) = error str
+
+fromRightErr :: String -> Either a b -> b
+fromRightErr str (Left _) = error str
+fromRightErr str (Right x) = x
 
 mb_from_filter :: (a -> Bool) -> a -> Maybe a
 mb_from_filter f x | f x = Just x
