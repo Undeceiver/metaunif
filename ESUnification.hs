@@ -2901,6 +2901,9 @@ grab_afonode ad = do
 				stids <- traverse grab_fonode usts;
 				tid <- mzoom lens_esunifdgraph_dgraph (newAnonEqDGFOEdge hid stids);
 
+				str <- show_esuvdg;
+				gtraceM True str;
+
 				return tid
 			}
 		}

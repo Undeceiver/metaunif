@@ -837,7 +837,7 @@ in_filterIdEqDGFOEdges :: [Int] -> [Int] -> [Int] -> Bool -> EqDGraph s fot sot 
 in_filterIdEqDGFOEdges hs ss ts fred eqdg es = Prelude.filter (in_filterIdEqDGFOEdge hs ss ts fred eqdg) es
 
 in_filterIdEqDGFOEdge :: [Int] -> [Int] -> [Int] -> Bool -> EqDGraph s fot sot -> Int -> Bool
-in_filterIdEqDGFOEdge hs ss ts fred eqdg e = (isJust mb_edge) && (elem_or_empty frh fhs) && (any (\s -> elem_or_empty s fss) frss) && (elem_or_empty frt fts) && ((not fred) || (not (findWithDefault False e (eqdg_redundant_foedges eqdg)))) where mb_edge = getDGFOEdge (eqdg ^. lens_eqdgraph) e; (DGFOEdge _ rh rss rt) = fromJust mb_edge; fhs = Prelude.map (getEqDGSORId eqdg) hs; fss = Prelude.map (getEqDGFORId eqdg) ss; fts = Prelude.map (getEqDGFORId eqdg) ts; frh = getEqDGSORId eqdg rh; frss = Prelude.map (getEqDGFORId eqdg) rss; frt = getEqDGFORId eqdg rt
+in_filterIdEqDGFOEdge hs ss ts fred eqdg e = (isJust mb_edge) && (elem_or_empty frh fhs) && ((Prelude.null frss) || (any (\s -> elem_or_empty s fss) frss)) && (elem_or_empty frt fts) && ((not fred) || (not (findWithDefault False e (eqdg_redundant_foedges eqdg)))) where mb_edge = getDGFOEdge (eqdg ^. lens_eqdgraph) e; (DGFOEdge _ rh rss rt) = fromJust mb_edge; fhs = Prelude.map (getEqDGSORId eqdg) hs; fss = Prelude.map (getEqDGFORId eqdg) ss; fts = Prelude.map (getEqDGFORId eqdg) ts; frh = getEqDGSORId eqdg rh; frss = Prelude.map (getEqDGFORId eqdg) rss; frt = getEqDGFORId eqdg rt
 
 in_filterEqDGSOEdges :: Ord sot => [sot] -> [sot] -> [sot] -> Bool -> EqDGraph s fot sot -> [Int] -> ST s [Int]
 in_filterEqDGSOEdges hs ss ts fred eqdg es = do
@@ -856,7 +856,7 @@ in_filterIdEqDGSOEdges :: [Int] -> [Int] -> [Int] -> Bool -> EqDGraph s fot sot 
 in_filterIdEqDGSOEdges hs ss ts fred eqdg es = Prelude.filter (in_filterIdEqDGSOEdge hs ss ts fred eqdg) es
 
 in_filterIdEqDGSOEdge :: [Int] -> [Int] -> [Int] -> Bool -> EqDGraph s fot sot -> Int -> Bool
-in_filterIdEqDGSOEdge hs ss ts fred eqdg e = (isJust mb_edge) && (elem_or_empty frh fhs) && (any (\s -> elem_or_empty s fss) frss) && (elem_or_empty frt fts) && ((not fred) || (not (findWithDefault False e (eqdg_redundant_soedges eqdg)))) where mb_edge = getDGSOEdge (eqdg ^. lens_eqdgraph) e; (DGSOEdge _ rh rss rt) = fromJust mb_edge; fhs = Prelude.map (getEqDGSORId eqdg) hs; fss = Prelude.map (getEqDGSORId eqdg) ss; fts = Prelude.map (getEqDGSORId eqdg) ts; frh = getEqDGSORId eqdg rh; frss = Prelude.map (getEqDGSORId eqdg) rss; frt = getEqDGSORId eqdg rt
+in_filterIdEqDGSOEdge hs ss ts fred eqdg e = (isJust mb_edge) && (elem_or_empty frh fhs) && ((Prelude.null frss) || (any (\s -> elem_or_empty s fss) frss)) && (elem_or_empty frt fts) && ((not fred) || (not (findWithDefault False e (eqdg_redundant_soedges eqdg)))) where mb_edge = getDGSOEdge (eqdg ^. lens_eqdgraph) e; (DGSOEdge _ rh rss rt) = fromJust mb_edge; fhs = Prelude.map (getEqDGSORId eqdg) hs; fss = Prelude.map (getEqDGSORId eqdg) ss; fts = Prelude.map (getEqDGSORId eqdg) ts; frh = getEqDGSORId eqdg rh; frss = Prelude.map (getEqDGSORId eqdg) rss; frt = getEqDGSORId eqdg rt
 
 searchOutEqDGFOEdges :: (Ord fot, Ord sot) => [Int] -> [Int] -> EqDGraph s fot sot -> Int -> [Int]
 searchOutEqDGFOEdges hs ts eqdg s = if (isNothing mb_node) then [] else (in_filterIdEqDGFOEdges hs [] ts True eqdg out) where rs = getEqDGFORId eqdg s; mb_node = getDGFONode (eqdg ^. lens_eqdgraph) rs; (DGFONode _ out _) = fromJust mb_node;
@@ -1084,6 +1084,9 @@ f_mergeEqDGFONodes lnid rnid eqdg =
 		{
 			let {eout = searchAllOutEqDGFOEdges [] [] eqdg rrnid};
 			let {ein = searchAllInEqDGFOEdges [] [] eqdg rrnid};
+			gtraceM False "EIN";
+			gtraceM False (show ein);
+			gtraceM False "EIN//";
 			let {alle = nub (eout ++ ein)};
 			let {allee = (fromJust <$>) . (Prelude.filter isJust) . (Prelude.map (getDGFOEdge (eqdg ^. lens_eqdgraph))) $ alle};
 			let {ralle = Prelude.map (\(DGFOEdge id h ss t) -> DGFOEdge id h (replaceAll rrnid rlnid ss) (replaceIf rrnid rlnid t)) allee};

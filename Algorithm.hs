@@ -187,36 +187,37 @@ f -$ a = runorder (BFS True) f a
 infix 0 -$
 
 -- Iterative deepening: Same order as BFS, but trades time for space.
-data ITD = ITD
+-- The boolean indicates whether to keep safety at the cost of adding overhead, or prioritise efficiency.
+data ITD = ITD Bool
 
-itd :: (a -> EnumProc b) -> EnumProc a -> EnumProc b
-itd f en = itd_rec 0 en False f en
+itd :: Bool -> (a -> EnumProc b) -> EnumProc a -> EnumProc b
+itd sfl f en = itd_rec sfl 0 en False f en
 
 -- In order to be able to stop when the enumeration has terminated, we carry a flag that says whether we produced any new value at all in this iteration.
-itd_rec :: Int -> EnumProc a -> Bool -> (a -> EnumProc b) -> EnumProc a -> EnumProc b
-itd_rec n full False f Empty = Empty
-itd_rec n full True f Empty = itd_rec (n+1) full False f full
-itd_rec n full fl f Halt = Halt
-itd_rec n full fl f (Error str) = Error str
-itd_rec n full fl f (Continue x) = Continue (itd_rec n full fl f x)
-itd_rec n full fl f (Produce a x) = (itd_rec_one n full fl f a x)
+itd_rec :: Bool -> Int -> EnumProc a -> Bool -> (a -> EnumProc b) -> EnumProc a -> EnumProc b
+itd_rec sfl n full False f Empty = Empty
+itd_rec sfl n full True f Empty = itd_rec sfl (n+1) full False f full
+itd_rec sfl n full fl f Halt = Halt
+itd_rec sfl n full fl f (Error str) = Error str
+itd_rec sfl n full fl f (Continue x) = itd_rec sfl n full fl f x
+itd_rec sfl n full fl f (Produce a x) = itd_rec_one sfl n full fl f a x
 
-itd_rec_one :: Int -> EnumProc a -> Bool -> (a -> EnumProc b) -> a -> EnumProc a -> EnumProc b
-itd_rec_one n full fl f a x = case (nstep n (f a)) of 
+itd_rec_one :: Bool -> Int -> EnumProc a -> Bool -> (a -> EnumProc b) -> a -> EnumProc a -> EnumProc b
+itd_rec_one sfl n full fl f a x = case (nstep n (f a)) of 
 				{
-					Empty -> Continue (itd_rec n full fl f x);
+					Empty -> itd_rec sfl n full fl f x;
 					Halt -> Halt;
 					(Error str) -> Error str;
-					(Continue y) -> Continue (itd_rec n full True f x);
-					(Produce v y) -> v --> (itd_rec n full True f x)
+					(Continue y) -> itd_rec sfl n full True f x;
+					(Produce v y) -> v --> (itd_rec sfl n full True f x)
 				}
 
 
 instance ExecOrder ITD where
-	execorder ITD = itd
+	execorder (ITD sfl) = itd sfl
 
 (|-$) :: (a .-> b) -> a -> EnumProc b
-f |-$ a = runorder ITD f a
+f |-$ a = runorder (ITD False) f a
 infix 0 |-$
 
 -- Diagonalization :: Eager/lazy, proportion horizontal/vertical.

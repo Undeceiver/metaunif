@@ -93,7 +93,6 @@ resolvable_nounif (NSOAtom lnsoa) (NSOAtom rnsoa) = case lh of
 			(rh,_) = unbuild_term (fromSOMetawrapA nrnsoa);
 
 
-
 instance ResConstraintsALL a t ss mpd pd fn v pmv fmv uv => ResLiteral (AtomDependant a t ss mpd pd fn v pmv fmv uv) (UnifSystem a t ss mpd pd fn v pmv fmv uv) (StateT uv) where
 	--resolve :: Monad m => [AtomDependant a t ss mpd pd fn v pmv fmv uv] -> [AtomDependant a t ss mpd pd fn v pmv fmv uv] -> StateT uv m (UnifSystem a t ss mpd pd fn v pmv fmv uv,AtomDependant a t ss mpd pd fn v pmv fmv uv -> AtomDependant a t ss mpd pd fn v pmv fmv uv)
 	resolve poslits neglits = do
@@ -120,7 +119,7 @@ data SOResGreedyFactorH a t ss mpd pd fn v pmv fmv uv = SOResGreedyFactorH
 instance HeuristicsI (SOResGreedyFactorH a t ss mpd pd fn v pmv fmv uv) [Literal (AtomDependant a t ss mpd pd fn v pmv fmv uv)] Computation where
 	heur_inform h _ = return h
 
-instance HeuristicsC (SOResGreedyFactorH a t ss mpd pd fn v pmv fmv uv) () (ResStep (AtomDependant a t ss mpd pd fn v pmv fmv uv)) Computation where
+instance HeuristicsC (SOResGreedyFactorH a t ss mpd pd fn v pmv fmv uv) () (ResStep (AtomDependant a t ss mpd pd fn v pmv fmv uv) (UnifSystem a t ss mpd pd fn v pmv fmv uv)) Computation where
 	heur_choose h _ steps = if (Prelude.null wstepidxs_ord) then (return (Nothing,h)) else (ecomp (uns_enum_from_list (((,h) . Just) <$> wstepidxs_ord)))
 		where
 			wsteps = build_soresgreedyfactorstep <$> steps;
@@ -128,12 +127,12 @@ instance HeuristicsC (SOResGreedyFactorH a t ss mpd pd fn v pmv fmv uv) () (ResS
 			wstepidxs_ord = sortOn (wsteps !!) wstepidxs;
 
 -- We look for the step which leaves the smallest possible clause.
-greedyfactor_step_measure :: ResStep (AtomDependant a t ss mpd pd fn v pmv fmv uv) -> Int
+greedyfactor_step_measure :: ResStep (AtomDependant a t ss mpd pd fn v pmv fmv uv) (UnifSystem a t ss mpd pd fn v pmv fmv uv) -> Int
 greedyfactor_step_measure step = poscl_len - poscl_rem + negcl_len - negcl_rem where poscl_len = length (resclause_lits ((resstep_clauses step) !! (resstep_poscl step))); negcl_len = length (resclause_lits ((resstep_clauses step) !! (resstep_negcl step))); poscl_rem = length (resstep_poslits step); negcl_rem = length (resstep_neglits step)
 
-data SOResGreedyFactorStep a t ss mpd pd fn v pmv fmv uv = SOResGreedyFactorStep {fromSOResGreedyFactorStep :: ResStep (AtomDependant a t ss mpd pd fn v pmv fmv uv), mSOResGreedyFactorStep :: Int}
+data SOResGreedyFactorStep a t ss mpd pd fn v pmv fmv uv = SOResGreedyFactorStep {fromSOResGreedyFactorStep :: ResStep (AtomDependant a t ss mpd pd fn v pmv fmv uv) (UnifSystem a t ss mpd pd fn v pmv fmv uv), mSOResGreedyFactorStep :: Int}
 
-build_soresgreedyfactorstep :: ResStep (AtomDependant a t ss mpd pd fn v pmv fmv uv) -> SOResGreedyFactorStep a t ss mpd pd fn v pmv fmv uv
+build_soresgreedyfactorstep :: ResStep (AtomDependant a t ss mpd pd fn v pmv fmv uv) (UnifSystem a t ss mpd pd fn v pmv fmv uv) -> SOResGreedyFactorStep a t ss mpd pd fn v pmv fmv uv
 build_soresgreedyfactorstep step = SOResGreedyFactorStep step (greedyfactor_step_measure step)
 
 instance Eq (SOResGreedyFactorStep a t ss mpd pd fn v pmv fmv uv) where
@@ -142,7 +141,7 @@ instance Eq (SOResGreedyFactorStep a t ss mpd pd fn v pmv fmv uv) where
 instance Ord (SOResGreedyFactorStep a t ss mpd pd fn v pmv fmv uv) where
 	s1 <= s2 = (mSOResGreedyFactorStep s1) <= (mSOResGreedyFactorStep s2)
 
-instance Heuristics (SOResGreedyFactorH a t ss mpd pd fn v pmv fmv uv) [Literal (AtomDependant a t ss mpd pd fn v pmv fmv uv)] () (ResStep (AtomDependant a t ss mpd pd fn v pmv fmv uv)) Computation where
+instance Heuristics (SOResGreedyFactorH a t ss mpd pd fn v pmv fmv uv) [Literal (AtomDependant a t ss mpd pd fn v pmv fmv uv)] () (ResStep (AtomDependant a t ss mpd pd fn v pmv fmv uv) (UnifSystem a t ss mpd pd fn v pmv fmv uv)) Computation where
 
 
 

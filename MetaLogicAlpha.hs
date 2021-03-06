@@ -427,4 +427,5 @@ instance Similarity SomeSOMetaatomPV where
 	similarities (SomeSOMetaatomP (UVar pmv1)) (SomeSOMetaatomP (UVar pmv2)) = comp ((Left pmv1) =:~ (Right pmv2) $ empty_equiv)
 	similarities (SomeSOMetaatomP (UTerm (SOP (ConstF p1)))) (SomeSOMetaatomP (UTerm (SOP (ConstF p2)))) | p1 == p2 = comp empty_equiv
 	similarities (SomeSOMetaatomP (UTerm (SOP (CompF h1 sfs1)))) (SomeSOMetaatomP (UTerm (SOP (CompF h2 sfs2)))) = do {hsim <- similarities (SomeSOMetaatomP h1) (SomeSOMetaatomP h2); ssim <- composite_similarities (PosSimilarList (SomeSOMetatermF <$> sfs1)) (PosSimilarList (SomeSOMetatermF <$> sfs2)); return (hsim <> ssim)}
+	similarities _ _ = emptycomp
 

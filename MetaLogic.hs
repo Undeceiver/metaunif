@@ -617,37 +617,45 @@ instance Read SOMetaQParcSol where
 			Nothing -> error ("Cannot read ground term or atom: " ++ xs)
 		}}}}
 
+type SOMetaResProofStep = ResProofStep SOMetaAtomDependant [SOMetaUnifEquation]
+
 resolution_heuristic :: SOResGreedyFactorH CAtomPF CTermF LambdaCNF SOPredicate OPredicate OFunction OVariable SOAMVariable SOMVariable UnifVariable
 resolution_heuristic = SOResGreedyFactorH
 
-resolve_to_constraints_metacnf :: SOMetaSignature -> SOMetaCNF -> Computation (Maybe [SOMetaUnifEquation])
+resolve_to_constraints_metacnf :: SOMetaSignature -> SOMetaCNF -> Computation (Maybe ([SOMetaUnifEquation],[SOMetaResProofStep]))
 resolve_to_constraints_metacnf sig cnf = result
 	where
 		f1 = (ADDirect <$>) :: SOMetaliteral -> SOMetaUnifLiteral;
 		f2 = (f1 <$>) :: [SOMetaliteral] -> [SOMetaUnifLiteral];
 		f3 = (f2 <$>) :: [[SOMetaliteral]] -> [[SOMetaUnifLiteral]];
 		ucnf = f3 cnf :: [[SOMetaUnifLiteral]];
-		resolved = res_computeresolve resolution_heuristic ucnf :: StateT UnifVariable Computation (Maybe [SOMetaUnifEquation]);
+		resolved = res_computeresolve resolution_heuristic ucnf :: StateT UnifVariable Computation (Maybe ([SOMetaUnifEquation],[SOMetaResProofStep]));
 		runstated = runStateT resolved (UnifVar 0);
 		result = fst <$> runstated
 
 resolution_execorder :: DFS
 resolution_execorder = DFS
+--resolution_execorder :: ITD
+--resolution_execorder = ITD False
+--resolution_execorder :: BFS
+--resolution_execorder = BFS False
+--resolution_execorder :: Diagonalize
+--resolution_execorder = default_diag
 
-resolve_to_constraints_metacnf_enum :: SOMetaSignature -> SOMetaCNF -> EnumProc [SOMetaUnifEquation]
+resolve_to_constraints_metacnf_enum :: SOMetaSignature -> SOMetaCNF -> EnumProc ([SOMetaUnifEquation],[SOMetaResProofStep])
 resolve_to_constraints_metacnf_enum sig cnf = fromJust <$> efilter isJust (runcomp resolution_execorder (resolve_to_constraints_metacnf sig cnf))
 
 unification_execorder :: Diagonalize
 unification_execorder = default_diag
 
 -- This provides an actual enumeration.
-resolve_and_unify_metacnf :: SOMetaSignature -> SOMetaCNF -> EnumProc SOMetaUnifSysSolution
+resolve_and_unify_metacnf :: SOMetaSignature -> SOMetaCNF -> EnumProc (SOMetaUnifSysSolution,[SOMetaResProofStep])
 resolve_and_unify_metacnf sig cnf = result
 	where
 		compres = resolve_to_constraints_metacnf sig cnf;
 		rig_compres = rigidify_alg resolution_execorder compres;
-		fullsystems = fmap (fmap (\unifeqs -> USys sig unifeqs)) rig_compres;
-		f_sols = (\mb_fullsys -> case mb_fullsys of {Nothing -> comp Nothing; Just fullsys -> Just <$> enumAS (ImplicitAS fullsys)});
+		fullsystems = fmap (fmap (\(unifeqs,proof) -> (USys sig unifeqs,proof))) rig_compres;
+		f_sols = (\mb_fullsys -> case mb_fullsys of {Nothing -> comp Nothing; Just (fullsys,proof) -> (\rsol -> Just (rsol,proof)) <$> enumAS (ImplicitAS fullsys)});
 		c_sols = cunfactor f_sols;
 		result_comp = c_sols ... fullsystems;
 		enum_maybe = runcomp unification_execorder result_comp;
