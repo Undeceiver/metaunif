@@ -270,11 +270,8 @@ type ESMGUConstraints t pd fn v sov = (Ord sov, SimpleTerm t, Eq fn, HasArity fn
 
 
 
--- A dependency graph is another implicit solution to a system of unification equations (an intermediate one)
--- instance Implicit **DEPENDENCY GRAPH** (UnifSysSolution t fn v sov uv) where
-
 -- We work with a clear mapping between levels and unifier variables. This makes things a lot easier.
-type ESMGUConstraintsU t pd fn v sov uv = (ESMGUConstraints t pd fn v sov, Show uv, Ord uv)
+type ESMGUConstraintsU t pd fn v sov uv = (ESMGUConstraints t pd fn v sov, Show uv, Ord uv, Variable uv, Variabilizable uv)
 type ESMGUConstraintsPdPmv pd pmv = (Ord pd, Ord pmv, Eq pd, Eq pmv, Show pmv, Show pd, HasArity pd, HasArity pmv, Variable pmv, Variabilizable pmv, ChangeArity pmv)
 type ESMGUConstraintsUPmv t pd fn v pmv fmv uv = (ESMGUConstraintsU t pd fn v fmv uv, ESMGUConstraintsPdPmv pd pmv)
 type ESMGUConstraintsA a = (SimpleTerm a)
@@ -399,6 +396,9 @@ failVDGraph = do
 failVDGraphTrace :: Bool -> String -> StateT (ESUnifVDGraph s t mpd pd fn v pmv fmv uv) (ST s) ()
 failVDGraphTrace flag str = gtrace flag str failVDGraph
 
+failedRESUnifVDGraph :: ESMGUConstraintsUPmv t pd fn v pmv fmv uv => SOSignature mpd pd fn v pmv fmv -> RESUnifVDGraph t mpd pd fn v pmv fmv uv
+failedRESUnifVDGraph sig = doRESUnifVDGraph sig failVDGraph
+
 show_esuvdg :: (ESMGUConstraintsUPmv t pd fn v pmv fmv uv) => StateT (ESUnifVDGraph s t mpd pd fn v pmv fmv uv) (ST s) String
 show_esuvdg = do
 	{
@@ -510,6 +510,214 @@ divideOverVFoEdge e sid = do
 divideDepOverVFoEdge :: ESMGUConstraintsUPmv t pd fn v pmv fmv uv => ESUnifVFoEdge s t pd fn v pmv fmv uv -> TermDependant t fn v fmv uv -> StateT (ESUnifVDGraph s t mpd pd fn v pmv fmv uv) (ST s) (TermDependant t fn v fmv uv)
 divideDepOverVFoEdge e fot = do {uv <- factorizeVFoEdge e; return (TDUnif uv fot)}
 
+mergeRESUnifVDGraph :: ESMGUConstraintsUPmv t pd fn v pmv fmv uv => RESUnifVDGraph t mpd pd fn v pmv fmv uv -> RESUnifVDGraph t mpd pd fn v pmv fmv uv -> RESUnifVDGraph t mpd pd fn v pmv fmv uv
+mergeRESUnifVDGraph resuvdg1 resuvdg2 = doRESUnifVDGraph sig (mergeESUnifVDGraph (unRESUnifVDGraph resuvdg1) (unRESUnifVDGraph resuvdg2))
+	-- We pick the signature from the first one, WE ASSUME THEY ARE EQUAL!!
+	where sig = sig_RESUnifVDGraph resuvdg1
+
+-- Merges g1 unto g2
+-- Note we do not actually merge the signatures. We assume they are the same. This is important!
+-- data ESUnifVDGraph s t mpd pd fn v pmv fmv uv = ESUnifVDGraph {esunifdgraph :: ESUnifDGraph s t pd fn v pmv fmv uv, esunifdgraph_vfoedges :: [ESUnifVFoEdge s t pd fn v pmv fmv uv], esunifdgraph_sosig :: SOSignature mpd pd fn v pmv fmv, esunifdgraph_failed :: Bool}
+mergeESUnifVDGraph :: ESMGUConstraintsUPmv t pd fn v pmv fmv uv => StateT (ESUnifVDGraph s t mpd pd fn v pmv fmv uv) (ST s) x -> StateT (ESUnifVDGraph s t mpd pd fn v pmv fmv uv) (ST s) y -> StateT (ESUnifVDGraph s t mpd pd fn v pmv fmv uv) (ST s) ()
+mergeESUnifVDGraph g1 g2 = do
+	{
+		st <- get;
+		withLeftStateT (do
+			{				
+				onLeftStateT $ g1;
+				onRightStateT $ g2;
+
+				gtraceM False "1";
+				sg1 <- onLeftStateT $ get;
+				let {eqdg1 = esunifdgraph sg1; foelements1 = eqdg_foelements eqdg1; fonodes1 = keys foelements1; soelements1 = eqdg_soelements eqdg1; sonodes1 = keys soelements1};
+				-- Find the maximum unifier variable on 2, and shift all the unifier variables in 1 after that one.
+				let {maxuv = mergeESUnifVDGraph_maxuv (snd <$> toList foelements1)};
+				-- Move over all the nodes and the elements they contain.								
+				gtraceM False "2";
+				rfoidpairs <- traverse (mergeESUnifVDGraph_ffonode maxuv foelements1) fonodes1;
+				rsoidpairs <- traverse (mergeESUnifVDGraph_fsonode soelements1) sonodes1;
+				show1 <- onRightStateT $ show_esuvdg;
+				gtraceM False "SHOW1";
+				gtraceM False show1;
+				gtraceM False "SOIDPAIRS";
+				gtraceM False (show rsoidpairs);
+				gtraceM False "3";
+				let {rfoids = fromList rfoidpairs; rsoids = fromList rsoidpairs};
+				-- Move over horizontal edges.				
+				traverse (mergeESUnifVDGraph_fsonodeedges rfoids rsoids) sonodes1;
+				show2 <- onRightStateT $ show_esuvdg;
+				gtraceM False "SHOW2";
+				gtraceM False show2;
+				-- Move over vertical edges.
+				gtraceM False "4";
+				let {vfoedges1 = esunifdgraph_vfoedges sg1};				
+				traverse (mergeESUnifVDGraph_vfoedge maxuv rfoids) vfoedges1;
+				-- Finally, check the failed flag. We maybe should do this first and avoid the rest if it's a fail?
+				show3 <- onRightStateT $ show_esuvdg;
+				gtraceM False "SHOW3";
+				gtraceM False show3;
+				gtraceM False "5";
+				let {failed1 = esunifdgraph_failed sg1};
+				sg2 <- onRightStateT $ get;
+				let {rsg2 = lens_esunifdgraph_failed ..~ (failed1 ||) $ sg2};
+				onRightStateT $ put rsg2;
+
+				gtraceM False "6";
+				
+				pass
+			}) st;
+		pass;
+	}
+
+mergeESUnifVDGraph_maxuv :: (Variable uv, Ord uv) => [[TermDependant t fn v fmv uv]] -> Int
+mergeESUnifVDGraph_maxuv [] = 0
+mergeESUnifVDGraph_maxuv ([]:tdss) = mergeESUnifVDGraph_maxuv tdss
+mergeESUnifVDGraph_maxuv (((TDDirect _):tds):tdss) = mergeESUnifVDGraph_maxuv (tds:tdss)
+mergeESUnifVDGraph_maxuv (((TDUnif uv _):tds):tdss) = max (getVarID uv) (mergeESUnifVDGraph_maxuv (tds:tdss))
+
+mergeESUnifVDGraph_refreshfo :: (Variable uv, Ord uv, Variabilizable uv) => Int -> TermDependant t fn v fmv uv -> TermDependant t fn v fmv uv
+mergeESUnifVDGraph_refreshfo maxuv (TDDirect x) = TDDirect x
+mergeESUnifVDGraph_refreshfo maxuv (TDUnif uv x) = TDUnif (from_var (IntVar ((getVarID uv) + maxuv + 1))) (mergeESUnifVDGraph_refreshfo maxuv x)
+
+mergeESUnifVDGraph_vfoedge :: ESMGUConstraintsUPmv t pd fn v pmv fmv uv => Int -> Map Int Int -> ESUnifVFoEdge s t pd fn v pmv fmv uv -> TwoStateT (ESUnifVDGraph s t mpd pd fn v pmv fmv uv) (ESUnifVDGraph s t mpd pd fn v pmv fmv uv) (ST s) ()
+mergeESUnifVDGraph_vfoedge maxuv nmap ve = do
+	{
+		let {s = esunifvfoedge_source ve; t = esunifvfoedge_target ve; uv = esunifvfoedge_level ve};
+
+		rs <- mergeESUnifVDGraph_getrfonode nmap s;
+		rt <- mergeESUnifVDGraph_getrfonode nmap t;
+
+		let {ruv = from_var (IntVar ((getVarID uv) + maxuv + 1))};
+
+		onRightStateT $ addVFoEdge rs rt ruv;
+
+		pass
+	}
+
+mergeESUnifVDGraph_ffonode :: ESMGUConstraintsUPmv t pd fn v pmv fmv uv => Int -> Map Int [TermDependant t fn v fmv uv] -> Int -> TwoStateT (ESUnifVDGraph s t mpd pd fn v pmv fmv uv) (ESUnifVDGraph s t mpd pd fn v pmv fmv uv) (ST s) (Int,Int)
+mergeESUnifVDGraph_ffonode maxuv foelements1 nid = onRightStateT $ mzoom lens_esunifdgraph_dgraph $ do
+	{
+		let {fots = foelements1 ! nid; rfots = mergeESUnifVDGraph_refreshfo maxuv <$> fots};
+		n <- newAnonEqDGFONode;
+		traverse (mergeESUnifVDGraph_mergefonode n) rfots;
+		rnid <- getSTRelativeEqDGFoId n;
+
+		return (nid,rnid);
+	}
+
+mergeESUnifVDGraph_mergefonode :: ESMGUConstraintsUPmv t pd fn v pmv fmv uv => ESUnifRelFoId s t pd fn v pmv fmv uv -> TermDependant t fn v fmv uv -> StateT (ESUnifDGraph s t pd fn v pmv fmv uv) (ST s) ()
+mergeESUnifVDGraph_mergefonode n fot = do
+	{
+		nfot <- newEqDGFONode fot;
+		mergeEqDGFONodes n nfot;
+
+		pass
+	}
+
+mergeESUnifVDGraph_fsonode :: ESMGUConstraintsUPmv t pd fn v pmv fmv uv => Map Int [ESUnifDGSONode pd fn pmv fmv] -> Int -> TwoStateT (ESUnifVDGraph s t mpd pd fn v pmv fmv uv) (ESUnifVDGraph s t mpd pd fn v pmv fmv uv) (ST s) (Int,Int)
+mergeESUnifVDGraph_fsonode soelements1 nid = onRightStateT $ mzoom lens_esunifdgraph_dgraph $ do
+	{
+		let {sots = soelements1 ! nid};
+		n <- newAnonEqDGSONode;
+		traverse (mergeESUnifVDGraph_mergesonode n) sots;
+		rnid <- getSTRelativeEqDGSoId n;
+
+		return (nid,rnid);
+	}
+
+mergeESUnifVDGraph_mergesonode :: ESMGUConstraintsUPmv t pd fn v pmv fmv uv => ESUnifRelSoId s t pd fn v pmv fmv uv -> ESUnifDGSONode pd fn pmv fmv -> StateT (ESUnifDGraph s t pd fn v pmv fmv uv) (ST s) ()
+mergeESUnifVDGraph_mergesonode n sot = do
+	{
+		nsot <- newEqDGSONode sot;
+		mergeEqDGSONodes n nsot;
+
+		pass
+	}
+
+
+mergeESUnifVDGraph_getrfonode :: ESMGUConstraintsUPmv t pd fn v pmv fmv uv => Map Int Int -> ESUnifRelFoId s t pd fn v pmv fmv uv -> TwoStateT (ESUnifVDGraph s t mpd pd fn v pmv fmv uv) (ESUnifVDGraph s t mpd pd fn v pmv fmv uv) (ST s) (ESUnifRelFoId s t pd fn v pmv fmv uv)
+mergeESUnifVDGraph_getrfonode nmap nrid = do
+	{
+		nid <- onLeftStateT $ mzoom lens_esunifdgraph_dgraph $ getSTRelativeEqDGFoId nrid;
+		let {rid = nmap ! nid};
+		eqdg <- onRightStateT $ mzoom lens_esunifdgraph_dgraph $ get;
+		return (directEqDGFoId (getEqDGFORId eqdg rid))
+	}
+
+mergeESUnifVDGraph_getrsonode :: ESMGUConstraintsUPmv t pd fn v pmv fmv uv => Map Int Int -> ESUnifRelSoId s t pd fn v pmv fmv uv -> TwoStateT (ESUnifVDGraph s t mpd pd fn v pmv fmv uv) (ESUnifVDGraph s t mpd pd fn v pmv fmv uv) (ST s) (ESUnifRelSoId s t pd fn v pmv fmv uv)
+mergeESUnifVDGraph_getrsonode nmap nrid = do
+	{
+		nid <- onLeftStateT $ mzoom lens_esunifdgraph_dgraph $ getSTRelativeEqDGSoId nrid;
+		gtraceM False ("NID: " ++ (show nid));
+		gtraceM False ("NMAP: " ++ (show nmap));
+		let {rid = nmap ! nid};
+		gtraceM False ("RID: " ++ (show rid));
+		eqdg <- onRightStateT $ mzoom lens_esunifdgraph_dgraph $ get;
+		return (directEqDGSoId (getEqDGSORId eqdg rid))
+	}
+
+mergeESUnifVDGraph_ffoedge :: ESMGUConstraintsUPmv t pd fn v pmv fmv uv => Map Int Int -> Map Int Int -> Int -> TwoStateT (ESUnifVDGraph s t mpd pd fn v pmv fmv uv) (ESUnifVDGraph s t mpd pd fn v pmv fmv uv) (ST s) ()
+mergeESUnifVDGraph_ffoedge fonmap sonmap eid = do
+	{
+		ss <- onLeftStateT $ mzoom lens_esunifdgraph_dgraph $ eqDGFOEdge_sources eid;
+		h <- onLeftStateT $ mzoom lens_esunifdgraph_dgraph $ eqDGFOEdge_head eid;
+		t <- onLeftStateT $ mzoom lens_esunifdgraph_dgraph $ eqDGFOEdge_target eid;
+
+		rss <- traverse (mergeESUnifVDGraph_getrfonode fonmap) ss;
+		rh <- mergeESUnifVDGraph_getrsonode sonmap h;
+		rt <- mergeESUnifVDGraph_getrfonode fonmap t;
+
+		ssid <- onLeftStateT $ mzoom lens_esunifdgraph_dgraph $ traverse getSTRelativeEqDGFoId ss;
+		hid <- onLeftStateT $ mzoom lens_esunifdgraph_dgraph $ getSTRelativeEqDGSoId h;
+		tid <- onLeftStateT $ mzoom lens_esunifdgraph_dgraph $ getSTRelativeEqDGFoId t;
+
+		rssid <- onRightStateT $ mzoom lens_esunifdgraph_dgraph $ traverse getSTRelativeEqDGFoId rss;
+		rhid <- onRightStateT $ mzoom lens_esunifdgraph_dgraph $ getSTRelativeEqDGSoId rh;
+		rtid <- onRightStateT $ mzoom lens_esunifdgraph_dgraph $ getSTRelativeEqDGFoId rt;
+
+		gtraceM False ("SSID: " ++ (show ssid));
+		gtraceM False ("HID: " ++ (show hid));
+		gtraceM False ("TID: " ++ (show tid));
+		gtraceM False ("RSSID: " ++ (show rssid));
+		gtraceM False ("RHID: " ++ (show rhid));
+		gtraceM False ("RTID: " ++ (show rtid));
+
+		onRightStateT $ mzoom lens_esunifdgraph_dgraph $ newEqDGFOEdge rh rss rt;
+
+		pass;
+	}
+
+mergeESUnifVDGraph_fsoedge :: ESMGUConstraintsUPmv t pd fn v pmv fmv uv => Map Int Int -> Int -> TwoStateT (ESUnifVDGraph s t mpd pd fn v pmv fmv uv) (ESUnifVDGraph s t mpd pd fn v pmv fmv uv) (ST s) ()
+mergeESUnifVDGraph_fsoedge nmap eid = do
+	{
+		ss <- onLeftStateT $ mzoom lens_esunifdgraph_dgraph $ eqDGSOEdge_sources eid;
+		h <- onLeftStateT $ mzoom lens_esunifdgraph_dgraph $ eqDGSOEdge_head eid;
+		t <- onLeftStateT $ mzoom lens_esunifdgraph_dgraph $ eqDGSOEdge_target eid;
+
+		rss <- traverse (mergeESUnifVDGraph_getrsonode nmap) ss;
+		rh <- mergeESUnifVDGraph_getrsonode nmap h;
+		rt <- mergeESUnifVDGraph_getrsonode nmap t;		
+
+		onRightStateT $ mzoom lens_esunifdgraph_dgraph $ newEqDGSOEdge rh rss rt;
+
+		pass;
+	}
+
+
+mergeESUnifVDGraph_fsonodeedges :: ESMGUConstraintsUPmv t pd fn v pmv fmv uv => Map Int Int -> Map Int Int -> Int -> TwoStateT (ESUnifVDGraph s t mpd pd fn v pmv fmv uv) (ESUnifVDGraph s t mpd pd fn v pmv fmv uv) (ST s) ()
+mergeESUnifVDGraph_fsonodeedges fonmap sonmap hid = do
+	{
+		eqdg <- onLeftStateT $ mzoom lens_esunifdgraph_dgraph $ get;
+		let {hrelid = directEqDGSoId (getEqDGSORId eqdg hid)};
+		foeids <- onLeftStateT $ mzoom lens_esunifdgraph_dgraph $ st_searchAllHEqDGFOEdges [] [] hrelid;
+		soeids <- onLeftStateT $ mzoom lens_esunifdgraph_dgraph $ st_searchAllHEqDGSOEdges [] [] hrelid;
+
+		traverse (mergeESUnifVDGraph_ffoedge fonmap sonmap) foeids;
+		traverse (mergeESUnifVDGraph_fsoedge sonmap) soeids;
+
+		pass;
+	}
+
 -- Operation types for unification dependency graphs
 -- We have two levels of operations.
 -- The low level ones work directly on the graph itself and are for propagating changes until everything that needs to be done is done, in a relatively efficient manner. These are formalized with the Operable types.
@@ -557,6 +765,9 @@ unRESUnifVDGraph resuvdg = StateT (\_ -> do {esuvdg <- (fromRESUnifVDGraph resuv
 
 doRESUnifVDGraph :: ESMGUConstraintsUPmv t pd fn v pmv fmv uv => SOSignature mpd pd fn v pmv fmv -> (forall s. StateT (ESUnifVDGraph s t mpd pd fn v pmv fmv uv) (ST s) a) -> RESUnifVDGraph t mpd pd fn v pmv fmv uv
 doRESUnifVDGraph sig st = RESUnifVDGraph (snd <$> (runStateT st (emptyVDGraph sig)))
+
+sig_RESUnifVDGraph :: ESMGUConstraintsUPmv t pd fn v pmv fmv uv => RESUnifVDGraph t mpd pd fn v pmv fmv uv -> SOSignature mpd pd fn v pmv fmv
+sig_RESUnifVDGraph resuvdg = runST (esunifdgraph_sosig <$> fromRESUnifVDGraph resuvdg)
 
 instance ESMGUConstraintsUPmv t pd fn v pmv fmv uv => Show (RESUnifVDGraph t mpd pd fn v pmv fmv uv) where
 	show resuvdg = runST (do
@@ -1668,12 +1879,12 @@ factorize_get_foe_candidate :: ESMGUConstraintsUPmv t pd fn v pmv fmv uv => ESUn
 factorize_get_foe_candidate fot = do
 	{
 		ines <- mzoom lens_esunifdgraph_dgraph (st_searchInEqDGFOEdges [] [] fot);
-		gtraceM True "factorize_get_foe_candidate - ines:";
-		gtraceM True (show ines);
+		gtraceM False "factorize_get_foe_candidate - ines:";
+		gtraceM False (show ines);
 		let {ffil = (\ine -> do {ss <- mzoom lens_esunifdgraph_dgraph (eqDGFOEdge_sources ine); t <- mzoom lens_esunifdgraph_dgraph (eqDGFOEdge_target ine); mzoom lens_esunifdgraph_dgraph (m_any (eqSTRelativeEqDGFoIds t) ss)})};
 		rines <- m_filter ffil ines;
-		gtraceM True "factorize_get_foe_candidate - rines:";
-		gtraceM True (show rines);
+		gtraceM False "factorize_get_foe_candidate - rines:";
+		gtraceM False (show rines);
 		-- We assume here that all nodes either have a dependant or incoming horizontal edges.
 		let {ffil2 = (\ine -> do
 			{
@@ -1681,12 +1892,12 @@ factorize_get_foe_candidate fot = do
 				hts <- mzoom lens_esunifdgraph_dgraph (getEquivDGSONodes h);
 				let {fhts = Prelude.map from_fsonode (Prelude.filter is_fsonode hts); phts = Prelude.map from_psonode (Prelude.filter is_psonode hts)};
 				hines <- mzoom lens_esunifdgraph_dgraph (st_searchInEqDGSOEdges [] [] h);
-				gtraceM True "factorize_get_foe_candidate - ine:";
-				gtraceM True (show ine);
-				gtraceM True "factorize_get_foe_candidate - fhts:";
-				gtraceM True (show fhts);
-				gtraceM True "factorize_get_foe_candidate - phts:";
-				gtraceM True (show phts);
+				gtraceM False "factorize_get_foe_candidate - ine:";
+				gtraceM False (show ine);
+				gtraceM False "factorize_get_foe_candidate - fhts:";
+				gtraceM False (show fhts);
+				gtraceM False "factorize_get_foe_candidate - phts:";
+				gtraceM False (show phts);
 				return ((Prelude.null hines) && (all isvar_sot fhts) && (all isvar_soa phts))
 			})};
 		rrines <- m_filter ffil2 rines;
@@ -2902,7 +3113,7 @@ grab_afonode ad = do
 				tid <- mzoom lens_esunifdgraph_dgraph (newAnonEqDGFOEdge hid stids);
 
 				str <- show_esuvdg;
-				gtraceM True str;
+				gtraceM False str;
 
 				return tid
 			}

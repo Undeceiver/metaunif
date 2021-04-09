@@ -15,6 +15,8 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE TupleSections #-}
+{-# LANGUAGE TypeFamilies #-}
 module HaskellPlus where
 
 import Data.Bifunctor
@@ -32,6 +34,7 @@ import Control.Monad.ST
 import Data.Functor.Compose
 import Data.UnionFind.ST
 import Control.Monad.Except
+import Debug.Trace
 
 -- Here I put functions/types that I feel should be part of Haskell but aren't. It is likely that at least half of them ACTUALLY are part of Haskell, but I wasn't smart enough to find them.
 
@@ -743,3 +746,67 @@ instance Semigroup e => MonadError e (SimpleMonadError e) where
 	throwError e = SMError e
 	catchError (SMOk a) handler = SMOk a
 	catchError (SMError e) handler = handler e
+
+
+-- Working with multiple states at the same time
+-- We do this for two, but it can be done for many as well.
+
+type TwoStateT sl sr m a = StateT (sl,sr) m a
+
+onLeftStateT :: Monad m => StateT sl m a -> TwoStateT sl sr m a
+onLeftStateT (StateT f) = StateT (onLeftStateT_f f)
+
+onLeftStateT_f :: Monad m => (sl -> m (a,sl)) -> (sl,sr) -> m (a, (sl,sr))
+onLeftStateT_f f (sl,sr) = fmap (bimap id (,sr)) (f sl)
+
+onRightStateT :: Monad m => StateT sr m a -> TwoStateT sl sr m a
+onRightStateT (StateT f) = StateT (onRightStateT_f f)
+
+onRightStateT_f :: Monad m => (sr -> m (a,sr)) -> (sl,sr) -> m (a, (sl,sr))
+onRightStateT_f f (sl,sr) = fmap (bimap id (sl,)) (f sr)
+
+withLeftStateT :: Monad m => TwoStateT sl sr m a -> sl -> StateT sr m (a,sl)
+withLeftStateT st sl = do
+	{
+		sr <- get;
+		(ra,(rsl,rsr)) <- lift (runStateT st (sl,sr));
+		put rsr;
+		return (ra,rsl)
+	}
+
+withRightStateT :: Monad m => TwoStateT sl sr m a -> sr -> StateT sl m (a,sr)
+withRightStateT st sr = do
+	{
+		sl <- get;
+		(ra,(rsl,rsr)) <- lift (runStateT st (sl,sr));
+		put rsl;
+		return (ra,rsr)
+	}
+
+
+type Erase a = Const () a
+
+erased :: Erase a
+erased = Const ()
+
+-- This exists in standard libraries, but I can't get them to work, so I make my own kind
+type family (as :: [k]) ++ (bs :: [k]) :: [k] where
+	'[] ++ bs = bs
+	(a:as) ++ bs = a:(as ++ bs)
+
+(£) :: a -> (a -> b) -> b
+(£) = flip ($)
+infixl 9 £
+
+(£$) :: a -> (a -> b) -> b
+(£$) = (£)
+infixr 1 £$
+
+-- This is the re-contra-double-opposite. The point of this is to be able to have things like:
+-- 	f = (\x -> \y -> \z -> \w -> [x,y,z,w])
+--	3 £$ 4 £$ f $£ 5 $£ 6 = [4,3,5,6]
+-- The ultimate infix notation.
+
+($£) :: (a -> b) -> a -> b
+($£) = ($)
+infixl 0 $£

@@ -143,6 +143,24 @@ instance Ord (SOResGreedyFactorStep a t ss mpd pd fn v pmv fmv uv) where
 
 instance Heuristics (SOResGreedyFactorH a t ss mpd pd fn v pmv fmv uv) [Literal (AtomDependant a t ss mpd pd fn v pmv fmv uv)] () (ResStep (AtomDependant a t ss mpd pd fn v pmv fmv uv) (UnifSystem a t ss mpd pd fn v pmv fmv uv)) Computation where
 
+soresolve_to_constraints :: forall a t ss mpd pd fn v pmv fmv uv. ResConstraintsALL a t ss mpd pd fn v pmv fmv uv => SOSignature mpd pd fn v pmv fmv -> [[Literal (CombSOAtom a t ss mpd pd fn v pmv fmv)]] -> Computation (Maybe ([UnifEquation a t ss mpd pd fn v pmv fmv uv],[ResProofStep (AtomDependant a t ss mpd pd fn v pmv fmv uv) [UnifEquation a t ss mpd pd fn v pmv fmv uv]]))
+soresolve_to_constraints sig cnf = result
+	where
+		f1 = (ADDirect <$>);
+		f2 = (f1 <$>);
+		f3 = (f2 <$>);
+		ucnf = f3 cnf;
+		h = SOResGreedyFactorH :: SOResGreedyFactorH a t ss mpd pd fn v pmv fmv uv;
+		resolved = res_computeresolve h ucnf;
+		runstated = runStateT resolved (from_var (IntVar 0));
+		result = fst <$> runstated
 
+soresolve_to_constraints_only :: ResConstraintsALL a t ss mpd pd fn v pmv fmv uv => SOSignature mpd pd fn v pmv fmv -> [[Literal (CombSOAtom a t ss mpd pd fn v pmv fmv)]] -> Computation (Maybe [UnifEquation a t ss mpd pd fn v pmv fmv uv])
+soresolve_to_constraints_only sig cnf = (fst <$>) <$> soresolve_to_constraints sig cnf
 
+-- This function does not provide any level of normalization on the resulting graph
+soresolve_to_dgraph :: ResConstraintsALL a t ss mpd pd fn v pmv fmv uv => SOSignature mpd pd fn v pmv fmv -> [[Literal (CombSOAtom a t ss mpd pd fn v pmv fmv)]] -> Computation (Maybe (RESUnifVDGraph t mpd pd fn v pmv fmv uv))
+soresolve_to_dgraph sig cnf = ((\usys -> doRESUnifVDGraph sig (dgraph_from_usys sig usys)) <$>) <$> (soresolve_to_constraints_only sig cnf)
 
+soresolve_to_dgraph_filter :: ResConstraintsALL a t ss mpd pd fn v pmv fmv uv => SOSignature mpd pd fn v pmv fmv -> [[Literal (CombSOAtom a t ss mpd pd fn v pmv fmv)]] -> Computation (RESUnifVDGraph t mpd pd fn v pmv fmv uv)
+soresolve_to_dgraph_filter sig cnf = algalgfilter (soresolve_to_dgraph sig cnf)

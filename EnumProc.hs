@@ -727,7 +727,6 @@ step (Error x) = Error x
 nstep :: Int -> EnumProc t -> EnumProc t
 nstep n x = (iterate step x) !! n
 
-
 get_nstep :: Int -> EnumProc t -> [t]
 get_nstep 0 x = []
 get_nstep n Empty = []
@@ -748,6 +747,9 @@ get_nstep_full n (Error str) = (error str,Error str)
 get_nstep_full n (Continue x) = get_nstep_full (n-1) x
 get_nstep_full n (Produce v x) = (v:rf,rr) where (rf,rr) = get_nstep_full (n-1) x
 
+get_nstep_en :: Int -> EnumProc t -> EnumProc t
+-- This is not really unsafe, because we know the list will be finite by construction.
+get_nstep_en n en = uns_enum_from_list (get_nstep n en)
 
 -- UNSAFE: This function may produce steps that do not terminate (ass 1).
 uns_next_result :: EnumProc t -> EnumProc t

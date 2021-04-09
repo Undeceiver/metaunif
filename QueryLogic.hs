@@ -8,6 +8,7 @@
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE DeriveTraversable #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE PolyKinds #-}
@@ -34,7 +35,7 @@ import EnumProc
 import Data.Bifunctor
 
 -- Conceptually, SequentialQ is like an inner join performed quadratically, while ImplicitQ is like an inner join performed via some form of match algorithm. ProductQ is an outer join.
--- Intersection is a nested query in the where clause.
+-- IntersectionQ is a nested query in the where clause.
 -- Note that we read in function composition order: queries to the right are performed first.
 -- The variables in the select clause of the BaseQ is not necessarily all the free variables. There may be other free variables that are input from an argument map and replaced thus by elements.
 -- Variables in the select clause is a subset of the free variables in a query.
@@ -63,7 +64,7 @@ infix 7 $<=
 q1 $<=| q2 = (\m -> IntersectionQ q1 m q2)
 infix 7 $<=|
 
-data QuerySelect v r = QVar v | QConst r
+data QuerySelect v r = QVar v | QConst r deriving (Eq, Ord)
 type (v |<- r) = QuerySelect v r
 infix 7 |<-
 
@@ -85,17 +86,40 @@ instance (Read v, Read r) => Read (QuerySelect v r) where
 			Nothing -> error ("Could not read select clause in query: " ++ xs)
 		}}
 
-type QArgumentMap v r = (v := ((v := r) -> r))
+data QResultSet v r = QResultSet {qresultset_sel :: [v |<- r], qresultset_result :: v := r}
+type (v =<- r) = QResultSet v r
+infix 7 =<-
+
+-- I don't think so, but it is a possibility that this instance might give issues if two result sets are the same with different select clauses (???)
+deriving instance (Eq v, Eq r) => Eq (QResultSet v r)
+
+instance (Ord v, Show v, Show r) => Show (QResultSet v r) where
+	show (QResultSet sel res) = show_qresultset res sel
+	
+show_qresultset :: (Ord v, Show v, Show r) => (v := r) -> [v |<- r] -> String
+show_qresultset res [] = ""
+show_qresultset res [r] = show_qresultset_element res r
+show_qreulstset res (r:rs) = (show_qresultset_element res r) ++ ", " ++ (show_qresultset res rs)
+
+show_qresultset_element :: (Ord v, Show v, Show r) => (v := r) -> (v |<- r) -> String
+show_qresultset_element res (QVar v) = (show v) ++ " := " ++ (show (res ! v))
+show_qresultset_element res (QConst r) = (show r)
+
+-- Creates a result set with no constants, only the variables in the given map, and exactly those variables.
+qresultset_from_map :: (v := r) -> (v =<- r)
+qresultset_from_map m = QResultSet (fmap QVar (keys m)) m
+
+type QArgumentMap v r = (v := ((v =<- r) -> r))
 type (v :->= r) = QArgumentMap v r
 infix 7 :->=
 
-instance Functional (QArgumentMap v r) (v := r) (AnswerSet s (v := r)) where
-	tofun argmap m = SingleAS (fmap ($ m) argmap)
+instance Functional (QArgumentMap v r) (v =<- r) (AnswerSet s (v =<- r)) where
+	tofun argmap m = SingleAS (qresultset_from_map (fmap ($ m) argmap))
 
 data ProductQOP = ProductQOP
 
-instance Ord v => Functional ProductQOP (v := r, v := r) (AnswerSet s (v := r)) where
-	tofun ProductQOP (m1,m2) = SingleAS (Data.List.foldr (\(v,r) -> Data.Map.Strict.insert v r) m1 (assocs m2))
+instance Ord v => Functional ProductQOP (v =<- r, v =<- r) (AnswerSet s (v =<- r)) where
+	tofun ProductQOP (r1,r2) = SingleAS (QResultSet (s1 ++ s2) (Data.List.foldr (\(v,r) -> Data.Map.Strict.insert v r) m1 (assocs m2))) where s1 = qresultset_sel r1; m1 = qresultset_result r1; s2 = qresultset_sel r2; m2 = qresultset_result r2
 
 instance (Eq v, Substitutable r v r) => Substitutable (v |<- r) v r where
 	subst v2 r (QVar v1) | v1 == v2 = QConst r
@@ -128,12 +152,12 @@ qSelectVars (ImplicitQ q1 argmap q2) = (qSelectVars q1) Data.List.\\ (keys argma
 qSelectVars (ProductQ q1 q2) = (qSelectVars q1) ++ (qSelectVars q2)
 qSelectVars (IntersectionQ q1 argmap q2) = (qSelectVars q1) Data.List.\\ (keys argmap)
 
-instance (Eq v, Substitutable r v r, Ord v) => Substitutable (QArgumentMap v r) v r where
-	subst v2 r = fmap (\f -> (\m -> f (Data.Map.Strict.insert v2 r m)))
+instance (Eq v, Ord v) => Substitutable (QArgumentMap v r) v r where
+	subst v2 r = fmap (\f -> (\(QResultSet sel res) -> f (QResultSet sel (Data.Map.Strict.insert v2 r res))))
 
 newtype VarSubstArgumentMap v r = VarSubstArgumentMap {fromVarSubstArgumentMap :: QArgumentMap v r}
 instance (Eq v, Ord v) => Substitutable (VarSubstArgumentMap v r) v v where
-	subst v2 v3 m = VarSubstArgumentMap (Data.Map.Strict.insert v2 (\m2 -> m2 ! v3) (fromVarSubstArgumentMap m))
+	subst v2 v3 m = VarSubstArgumentMap (Data.Map.Strict.insert v2 (\(QResultSet sel m2) -> m2 ! v3) (fromVarSubstArgumentMap m))
 
 instance (Eq v, Substitutable r v r, Substitutable q v r, Ord v) => Substitutable (Query q v r) v r where
 	subst v2 r (BaseQ vs q) = BaseQ (subst v2 r vs) (subst v2 r q)
@@ -159,37 +183,38 @@ instance (Eq v, Substitutable q v v, Ord v) => Substitutable (VarSubstQuery q v 
 
 
 class Queriable q v t r s | q v t -> r s where
-	runBaseQ :: t -> [v |<- r] -> q -> AnswerSet s (v := r)
+	runBaseQ :: t -> [v |<- r] -> q -> AnswerSet s (v =<- r)
 
 type BaseQueryInput q v t r = (t,[v |<- r],q)
 type QueryInput q v t r = (t,Query q v r)
 
-runBaseQIn :: Queriable q v t r s => BaseQueryInput q v t r -> AnswerSet s (v := r)
+runBaseQIn :: Queriable q v t r s => BaseQueryInput q v t r -> AnswerSet s (v =<- r)
 runBaseQIn (t,s,q) = runBaseQ t s q
 
-runQuery :: (Queriable q v t r s, Eq v, Substitutable r v r, Substitutable q v r, Ord v, FullImplicitF s (v := r) s (v := r) (QArgumentMap v r), FullImplicitF s (v := r) s (v := r) (BaseQueryInput q v t r), FullImplicitF (AnswerSet s (v := r), AnswerSet s (v := r)) (v := r, v := r) s (v := r) ProductQOP, Eq r) => t -> Query q v r -> AnswerSet s (v := r)
+runQuery :: (Queriable q v t r s, Eq v, Substitutable r v r, Substitutable q v r, Ord v, FullImplicitF s (v =<- r) s (v =<- r) (QArgumentMap v r), FullImplicitF s (v =<- r) s (v =<- r) (BaseQueryInput q v t r), FullImplicitF (AnswerSet s (v =<- r), AnswerSet s (v =<- r)) (v =<- r, v =<- r) s (v =<- r) ProductQOP, Eq r) => t -> Query q v r -> AnswerSet s (v =<- r)
 runQuery t (BaseQ vs q) = runBaseQ t vs q
-runQuery t (SequentialQ q1 m q2) = (runQuery t q2) >>= (\m2 -> runQuery t (Data.List.foldr (\(v,f) -> subst v (f m2)) q1 (assocs m)))
+runQuery t (SequentialQ q1 m q2) = (runQuery t q2) >>= (\r2 -> runQuery t (Data.List.foldr (\(v,f) -> subst v (f r2)) q1 (assocs m)))
 runQuery t (ImplicitQ q1 m q2) = (runQuery t q2) ?>>= m ?>>= (t,q1)
 runQuery t (ProductQ q1 q2) = (tupleAS (runQuery t q1) (runQuery t q2)) ?>>= ProductQOP
 runQuery t (IntersectionQ q1 m q2) = ExplicitAS (SingleAS <$> (eintersectAll ((\m2 -> diagEnumAS (runQuery t (Data.List.foldr (\(v,f) -> subst v (f m2)) q1 (assocs m)))) <$> (diagEnumAS (runQuery t q2)))))
 
 -- In this instance we assume that the argument map has already been processed. This is important, as a base query does not include the argument map in itself, but it must be processed for correctness.
 -- That is, the input map is expressed in the variables of the query.
-instance (Queriable q v t r s, Eq v, Substitutable r v r, Substitutable q v r, Ord v) => Functional (BaseQueryInput q v t r) (v := r) (AnswerSet s (v := r)) where
-	tofun (t,s,q) m = runBaseQ t s (Data.List.foldr (\(v,r) -> subst v r) q (assocs m))
+instance (Queriable q v t r s, Eq v, Substitutable r v r, Substitutable q v r, Ord v) => Functional (BaseQueryInput q v t r) (v =<- r) (AnswerSet s (v =<- r)) where
+	tofun (t,s,q) m = runBaseQ t s (Data.List.foldr (\(v,r) -> subst v r) q (assocs (qresultset_result m)))
 
-instance (Queriable q v t r s, Eq v, Substitutable r v r, Substitutable q v r, Ord v, Implicit s (v := r), FullImplicitF s (v := r) s (v := r) (BaseQueryInput q v t r), FullImplicitF s (v := r) s (v := r) (QArgumentMap v r), FullImplicitF (AnswerSet s (v := r), AnswerSet s (v := r)) (v := r, v := r) s (v := r) ProductQOP, Eq r) => ImplicitF s s (v := r) (QueryInput q v t r) where
+instance (Queriable q v t r s, Eq v, Substitutable r v r, Substitutable q v r, Ord v, Implicit s (v =<- r), FullImplicitF s (v =<- r) s (v =<- r) (BaseQueryInput q v t r), FullImplicitF s (v =<- r) s (v =<- r) (QArgumentMap v r), FullImplicitF (AnswerSet s (v =<- r), AnswerSet s (v =<- r)) (v =<- r, v =<- r) s (v =<- r) ProductQOP, Eq r) => ImplicitF s s (v =<- r) (QueryInput q v t r) where
 	composeImplicit s (t,(BaseQ vs q)) = composeImplicit s (t,vs,q)
 	composeImplicit s (t,(SequentialQ q1 m q2)) = (composeImplicit s (t,q2)) >>= (\m2 -> runQuery t (Data.List.foldr (\(v,f) -> subst v (f m2)) q1 (assocs m)))
 	composeImplicit s (t,(ImplicitQ q1 m q2)) = (composeImplicit s (t,q2)) ?>>= m ?>>= (t,q1)
 	composeImplicit s (t,(ProductQ q1 q2)) = (tupleAS (composeImplicit s (t,q1)) (composeImplicit s (t,q2))) ?>>= ProductQOP
 	composeImplicit s (t,(IntersectionQ q1 m q2)) = ExplicitAS (SingleAS <$> (eintersectAll ((\m2 -> diagEnumAS (runQuery t (Data.List.foldr (\(v,f) -> subst v (f m2)) q1 (assocs m)))) <$> (diagEnumAS (composeImplicit s (t,q2))))))
 
-instance (Queriable q v t r s, Eq v, Substitutable r v r, Substitutable q v r, Ord v, FullImplicitF s (v := r) s (v := r) (QArgumentMap v r), FullImplicitF s (v := r) s (v := r) (BaseQueryInput q v t r), FullImplicitF (AnswerSet s (v := r), AnswerSet s (v := r)) (v := r, v := r) s (v := r) ProductQOP, Eq r) => Functional (QueryInput q v t r) (v := r) (AnswerSet s (v := r)) where
-	tofun (t,q) m = runQuery t (Data.List.foldr (\(v,r) -> subst v r) q (assocs m))
+instance (Queriable q v t r s, Eq v, Substitutable r v r, Substitutable q v r, Ord v, FullImplicitF s (v =<- r) s (v =<- r) (QArgumentMap v r), FullImplicitF s (v =<- r) s (v =<- r) (BaseQueryInput q v t r), FullImplicitF (AnswerSet s (v =<- r), AnswerSet s (v =<- r)) (v =<- r, v =<- r) s (v =<- r) ProductQOP, Eq r) => Functional (QueryInput q v t r) (v =<- r) (AnswerSet s (v =<- r)) where
+	tofun (t,q) m = runQuery t (Data.List.foldr (\(v,r) -> subst v r) q (assocs (qresultset_result m)))
 
 data LogicQuery cnf t = Entails cnf | Satisfies cnf cnf | Equals t t | NotEquals t t deriving Functor
+data FullLogicQuery sig cnf t = FLogicQuery sig (LogicQuery cnf t)
 
 instance Bifunctor LogicQuery where
 	bimap f g (Entails x) = Entails (f x)
@@ -197,11 +222,17 @@ instance Bifunctor LogicQuery where
 	bimap f g (Equals x y) = Equals (g x) (g y)
 	bimap f g (NotEquals x y) = NotEquals (g x) (g y)
 
+instance Bifunctor (FullLogicQuery sig) where
+	bimap f g (FLogicQuery sig lq) = FLogicQuery sig (bimap f g lq)
+
 instance (Show cnf, Show t) => Show (LogicQuery cnf t) where
 	show (Entails x) = "|= " ++ (show x)
 	show (Satisfies x y) = "*|= " ++ (show x) ++ " || " ++ (show y)
 	show (Equals x y) = (show x) ++ " ~ " ++ (show y)
 	show (NotEquals x y) = (show x) ++ " # " ++ (show y)
+
+instance (Show cnf, Show t) => Show (FullLogicQuery sig cnf t) where	
+	show (FLogicQuery sig lq) = show lq
 
 instance (Read cnf, Read t) => Read (LogicQuery cnf t) where
 	readsPrec _ xs =

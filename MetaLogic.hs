@@ -622,6 +622,7 @@ type SOMetaResProofStep = ResProofStep SOMetaAtomDependant [SOMetaUnifEquation]
 resolution_heuristic :: SOResGreedyFactorH CAtomPF CTermF LambdaCNF SOPredicate OPredicate OFunction OVariable SOAMVariable SOMVariable UnifVariable
 resolution_heuristic = SOResGreedyFactorH
 
+{-|
 resolve_to_constraints_metacnf :: SOMetaSignature -> SOMetaCNF -> Computation (Maybe ([SOMetaUnifEquation],[SOMetaResProofStep]))
 resolve_to_constraints_metacnf sig cnf = result
 	where
@@ -632,6 +633,10 @@ resolve_to_constraints_metacnf sig cnf = result
 		resolved = res_computeresolve resolution_heuristic ucnf :: StateT UnifVariable Computation (Maybe ([SOMetaUnifEquation],[SOMetaResProofStep]));
 		runstated = runStateT resolved (UnifVar 0);
 		result = fst <$> runstated
+|-}
+
+resolve_to_constraints_metacnf :: SOMetaSignature -> SOMetaCNF -> Computation (Maybe ([SOMetaUnifEquation],[SOMetaResProofStep]))
+resolve_to_constraints_metacnf = soresolve_to_constraints
 
 resolution_execorder :: DFS
 resolution_execorder = DFS

@@ -43,6 +43,9 @@ alg = AlgDir
 algfilter :: (a -> Maybe b) -> a .-> b
 algfilter = AlgFilter
 
+algalgfilter :: (a .-> Maybe b) -> a .-> b
+algalgfilter alg = (algfilter id) ... alg
+
 comp :: a -> Computation a
 comp x = alg (\_ -> x)
 
