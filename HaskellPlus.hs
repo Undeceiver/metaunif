@@ -697,6 +697,16 @@ headErr :: String -> [a] -> a
 headErr str [] = error str
 headErr str (x:xs) = x
 
+lookupErr :: Ord k => String -> Map k v -> k -> v
+lookupErr str m k = case mb_v of {Nothing -> error str; Just v -> v} where mb_v = m !? k
+
+(!#) :: Ord k => Map k v -> k -> String -> v
+m !# k = (\str -> lookupErr str m k)
+
+(!<) :: Ord k => Map k v -> k -> v -> v
+m !< k = (\dv -> findWithDefault dv k m)
+
+
 -- To be able to do this with kinds, we need to use/assume extensionality of kinds!
 --type KindPair (a :: ka) (b :: kb) (f :: ka -> kb -> *) = f a b
 

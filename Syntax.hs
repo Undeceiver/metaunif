@@ -540,6 +540,13 @@ instance (Eq fmv) => Substitutable (SOAtom pd fn pmv fmv) fmv (SOTerm fn fmv) wh
 	subst fmv sot (UTerm (SOP (Proj idx))) = UTerm (SOP (Proj idx))
 	subst fmv sot (UTerm (SOP (CompF h sots))) = UTerm (SOP (CompF (subst fmv sot h) (subst fmv sot <$> sots)))
 
+-- Constrained version, but it is all we need right now.
+instance (Eq pmv) => Substitutable (SOAtom pd fn pmv fmv) pmv pmv where
+	subst pmv rpmv (UVar pmv2) | pmv == pmv2 = UVar rpmv
+	subst pmv rpmv (UTerm (SOP (ConstF p))) = UTerm (SOP (ConstF p))
+	subst pmv rpmv (UTerm (SOP (Proj idx))) = UTerm (SOP (Proj idx))
+	subst pmv rpmv (UTerm (SOP (CompF h sots))) = UTerm (SOP (CompF (subst pmv rpmv h) sots))
+
 instance (Eq fmv) => Substitutable (SOAtom pd fn pmv fmv) fmv (GroundSOT fn) where
 	subst fmv sot soa = subst fmv gsot soa where gsot = inject_groundsot sot :: SOTerm fn fmv
 
@@ -700,6 +707,9 @@ instance (HasArity pd, HasArity fn, HasArity pmv, HasArity fmv, SimpleTerm a, Si
 instance (SimpleTerm a, SimpleTerm t, Eq fmv, Eq fn) => Substitutable (SOMetawrapA a t pd fn v pmv fmv) fmv (SOTerm fn fmv) where
 	subst sov sot (SOMetawrapA a) = SOMetawrapA (build_term (subst sov sot p) (subst sov sot <$> sts)) where (p,sts) = unbuild_term a
 
+instance (SimpleTerm a, Eq pmv) => Substitutable (SOMetawrapA a t pd fn v pmv fmv) pmv pmv where
+	subst pmv rpmv (SOMetawrapA a) = SOMetawrapA (build_term (subst pmv rpmv p) sts) where (p,sts) = unbuild_term a
+
 instance (SimpleTerm a, SimpleTerm t, Eq fmv, Eq fn) => Substitutable (SOMetawrapA a t pd fn v pmv fmv) fmv (GroundSOT fn) where
 	subst sov gsot somwa = subst sov sot somwa where sot = inject_groundsot gsot :: SOTerm fn fmv
 
@@ -751,6 +761,9 @@ instance (HasArity pd, HasArity pmv, HasArity fn, HasArity fmv, Functor (a mpd),
 instance (SimpleTerm a, Eq fn, Eq fmv, Functor s) => Substitutable (FirstSOAAtom a s mpd pd fn pmv fmv) fmv (SOTerm fn fmv) where
 	subst sov sot (FirstSOAAtom a) = FirstSOAAtom (build_term p ((subst sov sot <$>) <$> sts)) where (p,sts) = unbuild_term a
 
+instance (SimpleTerm a, Eq pmv, Functor s) => Substitutable (FirstSOAAtom a s mpd pd fn pmv fmv) pmv pmv where
+	subst pmv rpmv (FirstSOAAtom a) = FirstSOAAtom (build_term p ((subst pmv rpmv <$>) <$> sts)) where (p,sts) = unbuild_term a
+
 instance (SimpleTerm a, Eq fn, Eq fmv, Functor s) => Substitutable (FirstSOAAtom a s mpd pd fn pmv fmv) fmv (GroundSOT fn) where
 	subst sov gsot fsoa = subst sov sot fsoa where sot = inject_groundsot gsot :: SOTerm fn fmv
 
@@ -772,6 +785,10 @@ instance (HasArity pd, HasArity pmv, HasArity fn, HasArity fmv, Functor (a mpd),
 instance (SimpleTerm a, SimpleTerm t, Eq fn, Eq fmv, Functor s) => Substitutable (CombSOAtom a t s mpd pd fn v pmv fmv) fmv (SOTerm fn fmv) where
 	subst sov sot (NSOAtom somwa) = NSOAtom (subst sov sot somwa)
 	subst sov sot (FSOAtom fsoa) = FSOAtom (subst sov sot fsoa)
+
+instance (SimpleTerm a, Eq pmv, Functor s) => Substitutable (CombSOAtom a t s mpd pd fn v pmv fmv) pmv pmv where
+	subst pmv rpmv (NSOAtom somwa) = NSOAtom (subst pmv rpmv somwa)
+	subst pmv rpmv (FSOAtom fsoa) = FSOAtom (subst pmv rpmv fsoa)
 
 instance (SimpleTerm a, SimpleTerm t, Eq fn, Eq fmv, Functor s) => Substitutable (CombSOAtom a t s mpd pd fn v pmv fmv) fmv (GroundSOT fn) where
 	subst sov sot (NSOAtom somwa) = NSOAtom (subst sov sot somwa)

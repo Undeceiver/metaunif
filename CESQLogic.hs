@@ -92,11 +92,11 @@ lambdacnf_to_gsoa _ = error "lambdacnf_to_gsoa: LambdaCNFs are currently not sup
 -- For exact graph instantiations, the instantiations are those encompassed by the indicated graph.
 -- For minmax graph instantiations, the semantics are as follows:
 --	- All the instantiations of MaxGraphInst are instantiations of the minmax.
---	- If the combination of MinGraphInst and MinCondGraphInst yields any results within a global constant boundary, then there's no more results to be presented.
---	- If the combination of MinGraphinst and MinCondGraphInst does not yield results within a global constant boundary, then all the results of MinGraphInst are results of the minmax.
+--	- If MinCondGraphInst yields any results within a global constant boundary, then there's no more results to be presented.
+--	- If MinCondGraphInst does not yield results within a global constant boundary, then all the results of MinGraphInst are results of the minmax.
 --	- Conceptually, this is to be understood as: All the results of MinGraphInst that are not results of MinCondGraphInst, except we do the check globally rather than individually on each result.
 --	- Note that for checkImplicit, we do actually have the correct semantics where we check if the element is part of MinGraphInst but not of MinCondGraphInst.
-data ImplicitInstantiationV pd fn pmv fmv = forall t mpd v uv. ESMGUConstraintsUPmv t pd fn v pmv fmv uv => ExactGraphInst {fromExactGraphInst :: RESUnifVDGraph t mpd pd fn v pmv fmv uv} | forall t mpd v uv. ESMGUConstraintsUPmv t pd fn v pmv fmv uv => MinMaxGraphInst {fromMinGraphInst :: RESUnifVDGraph t mpd pd fn v pmv fmv uv, fromMinCondGraphInst :: RESUnifVDGraph t mpd pd fn v pmv fmv uv, fromMaxGraphInst :: RESUnifVDGraph t mpd pd fn v pmv fmv uv}
+data ImplicitInstantiationV t mpd pd fn v pmv fmv uv = ExactGraphInst {fromExactGraphInst :: RESUnifVDGraph t mpd pd fn v pmv fmv uv} | MinMaxGraphInst {fromMinGraphInst :: RESUnifVDGraph t mpd pd fn v pmv fmv uv, fromMinCondGraphInst :: RESUnifVDGraph t mpd pd fn v pmv fmv uv, fromMaxGraphInst :: RESUnifVDGraph t mpd pd fn v pmv fmv uv}
 
 -- These are used as global constants for the algorithm. Ideally, this would be either an argument or a monad-like thing, but we are just going to skip that at this point.
 implicitInst_mincond_depth :: Int
@@ -116,7 +116,7 @@ implicitInst_tounif_sol_rec _ = error "Found an association which does not match
 implicitInst_fromunifsol :: (Ord pmv, Ord fmv) => UnifSysSolution pd fn pmv fmv -> (CESQVar pmv fmv := CESQSol pd fn)
 implicitInst_fromunifsol (UnifSysSolution fsol psol) = Data.List.foldr (\(fk,fv) -> Data.Map.Strict.insert (CESQVar (Right fk)) (CESQSol (Right fv))) (Data.List.foldr (\(pk,pv) -> Data.Map.Strict.insert (CESQVar (Left pk)) (CESQSol (Left (LambdaCNF [LambdaClause [PosLit pv]])))) Data.Map.Strict.empty (toList psol)) (toList fsol)
 
-instance Implicit (ImplicitInstantiationV pd fn pmv fmv) (CESQVar pmv fmv := CESQSol pd fn) where
+instance ESMGUConstraintsUPmv t pd fn v pmv fmv uv => Implicit (ImplicitInstantiationV t mpd pd fn v pmv fmv uv) (CESQVar pmv fmv := CESQSol pd fn) where
 	checkImplicit (ExactGraphInst inst) cesqsol = checkImplicit inst usol where usol = implicitInst_tounifsol cesqsol
 	checkImplicit (MinMaxGraphInst mininst mincondinst maxinst) cesqsol = (checkImplicit maxinst usol) >>=| ((checkImplicit mininst usol) >>=& (not <$> (checkImplicit mincondinst usol))) where usol = implicitInst_tounifsol cesqsol
 	enumImplicit (ExactGraphInst inst) = implicitInst_fromunifsol <$> (enumImplicit inst)
@@ -125,15 +125,17 @@ instance Implicit (ImplicitInstantiationV pd fn pmv fmv) (CESQVar pmv fmv := CES
 	-- Should test this separately.
 	enumImplicit (MinMaxGraphInst mininst mincondinst maxinst) = if mergedtest then resmax else (resmax .+. resmin)
 		where
+			-- This may potentially be problematic
+			sig = sig_RESUnifVDGraph mininst;
 			resmax = implicitInst_fromunifsol <$> (enumImplicit maxinst);
-			mergedmax = mergeRESUnifVDGraph mininst mincondinst;
+			mergedmax = mergeRESUnifVDGraph sig mininst mincondinst;
 			-- We use diagonalization here. This is an arbitrary choice, but one that works for this particular purpose absolutely fine.
-			mergedtest = Prelude.null (get_nstep implicitInst_mincond_depth ((enumImplicit mergedmax) \$ ()));
+			mergedtest = Prelude.null (get_nstep implicitInst_mincond_depth ((enumImplicit mincondinst) \$ ()));
 			resmin = implicitInst_fromunifsol <$> (enumImplicit mininst);
 
-data ImplicitInstantiation pd fn pmv fmv = ImplicitInstantiation {getImplicitInstantiationV :: ImplicitInstantiationV pd fn pmv fmv, getImplicitInstantiationSel :: [CESQVar pmv fmv |<- CESQSol pd fn]}
+data ImplicitInstantiation t mpd pd fn v pmv fmv uv = ImplicitInstantiation {getImplicitInstantiationV :: ImplicitInstantiationV t mpd pd fn v pmv fmv uv, getImplicitInstantiationSel :: [CESQVar pmv fmv |<- CESQSol pd fn]}
 
-instance Implicit (ImplicitInstantiation pd fn pmv fmv) (CESQVar pmv fmv =<- CESQSol pd fn) where
+instance ESMGUConstraintsUPmv t pd fn v pmv fmv uv => Implicit (ImplicitInstantiation t mpd pd fn v pmv fmv uv) (CESQVar pmv fmv =<- CESQSol pd fn) where
 	-- For checking, it's enough to just check the solution directly, ignoring the select clause. I mean, we could verify that the solution only contains variables in the select clause, but this is kind of pointless. The point is, if it does, then the checkImplicit underneath will only check the variables in the cesqsol variable, by construction.
 	checkImplicit (ImplicitInstantiation impv seli) (QResultSet sele cesqsol) = checkImplicit impv cesqsol
 	enumImplicit (ImplicitInstantiation impv sel) = (QResultSet sel) <$> (enumImplicit impv)
@@ -142,10 +144,10 @@ cesq_resolution_execorder :: DFS
 cesq_resolution_execorder = DFS
 
 -- This class represents something that, once a unifier variable type is specified, has an instance of Queriable.
-class QueriableWithUV q v t r s uv | q v t -> r s where
+class QueriableWithUV q v t r s uv | q v t uv -> r s where
 	runBaseQWithUV :: Erase uv -> t -> [v |<- r] -> q -> AnswerSet s (v =<- r)
 
-instance forall a t mpd pd fn v pmv fmv uv. ResConstraintsALL a t LambdaCNF mpd pd fn v pmv fmv uv => QueriableWithUV (BaseCESQuery a t mpd pd fn v pmv fmv) (CESQVar pmv fmv) (CNF a t mpd pd fn v pmv fmv) (CESQSol pd fn) (ImplicitInstantiation pd fn pmv fmv) uv where
+instance forall a t mpd pd fn v pmv fmv uv. ResConstraintsALL a t LambdaCNF mpd pd fn v pmv fmv uv => QueriableWithUV (BaseCESQuery a t mpd pd fn v pmv fmv) (CESQVar pmv fmv) (CNF a t mpd pd fn v pmv fmv) (CESQSol pd fn) (ImplicitInstantiation t mpd pd fn v pmv fmv uv) uv where
 	runBaseQWithUV _ tcnf sel (FLogicQuery sig (Entails ecnf)) = ExplicitAS einsts
 		where
 			compresuvdgs = soresolve_to_dgraph_filter sig (tcnf ++ ecnf) :: Computation (RESUnifVDGraph t mpd pd fn v pmv fmv uv);
@@ -155,47 +157,34 @@ instance forall a t mpd pd fn v pmv fmv uv. ResConstraintsALL a t LambdaCNF mpd 
 	runBaseQWithUV _ tcnf sel (FLogicQuery sig (Satisfies ecnf satcnf)) = ExplicitAS einsts
 		where
 			compresuvdgs_ecnf = soresolve_to_dgraph_filter sig (tcnf ++ ecnf) :: Computation (RESUnifVDGraph t mpd pd fn v pmv fmv uv);
-			compresuvdgs_mincnf = soresolve_to_dgraph_filter sig tcnf :: Computation (RESUnifVDGraph t mpd pd fn v pmv fmv uv);
 			compresuvdgs_mincondcnf = soresolve_to_dgraph_filter sig (tcnf ++ satcnf) :: Computation (RESUnifVDGraph t mpd pd fn v pmv fmv uv);
 			eresuvdgs_ecnf = runcomp cesq_resolution_execorder compresuvdgs_ecnf;
-			eresuvdgs_mincnf = runcomp cesq_resolution_execorder compresuvdgs_mincnf;
 			eresuvdgs_mincondcnf = runcomp cesq_resolution_execorder compresuvdgs_mincondcnf;
+			resuvdg_min = emptyRESUnifVDGraph sig :: RESUnifVDGraph t mpd pd fn v pmv fmv uv;
 			einsts = do
 				{
 					resuvdgs_ecnf <- eresuvdgs_ecnf;
-					resuvdgs_mincnf <- eresuvdgs_mincnf;
 					resuvdgs_mincondcnf <- eresuvdgs_mincondcnf;
 
-					return (ImplicitAS (ImplicitInstantiation (MinMaxGraphInst resuvdgs_mincnf resuvdgs_mincondcnf resuvdgs_ecnf) sel))
+					return (ImplicitAS (ImplicitInstantiation (MinMaxGraphInst resuvdg_min resuvdgs_mincondcnf resuvdgs_ecnf) sel))
 				};
-	runBaseQWithUV _ tcnf sel (FLogicQuery sig (Equals a1 a2)) = ExplicitAS einsts
+-- Note that in Equals and NotEquals we completely ignore the theory, we are only doing a syntactic check!
+	runBaseQWithUV _ tcnf sel (FLogicQuery sig (Equals a1 a2)) = inst
 		where
 			a1w = ADDirect (NSOAtom a1);
 			a2w = ADDirect (NSOAtom a2);
 			eq = AtomUnif a1w a2w :: UnifEquation a t LambdaCNF mpd pd fn v pmv fmv uv;
-			resuvdg = doRESUnifVDGraph sig (dgraph_from_ueq sig eq);
-			comptresuvdgs = soresolve_to_dgraph_filter sig tcnf :: Computation (RESUnifVDGraph t mpd pd fn v pmv fmv uv);
-			etresuvdgs = runcomp cesq_resolution_execorder comptresuvdgs;
-			rresuvdgs = mergeRESUnifVDGraph resuvdg <$> etresuvdgs;
-			finsts = (\resuvdg -> ImplicitAS (ImplicitInstantiation (ExactGraphInst resuvdg) sel));
-			einsts = finsts <$> rresuvdgs;
-	runBaseQWithUV _ tcnf sel (FLogicQuery sig (NotEquals a1 a2)) = ExplicitAS einsts
+			resuvdg = doRESUnifVDGraph sig (dgraph_from_ueq sig eq);			
+			inst = ImplicitAS (ImplicitInstantiation (ExactGraphInst resuvdg) sel);
+	runBaseQWithUV _ tcnf sel (FLogicQuery sig (NotEquals a1 a2)) = inst
 		where
 			a1w = ADDirect (NSOAtom a1);
 			a2w = ADDirect (NSOAtom a2);
 			eq = AtomUnif a1w a2w :: UnifEquation a t LambdaCNF mpd pd fn v pmv fmv uv;
-			resuvdg = doRESUnifVDGraph sig (dgraph_from_ueq sig eq);
-			compresuvdgs_mincnf = soresolve_to_dgraph_filter sig tcnf :: Computation (RESUnifVDGraph t mpd pd fn v pmv fmv uv);
+			resuvdg_mincond = doRESUnifVDGraph sig (dgraph_from_ueq sig eq);
 			resuvdg_max = failedRESUnifVDGraph sig :: RESUnifVDGraph t mpd pd fn v pmv fmv uv;
-			eresuvdgs_mincnf = runcomp cesq_resolution_execorder compresuvdgs_mincnf;
-			eresuvdgs_mincondcnf = mergeRESUnifVDGraph resuvdg <$> eresuvdgs_mincnf;
-			einsts = do
-				{
-					resuvdgs_mincnf <- eresuvdgs_mincnf;
-					resuvdgs_mincondcnf <- eresuvdgs_mincondcnf;
-
-					return (ImplicitAS (ImplicitInstantiation (MinMaxGraphInst resuvdgs_mincnf resuvdgs_mincondcnf resuvdg_max) sel))
-				};
+			resuvdg_min = emptyRESUnifVDGraph sig :: RESUnifVDGraph t mpd pd fn v pmv fmv uv;
+			inst = ImplicitAS (ImplicitInstantiation (MinMaxGraphInst resuvdg_min resuvdg_mincond resuvdg_max) sel);
 	runBaseQWithUV _ t sel q = error "Unexpected type of CESQ query!!!"
 
 type CESQConstraintsOutNoPd fn pmv fmv = (Ord pmv, Ord fmv, Eq pmv, Eq fmv, Eq fn, Ord fn) 
@@ -207,7 +196,8 @@ type CESQConstraintsInTVNoPd t fn v pmv fmv = (CESQConstraintsOutNoPd fn pmv fmv
 type CESQConstraintsInA a pd fn pmv fmv = (CESQConstraintsOut pd fn pmv fmv, SimpleTerm a)
 type CESQConstraintsInAT a t pd fn pmv fmv = (CESQConstraintsInA a pd fn pmv fmv, CESQConstraintsInT t pd fn pmv fmv)
 type CESQConstraintsInATV a t pd fn v pmv fmv = (CESQConstraintsInAT a t pd fn pmv fmv, CESQConstraintsInV v)
-type CESQConstraintsIn a t mpd pd fn v pmv fmv = (CESQConstraintsInATV a t pd fn v pmv fmv, Queriable (BaseCESQuery a t mpd pd fn v pmv fmv) (CESQVar pmv fmv) (CNF a t mpd pd fn v pmv fmv) (CESQSol pd fn) (ImplicitInstantiation pd fn pmv fmv), ImplicitF (ImplicitInstantiation pd fn pmv fmv) (ImplicitInstantiation pd fn pmv fmv) (CESQVar pmv fmv =<- CESQSol pd fn) (BaseQueryInput (BaseCESQuery a t mpd pd fn v pmv fmv) (CESQVar pmv fmv) (CNF a t mpd pd fn v pmv fmv) (CESQSol pd fn)))
+type CESQConstraintsIn a t mpd pd fn v pmv fmv uv = (CESQConstraintsInATV a t pd fn v pmv fmv, Queriable (BaseCESQuery a t mpd pd fn v pmv fmv) (CESQVar pmv fmv) (CNF a t mpd pd fn v pmv fmv) (CESQSol pd fn) (ImplicitInstantiation t mpd pd fn v pmv fmv uv), ImplicitF (ImplicitInstantiation t mpd pd fn v pmv fmv uv) (ImplicitInstantiation t mpd pd fn v pmv fmv uv) (CESQVar pmv fmv =<- CESQSol pd fn) (BaseQueryInput (BaseCESQuery a t mpd pd fn v pmv fmv) (CESQVar pmv fmv) (CNF a t mpd pd fn v pmv fmv) (CESQSol pd fn)))
+type CESQConstraintsALL a t mpd pd fn v pmv fmv uv = (CESQConstraintsIn a t mpd pd fn v pmv fmv uv, ESMGUConstraintsALL a t LambdaCNF mpd pd fn v pmv fmv uv)
 
 -- This instance is void, since the solutions already do not have any variables!!!
 -- Keep in mind if this is used to produce substitution of variables when combining queries, this leads to problems!!
@@ -258,7 +248,7 @@ instance CESQConstraintsInATV a t pd fn v pmv fmv => Substitutable (Clause a t m
 instance CESQConstraintsInATV a t pd fn v pmv fmv => Substitutable (CNF a t mpd pd fn v pmv fmv) (CESQVar pmv fmv) (CESQSol pd fn) where
 	subst = subst_fmap
 
-instance CESQConstraintsIn a t mpd pd fn v pmv fmv => Substitutable (BaseCESQuery a t mpd pd fn v pmv fmv) (CESQVar pmv fmv) (CESQSol pd fn) where
+instance CESQConstraintsInATV a t pd fn v pmv fmv => Substitutable (BaseCESQuery a t mpd pd fn v pmv fmv) (CESQVar pmv fmv) (CESQSol pd fn) where
 	subst = subst_bimap	
 
 
@@ -309,7 +299,7 @@ instance CESQConstraintsInATV a t pd fn v pmv fmv => Substitutable (Clause a t m
 instance CESQConstraintsInATV a t pd fn v pmv fmv => Substitutable (CNF a t mpd pd fn v pmv fmv) (CESQVar pmv fmv) (CESQVar pmv fmv) where
 	subst = subst_fmap
 
-instance CESQConstraintsIn a t mpd pd fn v pmv fmv => Substitutable (BaseCESQuery a t mpd pd fn v pmv fmv) (CESQVar pmv fmv) (CESQVar pmv fmv) where
+instance CESQConstraintsInATV a t pd fn v pmv fmv => Substitutable (BaseCESQuery a t mpd pd fn v pmv fmv) (CESQVar pmv fmv) (CESQVar pmv fmv) where
 	subst = subst_bimap
 
 
@@ -320,25 +310,85 @@ instance (Variabilizable pmv, Variabilizable fmv) => Variabilizable (CESQVar pmv
 	get_var (CESQVar (Left i)) = IntVar (2 * (getVarID_gen i))
 	get_var (CESQVar (Right i)) = IntVar (2 * (getVarID_gen i) + 1)
 
-class ImplicitFWithUV sa sb b f uv | f sa -> sb where
-	composeImplicitWithUV :: Erase uv -> sa -> f -> AnswerSet sb b
-
 -- IMPORTANT NOTE: We completely ignore the select clause for the first query, since it doesn't really change the graph itself and there's no real danger of specific meta-variables colliding. Or that's what I think now. This note is here as a beacon in case problems arise from this assumption turning out wrong.
-instance forall a t mpd pd fn v pmv fmv uv. ResConstraintsALL a t LambdaCNF mpd pd fn v pmv fmv uv => ImplicitFWithUV (ImplicitInstantiation pd fn pmv fmv) (ImplicitInstantiation pd fn pmv fmv) (CESQVar pmv fmv =<- CESQSol pd fn) (BaseQueryInput (BaseCESQuery a t mpd pd fn v pmv fmv) (CESQVar pmv fmv) (CNF a t mpd pd fn v pmv fmv) (CESQSol pd fn)) uv where
-	composeImplicitWithUV _ (ImplicitInstantiation (ExactGraphInst resuvdg) sel) (tcnf,sel2,FLogicQuery sig (Entails ecnf)) = undefined
+instance forall a t mpd pd fn v pmv fmv uv. ResConstraintsALL a t LambdaCNF mpd pd fn v pmv fmv uv => ImplicitF (ImplicitInstantiation t mpd pd fn v pmv fmv uv) (ImplicitInstantiation t mpd pd fn v pmv fmv uv) (CESQVar pmv fmv =<- CESQSol pd fn) (BaseQueryInput (BaseCESQuery a t mpd pd fn v pmv fmv) (CESQVar pmv fmv) (CNF a t mpd pd fn v pmv fmv) (CESQSol pd fn)) where
+	composeImplicit (ImplicitInstantiation (ExactGraphInst resuvdg) sel) (tcnf,sel2,FLogicQuery sig (Entails ecnf)) = ExplicitAS einsts
 		where
 			compresuvdgs = soresolve_to_dgraph_filter sig (tcnf ++ ecnf) :: Computation (RESUnifVDGraph t mpd pd fn v pmv fmv uv);
 			eresuvdgs = runcomp cesq_resolution_execorder compresuvdgs;
-			finsts = (\resuvdg2 -> ImplicitAS (ImplicitInstantiation (ExactGraphInst (mergeRESUnifVDGraph resuvdg resuvdg2)) sel));
+			finsts = (\resuvdg2 -> ImplicitAS (ImplicitInstantiation (ExactGraphInst (mergeRESUnifVDGraph sig resuvdg resuvdg2)) sel2));
 			einsts = finsts <$> eresuvdgs;
+	composeImplicit (ImplicitInstantiation (ExactGraphInst resuvdg) sel) (tcnf,sel2,FLogicQuery sig (Satisfies ecnf satcnf)) = ExplicitAS einsts
+		where
+			compresuvdgs_ecnf = soresolve_to_dgraph_filter sig (tcnf ++ ecnf) :: Computation (RESUnifVDGraph t mpd pd fn v pmv fmv uv);
+			compresuvdgs_mincondcnf = soresolve_to_dgraph_filter sig (tcnf ++ satcnf) :: Computation (RESUnifVDGraph t mpd pd fn v pmv fmv uv);
+			eresuvdgs_ecnf = runcomp cesq_resolution_execorder compresuvdgs_ecnf;
+			eresuvdgs_mincondcnf = runcomp cesq_resolution_execorder compresuvdgs_mincondcnf;
+			einsts = do
+				{
+					resuvdgs_ecnf <- eresuvdgs_ecnf;
+					resuvdgs_mincondcnf <- eresuvdgs_mincondcnf;
 
-instance ImplicitF (ImplicitInstantiation pd fn pmv fmv) (ImplicitInstantiation pd fn pmv fmv) (CESQVar pmv fmv =<- CESQSol pd fn) (CESQVar pmv fmv :->= CESQSol pd fn) where
+					return (ImplicitAS (ImplicitInstantiation (MinMaxGraphInst resuvdg (mergeRESUnifVDGraph sig resuvdg resuvdgs_mincondcnf) (mergeRESUnifVDGraph sig resuvdg resuvdgs_ecnf)) sel2))
+				};
+	composeImplicit (ImplicitInstantiation (ExactGraphInst resuvdg) sel) (tcnf,sel2,FLogicQuery sig (Equals a1 a2)) = inst
+		where
+			a1w = ADDirect (NSOAtom a1);
+			a2w = ADDirect (NSOAtom a2);
+			eq = AtomUnif a1w a2w :: UnifEquation a t LambdaCNF mpd pd fn v pmv fmv uv;
+			resuvdg2 = doRESUnifVDGraph sig (dgraph_from_ueq sig eq);			
+			inst = ImplicitAS (ImplicitInstantiation (ExactGraphInst (mergeRESUnifVDGraph sig resuvdg resuvdg2)) sel2);
+	composeImplicit (ImplicitInstantiation (ExactGraphInst resuvdg) sel) (tcnf,sel2,FLogicQuery sig (NotEquals a1 a2)) = inst
+		where
+			a1w = ADDirect (NSOAtom a1);
+			a2w = ADDirect (NSOAtom a2);
+			eq = AtomUnif a1w a2w :: UnifEquation a t LambdaCNF mpd pd fn v pmv fmv uv;
+			resuvdg_mincond = doRESUnifVDGraph sig (dgraph_from_ueq sig eq);
+			resuvdg_max = failedRESUnifVDGraph sig :: RESUnifVDGraph t mpd pd fn v pmv fmv uv;
+			inst = ImplicitAS (ImplicitInstantiation (MinMaxGraphInst resuvdg (mergeRESUnifVDGraph sig resuvdg resuvdg_mincond) resuvdg_max) sel2);
+	composeImplicit (ImplicitInstantiation (MinMaxGraphInst resuvdg_min resuvdg_mincond resuvdg_max) sel) (tcnf,sel2,FLogicQuery sig (Entails ecnf)) = ExplicitAS einsts
+		where
+			compresuvdgs = soresolve_to_dgraph_filter sig (tcnf ++ ecnf) :: Computation (RESUnifVDGraph t mpd pd fn v pmv fmv uv);
+			eresuvdgs = runcomp cesq_resolution_execorder compresuvdgs;
+			finsts = (\resuvdg2 -> ImplicitAS (ImplicitInstantiation (MinMaxGraphInst (mergeRESUnifVDGraph sig resuvdg_min resuvdg2) (mergeRESUnifVDGraph sig resuvdg_mincond resuvdg2) (mergeRESUnifVDGraph sig resuvdg_max resuvdg2)) sel2));
+			einsts = finsts <$> eresuvdgs;
+	composeImplicit (ImplicitInstantiation (MinMaxGraphInst resuvdg_min resuvdg_mincond resuvdg_max) sel) (tcnf,sel2,FLogicQuery sig (Satisfies ecnf satcnf)) = ExplicitAS einsts
+		where
+			compresuvdgs_ecnf = soresolve_to_dgraph_filter sig (tcnf ++ ecnf) :: Computation (RESUnifVDGraph t mpd pd fn v pmv fmv uv);
+			compresuvdgs_mincondcnf = soresolve_to_dgraph_filter sig (tcnf ++ satcnf) :: Computation (RESUnifVDGraph t mpd pd fn v pmv fmv uv);
+			eresuvdgs_ecnf = runcomp cesq_resolution_execorder compresuvdgs_ecnf;
+			eresuvdgs_mincondcnf = runcomp cesq_resolution_execorder compresuvdgs_mincondcnf;
+			einsts = do
+				{
+					resuvdgs_ecnf <- eresuvdgs_ecnf;
+					resuvdgs_mincondcnf <- eresuvdgs_mincondcnf;
+
+					return (ImplicitAS (ImplicitInstantiation (MinMaxGraphInst resuvdg_min (mergeRESUnifVDGraph sig resuvdg_mincond resuvdgs_mincondcnf) (mergeRESUnifVDGraph sig resuvdg_max resuvdgs_ecnf)) sel2))
+				};
+	composeImplicit (ImplicitInstantiation (MinMaxGraphInst resuvdg_min resuvdg_mincond resuvdg_max) sel) (tcnf,sel2,FLogicQuery sig (Equals a1 a2)) = inst
+		where
+			a1w = ADDirect (NSOAtom a1);
+			a2w = ADDirect (NSOAtom a2);
+			eq = AtomUnif a1w a2w :: UnifEquation a t LambdaCNF mpd pd fn v pmv fmv uv;
+			resuvdg2 = doRESUnifVDGraph sig (dgraph_from_ueq sig eq);			
+			inst = ImplicitAS (ImplicitInstantiation (MinMaxGraphInst (mergeRESUnifVDGraph sig resuvdg_min resuvdg2) (mergeRESUnifVDGraph sig resuvdg_mincond resuvdg2) (mergeRESUnifVDGraph sig resuvdg_max resuvdg2)) sel2);
+	composeImplicit (ImplicitInstantiation (MinMaxGraphInst resuvdg_min resuvdg_mincond resuvdg_max) sel) (tcnf,sel2,FLogicQuery sig (NotEquals a1 a2)) = inst
+		where
+			a1w = ADDirect (NSOAtom a1);
+			a2w = ADDirect (NSOAtom a2);
+			eq = AtomUnif a1w a2w :: UnifEquation a t LambdaCNF mpd pd fn v pmv fmv uv;
+			resuvdg_mincond2 = doRESUnifVDGraph sig (dgraph_from_ueq sig eq);
+			resuvdg_max2 = failedRESUnifVDGraph sig :: RESUnifVDGraph t mpd pd fn v pmv fmv uv;
+			inst = ImplicitAS (ImplicitInstantiation (MinMaxGraphInst resuvdg_min (mergeRESUnifVDGraph sig resuvdg_mincond resuvdg_mincond2) resuvdg_max2) sel2);
+	composeImplicit _ _ = error "Error on composeImplicit for ImplicitInstantiations and Queries: Case not considered!!!"
+
+instance forall a t mpd pd fn v pmv fmv uv. ESMGUConstraintsUPmv t pd fn v pmv fmv uv => ImplicitF (ImplicitInstantiation t mpd pd fn v pmv fmv uv) (ImplicitInstantiation t mpd pd fn v pmv fmv uv) (CESQVar pmv fmv =<- CESQSol pd fn) (CESQVar pmv fmv :->= CESQSol pd fn) where
 	composeImplicit = composeImplicitDefault
 
-instance CESQConstraintsOut pd fn pmv fmv => ImplicitF (AnswerSet (ImplicitInstantiation pd fn pmv fmv) (CESQVar pmv fmv =<- CESQSol pd fn), AnswerSet (ImplicitInstantiation pd fn pmv fmv) (CESQVar pmv fmv =<- CESQSol pd fn)) (ImplicitInstantiation pd fn pmv fmv) (CESQVar pmv fmv =<- CESQSol pd fn) ProductQOP where
+instance forall a t mpd pd fn v pmv fmv uv. ESMGUConstraintsUPmv t pd fn v pmv fmv uv => ImplicitF (AnswerSet (ImplicitInstantiation t mpd pd fn v pmv fmv uv) (CESQVar pmv fmv =<- CESQSol pd fn), AnswerSet (ImplicitInstantiation t mpd pd fn v pmv fmv uv) (CESQVar pmv fmv =<- CESQSol pd fn)) (ImplicitInstantiation t mpd pd fn v pmv fmv uv) (CESQVar pmv fmv =<- CESQSol pd fn) ProductQOP where
 	composeImplicit = composeImplicitDefault
 
-testtypes :: CESQConstraintsIn a t mpd pd fn v pmv fmv => CNF a t mpd pd fn v pmv fmv -> Query (BaseCESQuery a t mpd pd fn v pmv fmv) (CESQVar pmv fmv) (CESQSol pd fn) -> AnswerSet (ImplicitInstantiation pd fn pmv fmv) (CESQVar pmv fmv =<- CESQSol pd fn)
+testtypes :: CESQConstraintsALL a t mpd pd fn v pmv fmv uv => CNF a t mpd pd fn v pmv fmv -> Query (BaseCESQuery a t mpd pd fn v pmv fmv) (CESQVar pmv fmv) (CESQSol pd fn) -> AnswerSet (ImplicitInstantiation t mpd pd fn v pmv fmv uv) (CESQVar pmv fmv =<- CESQSol pd fn)
 testtypes = runQuery
 
 
