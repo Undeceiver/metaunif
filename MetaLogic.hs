@@ -74,6 +74,7 @@ instance ChangeArity SOMVariable where
 instance Variabilizable SOMVariable where 
 	from_var (IntVar x) = SOMVar x 0
 	get_var (SOMVar x _) = IntVar x
+	update_var f (SOMVar idx aty) = SOMVar (f idx) aty
 
 instance Variable SOMVariable where
 	getVarID = getVarID_gen
@@ -198,6 +199,7 @@ instance ChangeArity SOAMVariable where
 instance Variabilizable SOAMVariable where 
 	from_var (IntVar x) = SOAMVar x 0
 	get_var (SOAMVar x _) = IntVar x
+	update_var f (SOAMVar x aty) = SOAMVar (f x) aty
 
 instance Variable SOAMVariable where
 	getVarID = getVarID_gen
@@ -346,6 +348,7 @@ instance Read UnifVariable where
 instance Variabilizable UnifVariable where 
 	from_var (IntVar x) = UnifVar x
 	get_var (UnifVar x) = IntVar x
+	update_var f (UnifVar x) = UnifVar (f x)
 
 instance Variable UnifVariable where
 	getVarID = getVarID_gen

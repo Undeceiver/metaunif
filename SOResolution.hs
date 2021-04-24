@@ -112,7 +112,7 @@ instance ResConstraintsALL a t ss mpd pd fn v pmv fmv uv => ResLiteral (AtomDepe
 		}
 
 next_uv :: ResConstraintsU uv => uv -> uv
-next_uv uv = from_var (IntVar ((getVarID uv) + 1))
+next_uv uv = update_var (+1) uv
 
 data SOResGreedyFactorH a t ss mpd pd fn v pmv fmv uv = SOResGreedyFactorH
 

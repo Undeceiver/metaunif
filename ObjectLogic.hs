@@ -37,6 +37,7 @@ instance Read OVariable where
 instance Variabilizable OVariable where 
 	from_var (IntVar x) = OVar x
 	get_var (OVar x) = IntVar x
+	update_var f (OVar x) = OVar (f x)
 
 instance Variable OVariable where
 	getVarID = getVarID_gen

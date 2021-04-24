@@ -630,7 +630,7 @@ mergeESUnifVDGraph_mergevars :: forall v. (Variable v, Variabilizable v) => Enum
 mergeESUnifVDGraph_mergevars cvs vs1 vs2 = (enub (vs2 ..+ (ff <$> vs1)), ff)
 	where
 		maxvid = maximum (getVarID <$> vs2);
-		ff = (\v -> if (uns_produce_next (eelem v cvs)) then v else (from_var (IntVar ((getVarID v) + maxvid + 1))))		
+		ff = (\v -> if (uns_produce_next (eelem v cvs)) then v else (update_var (+(maxvid+1)) v))
 
 mergeESUnifVDGraph_maxuv :: (Variable uv, Ord uv) => [[TermDependant t fn v fmv uv]] -> Int
 mergeESUnifVDGraph_maxuv [] = 0
@@ -640,7 +640,7 @@ mergeESUnifVDGraph_maxuv (((TDUnif uv _):tds):tdss) = max (getVarID uv) (mergeES
 
 mergeESUnifVDGraph_refreshfo :: (Variable uv, Ord uv, Variabilizable uv) => Int -> TermDependant t fn v fmv uv -> TermDependant t fn v fmv uv
 mergeESUnifVDGraph_refreshfo maxuv (TDDirect x) = TDDirect x
-mergeESUnifVDGraph_refreshfo maxuv (TDUnif uv x) = TDUnif (from_var (IntVar ((getVarID uv) + maxuv + 1))) (mergeESUnifVDGraph_refreshfo maxuv x)
+mergeESUnifVDGraph_refreshfo maxuv (TDUnif uv x) = TDUnif (update_var (+(maxuv+1)) uv) (mergeESUnifVDGraph_refreshfo maxuv x)
 
 mergeESUnifVDGraph_vfoedge :: ESMGUConstraintsUPmv t pd fn v pmv fmv uv => Int -> Map Int Int -> ESUnifVFoEdge s t pd fn v pmv fmv uv -> TwoStateT (ESUnifVDGraph s t mpd pd fn v pmv fmv uv) (ESUnifVDGraph s t mpd pd fn v pmv fmv uv) (ST s) ()
 mergeESUnifVDGraph_vfoedge maxuv nmap ve = do
@@ -650,7 +650,7 @@ mergeESUnifVDGraph_vfoedge maxuv nmap ve = do
 		rs <- mergeESUnifVDGraph_getrfonode nmap s;
 		rt <- mergeESUnifVDGraph_getrfonode nmap t;
 
-		let {ruv = from_var (IntVar ((getVarID uv) + maxuv + 1))};
+		let {ruv = update_var (+(maxuv+1)) uv};
 
 		onRightStateT $ addVFoEdge rs rt ruv;
 

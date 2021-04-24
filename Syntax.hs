@@ -43,6 +43,8 @@ import Control.Lens
 class Variabilizable t where
 	from_var :: IntVar -> t
 	get_var :: t -> IntVar
+	-- Better than from_var and get_var, because it keeps any other hidden characteristics of the variable (like arity for second-order variables).
+	update_var :: (Int -> Int) -> t -> t
 
 getVarID_gen :: Variabilizable v => v -> Int
 getVarID_gen x = getVarID (get_var x)
@@ -547,8 +549,8 @@ instance (Eq pmv) => Substitutable (SOAtom pd fn pmv fmv) pmv pmv where
 	subst pmv rpmv (UTerm (SOP (Proj idx))) = UTerm (SOP (Proj idx))
 	subst pmv rpmv (UTerm (SOP (CompF h sots))) = UTerm (SOP (CompF (subst pmv rpmv h) sots))
 
-instance (Eq fmv) => Substitutable (SOAtom pd fn pmv fmv) fmv (GroundSOT fn) where
-	subst fmv sot soa = subst fmv gsot soa where gsot = inject_groundsot sot :: SOTerm fn fmv
+--instance (Eq fmv) => Substitutable (SOAtom pd fn pmv fmv) fmv (GroundSOT fn) where
+--	subst fmv sot soa = subst fmv gsot soa where gsot = inject_groundsot sot :: SOTerm fn fmv
 
 newtype SOMetawrap (t :: * -> * -> *) fn v mv = SOMetawrap {fromSOMetawrap :: UTerm (t (SOTerm fn mv)) v}
 

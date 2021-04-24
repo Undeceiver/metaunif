@@ -456,6 +456,11 @@ class Functional t a b where
 instance Functional (a -> b) a b where
 	tofun = id
 
+-- This must be the simplest type class ever made.
+-- As it has no functional dependencies, the resulting type is prone to being ambiguous, so use it knowingly.
+class Transformable a b where
+	transform :: a -> b
+
 -- The idea when you use a Normalizable type is that you define all your functions on the a type, and simply use the type n to indicate when an element needs to be normalized, and only define functions on n that are necessarily to be performed on normalized types. The rest can be performed on normalized types by simply injecting them into a. If at some point it is important to keep normality while performing an operation, we can implement a different version for n.
 class Normalizable a n | a -> n, n -> a where
 	normalize :: a -> n
