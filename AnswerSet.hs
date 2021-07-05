@@ -69,6 +69,47 @@ enumAS (SingleAS a) = comp a
 enumAS (ExplicitAS en) = (cunfactor enumAS) ... (ecomp en)
 enumAS (ImplicitAS s) = enumImplicit s
 
+rigidifyAS :: ExecOrder t => t -> AnswerSet s a -> AnswerSet s a
+rigidifyAS x (SingleAS a) = SingleAS a
+rigidifyAS x (ExplicitAS en) = ExplicitAS (execorder x fext subruns)
+	where
+		subruns = rigidifyAS x <$> en;
+		fext = (\as -> case as of
+			{
+				SingleAS as_a -> return (SingleAS as_a);
+				ExplicitAS as_en -> as_en;
+				ImplicitAS as_s -> return (ImplicitAS as_s)
+			})
+rigidifyAS x (ImplicitAS s) = ImplicitAS s
+
+fullrigidifyAS :: ExecOrder t => t -> AnswerSet s a -> AnswerSet s a
+fullrigidifyAS x (SingleAS a) = SingleAS a
+fullrigidifyAS x (ExplicitAS en) = ExplicitAS (execorder x fext subruns)
+	where
+		subruns = fullrigidifyAS x <$> en;
+		fext = (\as -> case as of
+			{
+				SingleAS as_a -> return (SingleAS as_a);
+				ExplicitAS as_en -> as_en;
+				ImplicitAS s -> error "Found an implicit answer in recursive case of fullrigidify!"				
+			})
+fullrigidifyAS x (ImplicitAS s) = ExplicitAS (SingleAS <$> runcomp x (enumImplicit s))
+
+fenumAS :: ExecOrder t => t -> (EnumProc a -> EnumProc a) -> AnswerSet s a -> AnswerSet s a
+fenumAS x f as = case (fullrigidifyAS x as) of
+		{
+			SingleAS a -> ExplicitAS (SingleAS <$> f (return a));
+			ExplicitAS en -> ExplicitAS (SingleAS <$> f (fext <$> en));
+			ImplicitAS _ -> error "Found an implicit answer after fully rigidifying answer set!"
+		}
+	where
+		fext = (\as -> case as of
+			{
+				SingleAS as_a -> as_a;
+				ExplicitAS _ -> error "Found a recursive explicit instantiation after fully rigidifying answer set!";
+				ImplicitAS _ -> error "Found an implicit answer after fully rigidifying answer set!"
+			})
+
 diagEnumAS :: AnswerSet s a -> EnumProc a
 diagEnumAS as = (enumAS as) \$ ()
 

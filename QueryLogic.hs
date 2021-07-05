@@ -33,6 +33,7 @@ import Syntax
 import AnswerSet
 import EnumProc
 import Data.Bifunctor
+import Algorithm
 
 -- Conceptually, SequentialQ is like an inner join performed quadratically, while ImplicitQ is like an inner join performed via some form of match algorithm. ProductQ is an outer join.
 -- IntersectionQ is a nested query in the where clause.
@@ -44,12 +45,12 @@ import Data.Bifunctor
 -- Implicit calculation of intersection is not supported: Intersection is always calculated explicitly.
 data Query (q :: *) (v :: *) (am :: *) (r :: *) = BaseQ [v |<- r] q | SequentialQ (Query q v am r) am (Query q v am r) | ImplicitQ (Query q v am r) am (Query q v am r) | ProductQ (Query q v am r) (Query q v am r) | IntersectionQ (Query q v am r) am (Query q v am r)
 
-instance (Show q, Show v, Show r) => Show (Query q v am r) where
+instance (Show q, Show v, Show r, Show am) => Show (Query q v am r) where
 	show (BaseQ sel q) = (show sel) ++ " " ++ (show q)
-	show (SequentialQ q1 m q2) = "(" ++ (show q1) ++ ") <- (" ++ (show q2) ++ ")"
-	show (ImplicitQ q1 m q2) = "(" ++ (show q1) ++ ") <= (" ++ (show q2) ++ ")"
+	show (SequentialQ q1 m q2) = "(" ++ (show q1) ++ ") <- (" ++ (show q2) ++ ") $ " ++ (show m)
+	show (ImplicitQ q1 m q2) = "(" ++ (show q1) ++ ") <= (" ++ (show q2) ++ ") $ " ++ (show m)
 	show (ProductQ q1 q2) = "(" ++ (show q1) ++ ") x (" ++ (show q2) ++ ")"
-	show (IntersectionQ q1 m q2) = "ALL (" ++ (show q1) ++ ") <= (" ++ (show q2) ++ ")"
+	show (IntersectionQ q1 m q2) = "ALL (" ++ (show q1) ++ ") <= (" ++ (show q2) ++ ") $ " ++ (show m)
 
 ($<-) :: Query q v am r -> Query q v am r -> am -> Query q v am r
 q1 $<- q2 = (\m -> SequentialQ q1 m q2)
@@ -63,13 +64,14 @@ infix 7 $<=
 q1 $<=| q2 = (\m -> IntersectionQ q1 m q2)
 infix 7 $<=|
 
-data QuerySelect v r = QVar v | QConst r deriving (Eq, Ord)
+data QuerySelect v r = QVar v | QConst r | QVarConst v r deriving (Eq, Ord)
 type (v |<- r) = QuerySelect v r
 infix 7 |<-
 
 instance (Show v, Show r) => Show (QuerySelect v r) where
 	show (QVar v) = "?" ++ (show v)
 	show (QConst r) = ":" ++ (show r)
+	show (QVarConst v r) = "~?" ++ (show v) ++ ":" ++ (show r)
 
 instance (Read v, Read r) => Read (QuerySelect v r) where
 	readsPrec _ xs =
@@ -82,15 +84,42 @@ instance (Read v, Read r) => Read (QuerySelect v r) where
 		{
 			Just rest -> (let r = (head (reads rest)::(r,String)) in
 				[(QConst (fst r), (snd r))]);
+			Nothing -> 
+		case stripPrefix "~?" xs of
+		{
+			Just rest -> (let r = (head (reads rest)::(v,String)) in
+					(let r2 = (head (reads (tail (snd r)))::(r,String)) in
+						[(QVarConst (fst r) (fst r2), (snd r2))]));
 			Nothing -> error ("Could not read select clause in query: " ++ xs)
-		}}
+		}}}
 
 data QResultSet v r = QResultSet {qresultset_sel :: [v |<- r], qresultset_result :: v := r}
 type (v =<- r) = QResultSet v r
 infix 7 =<-
 
 -- I don't think so, but it is a possibility that this instance might give issues if two result sets are the same with different select clauses (???)
-deriving instance (Eq v, Eq r) => Eq (QResultSet v r)
+--deriving instance (Eq v, Eq r) => Eq (QResultSet v r)
+instance (Eq v, Eq r, Ord v) => Eq (QResultSet v r) where
+	(QResultSet sel1 res1) == (QResultSet sel2 res2) = all f (zip sel1 sel2)
+		where
+			f = (\(s1,s2) -> case s1 of
+				{
+					QVar v1 -> case s2 of
+					{
+						QVar v2 -> ((v1 == v2) && ((res1 ! v1) == (res2 ! v2)));
+						_ -> False
+					};
+					QConst r1 -> case s2 of
+					{
+						QConst r2 -> (r1 == r2);
+						_ -> False
+					};
+					QVarConst v1 r1 -> case s2 of
+					{
+						QVarConst v2 r2 -> ((v1 == v2) && (r1 == r2));
+						_ -> False
+					}
+				})
 
 instance (Ord v, Show v, Show r) => Show (QResultSet v r) where
 	show (QResultSet sel res) = show_qresultset res sel
@@ -98,11 +127,12 @@ instance (Ord v, Show v, Show r) => Show (QResultSet v r) where
 show_qresultset :: (Ord v, Show v, Show r) => (v := r) -> [v |<- r] -> String
 show_qresultset res [] = ""
 show_qresultset res [r] = show_qresultset_element res r
-show_qreulstset res (r:rs) = (show_qresultset_element res r) ++ ", " ++ (show_qresultset res rs)
+show_qresultset res (r:rs) = (show_qresultset_element res r) ++ ", " ++ (show_qresultset res rs)
 
 show_qresultset_element :: (Ord v, Show v, Show r) => (v := r) -> (v |<- r) -> String
-show_qresultset_element res (QVar v) = (show v) ++ " := " ++ (show (res ! v))
+show_qresultset_element res (QVar v) = (show v) ++ " := " ++ (show (res !# v $ "Map error on show_qresultset_element"))
 show_qresultset_element res (QConst r) = (show r)
+show_qresultset_element res (QVarConst v r) = (show v) ++ " :~ " ++ (show r)
 
 -- Creates a result set with no constants, only the variables in the given map, and exactly those variables.
 qresultset_from_map :: (v := r) -> (v =<- r)
@@ -121,9 +151,10 @@ instance Ord v => Functional ProductQOP (v =<- r, v =<- r) (AnswerSet s (v =<- r
 	tofun ProductQOP (r1,r2) = SingleAS (QResultSet (s1 ++ s2) (Data.List.foldr (\(v,r) -> Data.Map.Strict.insert v r) m1 (assocs m2))) where s1 = qresultset_sel r1; m1 = qresultset_result r1; s2 = qresultset_sel r2; m2 = qresultset_result r2
 
 instance (Eq v, Substitutable r v r) => Substitutable (v |<- r) v r where
-	subst v2 r (QVar v1) | v1 == v2 = QConst r
+	subst v2 r (QVar v1) | v1 == v2 = QVarConst v1 r
 	subst v2 r (QVar v1) = QVar v1
 	subst v2 r (QConst r2) = QConst (subst v2 r r2)
+	subst v2 r (QVarConst v1 r2) = QVarConst v1 (subst v2 r r2)
 
 instance (Eq v, Substitutable r v r) => Substitutable [(v |<- r)] v r where
 	subst = subst_fmap
@@ -135,6 +166,7 @@ instance Eq v => Substitutable (VarSubstQuerySelect v r) v v where
 	subst v2 v3 (VarSubstQuerySelect (QVar v1)) | v1 == v2 = (VarSubstQuerySelect (QVar v3))
 	subst v2 v3 (VarSubstQuerySelect (QVar v1)) = (VarSubstQuerySelect (QVar v1))
 	subst v2 v3 (VarSubstQuerySelect (QConst r2)) = (VarSubstQuerySelect (QConst r2))
+	subst v2 v3 (VarSubstQuerySelect (QVarConst v1 r2)) = (VarSubstQuerySelect (QVarConst v1 r2))
 
 instance Eq v => Substitutable [VarSubstQuerySelect v r] v v where
 	subst = subst_fmap
@@ -143,6 +175,7 @@ qFreeVarsSelect :: [v |<- r] -> [v]
 qFreeVarsSelect [] = []
 qFreeVarsSelect ((QVar v):xs) = (v:(qFreeVarsSelect xs))
 qFreeVarsSelect ((QConst r):xs) = qFreeVarsSelect xs
+qFreeVarsSelect ((QVarConst v r):xs) = qFreeVarsSelect xs
 
 qSelectVars :: forall q v am r. (Eq v, Transformable am (v :->= r)) => Query q v am r -> [v]
 qSelectVars (BaseQ vs _) = qFreeVarsSelect vs
@@ -190,15 +223,24 @@ class Queriable q v t r s | q v t -> r s where
 type BaseQueryInput q v t r = (t,[v |<- r],q)
 type QueryInput q v am t r = (t,Query q v am r)
 
+-- An arbitrary parameter to indicate how many steps we will consider for intersection. Set to a really large number for true intersection, but since sets are often infinite in redundant ways, that is quite useless in practice.
+querylogic_intersectq_depth :: Int
+querylogic_intersectq_depth = 10
+
 runBaseQIn :: Queriable q v t r s => BaseQueryInput q v t r -> AnswerSet s (v =<- r)
 runBaseQIn (t,s,q) = runBaseQ t s q
 
+-- When we do sequential composition, we use a default execution order and we remove duplicates. This is in some sense coupling, but it's worth it.
+querylogic_sequential_execorder :: Diagonalize
+querylogic_sequential_execorder = default_diag
+
 runQuery :: forall q v am t r s. (Queriable q v t r s, Eq v, Substitutable r v r, Substitutable q v r, Substitutable am v r, Ord v, Transformable am (QArgumentMap v r), FullImplicitF s (v =<- r) s (v =<- r) am, FullImplicitF s (v =<- r) s (v =<- r) (BaseQueryInput q v t r), FullImplicitF (AnswerSet s (v =<- r), AnswerSet s (v =<- r)) (v =<- r, v =<- r) s (v =<- r) ProductQOP, Eq r) => t -> Query q v am r -> AnswerSet s (v =<- r)
 runQuery t (BaseQ vs q) = runBaseQ t vs q
-runQuery t (SequentialQ q1 m q2) = (runQuery t q2) >>= (\r2 -> runQuery t (Data.List.foldr (\(v,f) -> subst v (f r2)) q1 (assocs (transform m::(v :->= r)))))
+--runQuery t (SequentialQ q1 m q2) = (runQuery t q2) >>= (\r2 -> runQuery t (Data.List.foldr (\(v,f) -> subst v (f r2)) q1 (assocs (transform m::(v :->= r)))))
+runQuery t (SequentialQ q1 m q2) = (fenumAS querylogic_sequential_execorder enub (runQuery t q2)) >>= (\r2 -> runQuery t (Data.List.foldr (\(v,f) -> subst v (f r2)) q1 (assocs (transform m::(v :->= r)))))
 runQuery t (ImplicitQ q1 m q2) = (runQuery t q2) ?>>= m ?>>= (t,q1)
 runQuery t (ProductQ q1 q2) = (tupleAS (runQuery t q1) (runQuery t q2)) ?>>= ProductQOP
-runQuery t (IntersectionQ q1 m q2) = ExplicitAS (SingleAS <$> (eintersectAll ((\m2 -> diagEnumAS (runQuery t (Data.List.foldr (\(v,f) -> subst v (f m2)) q1 (assocs (transform m::(v :->= r)))))) <$> (diagEnumAS (runQuery t q2)))))
+runQuery t (IntersectionQ q1 m q2) = ExplicitAS (SingleAS <$> (eintersectAll (get_nstep_en querylogic_intersectq_depth ((\m2 -> diagEnumAS (runQuery t (Data.List.foldr (\(v,f) -> subst v (f m2)) q1 (assocs (transform m::(v :->= r)))))) <$> (diagEnumAS (runQuery t q2))))))
 
 -- In this instance we assume that the argument map has already been processed. This is important, as a base query does not include the argument map in itself, but it must be processed for correctness.
 -- That is, the input map is expressed in the variables of the query.
@@ -210,7 +252,7 @@ instance (Queriable q v t r s, Eq v, Substitutable r v r, Substitutable q v r, S
 	composeImplicit s (t,(SequentialQ q1 m q2)) = (composeImplicit s (t,q2)) >>= (\m2 -> runQuery t (Data.List.foldr (\(v,f) -> subst v (f m2)) q1 (assocs (transform m::(v :->= r)))))
 	composeImplicit s (t,(ImplicitQ q1 m q2)) = (composeImplicit s (t,q2)) ?>>= m ?>>= (t,q1)
 	composeImplicit s (t,(ProductQ q1 q2)) = (tupleAS (composeImplicit s (t,q1)) (composeImplicit s (t,q2))) ?>>= ProductQOP
-	composeImplicit s (t,(IntersectionQ q1 m q2)) = ExplicitAS (SingleAS <$> (eintersectAll ((\m2 -> diagEnumAS (runQuery t (Data.List.foldr (\(v,f) -> subst v (f m2)) q1 (assocs (transform m::(v :->= r)))))) <$> (diagEnumAS (composeImplicit s (t,q2))))))
+	composeImplicit s (t,(IntersectionQ q1 m q2)) = ExplicitAS (SingleAS <$> (eintersectAll (get_nstep_en querylogic_intersectq_depth ((\m2 -> diagEnumAS (runQuery t (Data.List.foldr (\(v,f) -> subst v (f m2)) q1 (assocs (transform m::(v :->= r)))))) <$> (diagEnumAS (composeImplicit s (t,q2)))))))
 
 instance (Queriable q v t r s, Eq v, Substitutable r v r, Substitutable q v r, Substitutable am v r, Ord v, Transformable am (QArgumentMap v r), FullImplicitF s (v =<- r) s (v =<- r) am, FullImplicitF s (v =<- r) s (v =<- r) (BaseQueryInput q v t r), FullImplicitF (AnswerSet s (v =<- r), AnswerSet s (v =<- r)) (v =<- r, v =<- r) s (v =<- r) ProductQOP, Eq r) => Functional (QueryInput q v am t r) (v =<- r) (AnswerSet s (v =<- r)) where
 	tofun (t,q) m = runQuery t (Data.List.foldr (\(v,r) -> subst v r) q (assocs (qresultset_result m)))

@@ -1,5 +1,6 @@
 {-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE TypeOperators #-}
 
 module CESQResolverEval where
 
@@ -15,13 +16,22 @@ import QueryLogic
 import CESQLogic
 import Data.Map.Strict
 import AnswerSet
+import SimplePerformance
+import EnumProc
+import Algorithm
 
+-- We do not really use this
+{-|
 data CESQTest = CESQTest {cttheory :: SOMetaCNF, ctpattern :: SOMetaQuery, ctsolutions :: [SOMetaQFullSol]}
 -- We use checkAS for now here, but this might need to be replaced if solutions cannot be provided exactly.
 checkCESQSols :: CESQTest -> AutomatedTestResult
 checkCESQSols tst = if (all (\(s,r) -> r) results) then (ATR True "All expected solutions were found in the resulting enumeration.") else (ATR False ("The following expected solutions could not be found in the resulting enumeration:\n" ++ (concat (Prelude.map (\(s,r) -> (show s) ++ "\n") (Prelude.filter (\(s,r) -> not r) results))))) 
 	where sols_found = runQuery (cttheory tst) (ctpattern tst); results = Prelude.map (\s -> (s,checkAS sols_found s)) (ctsolutions tst)
+|-}
 
+
+cesqtest :: Double -> String -> AnswerSet SOMetaImplicitInstantiation (SOMetaQVar =<- SOMetaQSol) -> IO ()
+cesqtest maxsecs filename as = stdout_to_file filename >> n_timeout_secs maxsecs (t_measure_enum_csv "\t" (enumAS as \$ ()))
 
 -- Test 1
 -- Signature mapping.
@@ -36,27 +46,34 @@ checkCESQSols tst = if (all (\(s,r) -> r) results) then (ATR True "All expected 
 -- f2[0]
 -- f3[0]
 -- f4[0]
+cesqsig1 :: SOMetaSignature
+cesqsig1 = SOSignature (Signature [EnumProc.Empty, read "p1[1]" --> read "p2[1]" --> read "p4[1]" --> read "p5[1]" --> EnumProc.Empty, read "p3[2]" --> EnumProc.Empty] [read "f1[0]" --> read "f2[0]" --> read "f3[0]" --> read "f4[0]" --> EnumProc.Empty] (read "x0" --> read "x1" --> EnumProc.Empty)) EnumProc.Empty (read "P1[1]" --> read "P2[1]" --> read "P3[1]" --> EnumProc.Empty) (read "k1[1]" --> EnumProc.Empty)
+
 cesqtheory1 :: SOMetaCNF
 cesqtheory1 = read "[[-p1[1](x0),+p2[1](x0)],[-p1[1](x0),+p3[2](x0,f1[0]())],[-p4[1](x0),+p2[1](x0)],[-p5[1](x0),+p4[1](x0)],[-p5[1](x0),+p1[1](x0)],[+k1[1]([[+p1[1]]])],[+k1[1]([[+p4[1]]])],[+k1[1]([[+p5[1]]])]]"
 
 cesqquery1_1 :: SOMetaBaseQ
-cesqquery1_1 = read "*|= [[-P1[1](x0),+P2[1](x0),-P2[1](x1),+P1[1](x1)]] || [[+P1[1](f2[0]())],[-P2[1](f2[0]())],[+P2[1](f3[0]())],[-P1[1](f3[0]())]]"
+cesqquery1_1 = FLogicQuery cesqsig1 (read "*|= [[-P1[1](x0),+P2[1](x0),-P2[1](x1),+P1[1](x1)]] || [[+P1[1](f2[0]())],[-P2[1](f2[0]())],[+P2[1](f3[0]())],[-P1[1](f3[0]())]]")
 
 cesqquery1_2 :: SOMetaBaseQ
-cesqquery1_2 = read "|= [[+P3[1](f4[0]())],[-P1[1](f4[0]()),-P2[1](f4[0]())]]"
+cesqquery1_2 = FLogicQuery cesqsig1 (read "|= [[+P3[1](f4[0]())],[-P1[1](f4[0]()),-P2[1](f4[0]())]]")
 
 cesqquery1_3 :: SOMetaBaseQ
-cesqquery1_3 = read "|= [[-k1[1]([[+P1[1]]]),-k1[1]([[+P2[1]]]),-k1[1]([[+P3[1]]])]]"
+cesqquery1_3 = FLogicQuery cesqsig1 (read "|= [[-k1[1]([[+P1[1]]]),-k1[1]([[+P2[1]]]),-k1[1]([[+P3[1]]])]]")
 
 cesqquery1 :: SOMetaQuery
-cesqquery1 = (BaseQ (read "[?P1[1],?P2[1],?P3[1]]") cesqquery1_1) $<= ((BaseQ (read "[?P1[1],?P2[1],?P3[1]]") cesqquery1_2) $<= (BaseQ (read "[?P1[1],?P2[1],?P3[1]]") cesqquery1_3) $ (fromList [(read "P1[1]",(! (read "P1[1]"))),(read "P2[1]",(! (read "P2[1]"))),(read "P3[1]",(! (read "P3[1]")))])) $ (fromList [(read "P1[1]",(! (read "P1[1]"))),(read "P2[1]",(! (read "P2[1]"))),(read "P3[1]",(! (read "P3[1]")))])
+cesqquery1 = (BaseQ (read "[?P1[1],?P2[1],?P3[1]]") cesqquery1_1) $<- ((BaseQ (read "[?P1[1],?P2[1],?P3[1]]") cesqquery1_2) $<- (BaseQ (read "[?P1[1],?P2[1],?P3[1]]") cesqquery1_3) $ (read "[P1[1] := P1[1],P2[1] := P2[1],P3[1] := P3[1]]")) $ (read "[P1[1] := P1[1],P2[1] := P2[1],P3[1] := P3[1]]")
 
-cesqsols1 :: [SOMetaQFullSol]
-cesqsols1 = [fromList [(read "P1[1]",read "[[+p1[1]]]"),(read "P2[1]",read "[[+p4[1]]]"),(read "P3[1]",read "[[+p5[1]]]")]]
+cesqas1 :: AnswerSet SOMetaImplicitInstantiation (SOMetaQVar =<- SOMetaQSol)
+cesqas1 = runQuery cesqtheory1 cesqquery1
 
-cesqtest1 :: CESQTest
-cesqtest1 = CESQTest cesqtheory1 cesqquery1 cesqsols1
+--cesqsols1 :: [SOMetaQFullSol]
+--cesqsols1 = [fromList [(read "P1[1]",read "[[+p1[1]]]"),(read "P2[1]",read "[[+p4[1]]]"),(read "P3[1]",read "[[+p5[1]]]")]]
 
+--cesqtest1 :: CESQTest
+--cesqtest1 = CESQTest cesqtheory1 cesqquery1 cesqsols1
+
+{-|
 -- Test 2
 -- Signature mapping.
 -- p1[1] = spicyTopping
@@ -233,6 +250,44 @@ cesqsols7 = [fromList [(read "P1[1]",read "[[+p2[1]]]"),(read "P2[1]",read "[[+p
 cesqtest7 :: CESQTest
 cesqtest7 = CESQTest cesqtheory7 cesqquery7 cesqsols7
 
+|-}
+
+
+-- Test 8
+-- Signature mapping.
+
+-- p1[1] = pepperPizza
+-- p2[1] = pizza
+-- p3[2] = hasTopping
+-- p4[1] = pepperTopping
+-- p5[1] = margheritaPizza
+-- k1[3] = univ_class_prop_restriction
+-- Skolem functions.
+-- f1[1]
+-- f2[1]
+-- f3[0]
+-- f4[0]
+
+cesqsig8 :: SOMetaSignature
+cesqsig8 = SOSignature (Signature [EnumProc.Empty, read "p1[1]" --> read "p2[1]" --> read "p4[1]" --> read "p5[1]" --> EnumProc.Empty, read "p3[2]" --> EnumProc.Empty] [read "f3[0]" --> read "f4[0]" --> EnumProc.Empty, read "f1[1]" --> read "f2[1]" --> EnumProc.Empty] (read "x0" --> read "x1" --> EnumProc.Empty)) EnumProc.Empty (read "P1[1]" --> read "P2[1]" --> read "P3[2]" --> read "P4[1]" --> EnumProc.Empty) (read "k1[3]" --> EnumProc.Empty)
+
+cesqtheory8 :: SOMetaCNF
+cesqtheory8 = read "[[-p1[1](x0),+p2[1](x0)],[-p1[1](x0),-p3[2](x0,x1),+p4[1](x1)],[-p2[1](x0),+p1[1](x0),+p3[2](x0,f1[1](x0))],[-p2[1](x0),+p1[1](x0),-p4[1](f1[1](x0))],[-p5[1](x0),+p2[1](x0)],[-p5[1](x0),-p3[2](x0,x1)],[-p2[1](x0),+p5[1](x0),+p3[2](x0,f2[1](x0))],[+k1[3]([[+p1[1]]],[[+p3[2]]],[[+p4[1]]])]]"
+
+cesqquery8_1 :: SOMetaBaseQ
+cesqquery8_1 = FLogicQuery cesqsig8 (read "|= [[+P1[1](f3[0]())],[-P2[1](f3[0]()),+P3[2](f3[0](),f4[0]())]]")
+
+cesqquery8_2 :: SOMetaBaseQ
+cesqquery8_2 = FLogicQuery cesqsig8 (read "|= [[-k1[3]([[+P2[1]]],[[+P3[2]]],[[+P4[1]]])]]")
+
+cesqquery8 :: SOMetaQuery
+cesqquery8 = (BaseQ (read "[?P1[1],?P2[1],?P3[2]]") cesqquery8_1) $<- (BaseQ (read "[?P2[1],?P3[2]]") cesqquery8_2) $ (read "[P2[1] := P2[1],P3[2] := P3[2]]")
+
+cesqas8 :: AnswerSet SOMetaImplicitInstantiation (SOMetaQVar =<- SOMetaQSol)
+cesqas8 = runQuery cesqtheory8 cesqquery8
+
+{-|
+
 -- Test 8
 -- Signature mapping.
 
@@ -248,23 +303,27 @@ cesqtest7 = CESQTest cesqtheory7 cesqquery7 cesqsols7
 -- f3[0]
 -- f4[0]
 -- f5[0]
+
+cesqsig8 :: SOMetaSignature
+cesqsig8 = SOSignature (Signature [EnumProc.Empty, read "p1[1]" --> read "p2[1]" --> read "p4[1]" --> read "p5[1]" --> EnumProc.Empty, read "p3[2]" --> EnumProc.Empty] [read "f3[0]" --> read "f4[0]" --> read "f5[0]" --> EnumProc.Empty, read "f1[1]" --> read "f2[1]" --> EnumProc.Empty] (read "x0" --> read "x1" --> EnumProc.Empty)) EnumProc.Empty (read "P1[1]" --> read "P2[1]" --> read "P3[2]" --> read "P4[1]" --> EnumProc.Empty) (read "k1[3]" --> EnumProc.Empty)
+
 cesqtheory8 :: SOMetaCNF
 cesqtheory8 = read "[[-p1[1](x0),+p2[1](x0)],[-p1[1](x0),-p3[2](x0,x1),+p4[1](x1)],[-p2[1](x0),+p1[1](x0),+p3[2](x0,f1[1](x0))],[-p2[1](x0),+p1[1](x0),-p4[1](f1[1](x0))],[-p5[1](x0),+p2[1](x0)],[-p5[1](x0),-p3[2](x0,x1)],[-p2[1](x0),+p5[1](x0),+p3[2](x0,f2[1](x0))],[+k1[3]([[+p1[1]]],[[+p3[2]]],[[+p4[1]]])]]"
 
 cesqquery8_1 :: SOMetaBaseQ
-cesqquery8_1 = read "|= [[+P1[1](f3[0]()),+P1[1](f4[0]())],[+P1[1](f3[0]()),+P3[2](f4[0](),f5[0]())],[-P2[1](f3[0]()),+P1[1](f4[0]())],[-P2[1](f3[0]()),+P3[2](f4[0](),f5[0]())]]"
+cesqquery8_1 = FLogicQuery cesqsig8 (read "|= [[+P1[1](f3[0]()),+P1[1](f4[0]())],[+P1[1](f3[0]()),+P3[2](f4[0](),f5[0]())],[-P2[1](f3[0]()),+P1[1](f4[0]())],[-P2[1](f3[0]()),+P3[2](f4[0](),f5[0]())]]")
 
 cesqquery8_2 :: SOMetaBaseQ
-cesqquery8_2 = read "|= [[-k1[3]([[+P2[1]]],[[+P3[2]]],[[+P4[1]]])]]"
+cesqquery8_2 = FLogicQuery cesqsig8 (read "|= [[-k1[3]([[+P2[1]]],[[+P3[2]]],[[+P4[1]]])]]")
 
 cesqquery8 :: SOMetaQuery
-cesqquery8 = (BaseQ (read "[?P1[1],?P2[1],?P3[2]]") cesqquery8_1) $<= (BaseQ (read "[?P2[1],?P3[2]]") cesqquery8_2) $ (fromList [(read "P2[1]",(! (read "P2[1]"))),(read "P3[2]",(! (read "P3[2]")))])
+cesqquery8 = (BaseQ (read "[?P1[1],?P2[1],?P3[2]]") cesqquery8_1) $<- (BaseQ (read "[?P2[1],?P3[2]]") cesqquery8_2) $ (read "[P2[1] := P2[1],P3[2] := P3[2]]")
 
-cesqsols8 :: [SOMetaQFullSol]
-cesqsols8 = [fromList [(read "P1[1]",read "[[+p5[1]]]"),(read "P2[1]",read "[[+p1[1]]]"),(read "P3[2]",read "[[+p3[2]]]")]]
+cesqas8 :: AnswerSet SOMetaImplicitInstantiation (SOMetaQVar =<- SOMetaQSol)
+cesqas8 = runQuery cesqtheory8 cesqquery8
 
-cesqtest8 :: CESQTest
-cesqtest8 = CESQTest cesqtheory8 cesqquery8 cesqsols8
+|-}
+{-|
 
 -- Test 9
 -- Signature mapping.
@@ -794,6 +853,8 @@ cesqsols19 = [fromList [(read "P1[1]",read "[[+p7[1]]]"),(read "P2[1]",read "[[+
 cesqtest19 :: CESQTest
 cesqtest19 = CESQTest cesqtheory19 cesqquery19 cesqsols19
 
+|-}
+
 -- Test 20
 -- Signature mapping
 
@@ -802,23 +863,25 @@ cesqtest19 = CESQTest cesqtheory19 cesqquery19 cesqsols19
 -- k1[1] = primitive
 -- k2[2] = equivalent_classes
 
+cesqsig20 :: SOMetaSignature
+cesqsig20 = SOSignature (Signature [EnumProc.Empty, read "p1[1]" --> read "p2[1]" --> EnumProc.Empty] [] (read "x0" --> EnumProc.Empty)) EnumProc.Empty (read "P1[1]" --> read "P2[1]" --> EnumProc.Empty) (read "k1[1]" --> read "k2[2]" --> EnumProc.Empty)
+
 cesqtheory20 :: SOMetaCNF
 cesqtheory20 = read "[[-p1[1](x0),+p2[1](x0)],[-p2[1](x0),+p1[1](x0)],[+k1[1]([[+p1[1]]])],[+k1[1]([[+p2[1]]])],[+k2[2]([[+p1[1]]],[[+p2[1]]])]]"
 
 cesqquery20_1 :: SOMetaBaseQ
-cesqquery20_1 = read "|= [[-k1[1]([[+P1[1]]]),-k1[1]([[+P2[1]]])]]"
+cesqquery20_1 = FLogicQuery cesqsig20 (read "|= [[-k1[1]([[+P1[1]]]),-k1[1]([[+P2[1]]])]]")
 
 cesqquery20_2 :: SOMetaBaseQ
-cesqquery20_2 = read "|= [[-k2[1]([[+P1[1]]],[[+P2[1]]])]]"
+cesqquery20_2 = FLogicQuery cesqsig20 (read "|= [[-k2[2]([[+P1[1]]],[[+P2[1]]])]]")
 
 cesqquery20 :: SOMetaQuery
-cesqquery20 = (BaseQ (read "[?P1[1],?P2[1]]") cesqquery20_1) $<= (BaseQ (read "[?P1[1],?P2[1]]") cesqquery20_2) $ (fromList [(read "P1[1]",(! (read "P1[1]"))),(read "P2[1]",(! (read "P2[1]")))])
+cesqquery20 = (BaseQ (read "[?P1[1],?P2[1]]") cesqquery20_1) $<- (BaseQ (read "[?P1[1],?P2[1]]") cesqquery20_2) $ (read "[P1[1] := P1[1],P2[1] := P2[1]]")
 
-cesqsols20 :: [SOMetaQFullSol]
-cesqsols20 = [fromList [(read "P1[1]",read "[[+p1[1]]]"),(read "P2[1]",read "[[+p2[1]]]")]]
+cesqas20 :: AnswerSet SOMetaImplicitInstantiation (SOMetaQVar =<- SOMetaQSol)
+cesqas20 = runQuery cesqtheory20 cesqquery20
 
-cesqtest20 :: CESQTest
-cesqtest20 = CESQTest cesqtheory20 cesqquery20 cesqsols20
+{-|
 
 -- Test 21
 -- Signature mapping
@@ -1050,3 +1113,9 @@ cesqsols26 = [fromList [(read "P1[2]",read "[[+p1[2]]]")]]
 
 cesqtest26 :: CESQTest
 cesqtest26 = CESQTest cesqtheory26 cesqquery26 cesqsols26
+|-}
+
+
+
+
+main = putStr (show (enumAS cesqas20 \$ ()))

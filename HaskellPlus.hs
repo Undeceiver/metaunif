@@ -35,6 +35,8 @@ import Data.Functor.Compose
 import Data.UnionFind.ST
 import Control.Monad.Except
 import Debug.Trace
+import GHC.IO.Handle
+import System.IO
 
 -- Here I put functions/types that I feel should be part of Haskell but aren't. It is likely that at least half of them ACTUALLY are part of Haskell, but I wasn't smart enough to find them.
 
@@ -825,3 +827,12 @@ infixr 1 £$
 ($£) :: (a -> b) -> a -> b
 ($£) = ($)
 infixl 0 $£
+
+
+-- This is dangerous stuff. In its current shape, it requires a reset of GHCi to undo.
+stdout_to_file :: String -> IO ()
+stdout_to_file filename = do
+	{
+		h <- openFile filename WriteMode;
+		hDuplicateTo h stdout
+	}

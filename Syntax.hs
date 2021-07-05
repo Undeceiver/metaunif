@@ -545,6 +545,7 @@ instance (Eq fmv) => Substitutable (SOAtom pd fn pmv fmv) fmv (SOTerm fn fmv) wh
 -- Constrained version, but it is all we need right now.
 instance (Eq pmv) => Substitutable (SOAtom pd fn pmv fmv) pmv pmv where
 	subst pmv rpmv (UVar pmv2) | pmv == pmv2 = UVar rpmv
+	subst pmv rpmv (UVar pmv2) = UVar pmv2
 	subst pmv rpmv (UTerm (SOP (ConstF p))) = UTerm (SOP (ConstF p))
 	subst pmv rpmv (UTerm (SOP (Proj idx))) = UTerm (SOP (Proj idx))
 	subst pmv rpmv (UTerm (SOP (CompF h sots))) = UTerm (SOP (CompF (subst pmv rpmv h) sots))
@@ -1043,6 +1044,9 @@ fofuncs = funcs . fosig
 
 fovars :: SOSignature mpd pd fn v pmv fmv -> EnumProc v
 fovars = vars. fosig 
+
+clear_all_psovars_sosig :: SOSignature mpd pd fn v pmv fmv -> SOSignature mpd pd fn v pmv fmv
+clear_all_psovars_sosig (SOSignature fosig _ _ sopreds) = SOSignature fosig EnumProc.Empty EnumProc.Empty sopreds
 
 instance (Show mpd, Show pd, Show fn, Show v, Show pmv, Show fmv) => Show (SOSignature mpd pd fn v pmv fmv) where
 	show sig = "Predicates:" ++ (show (preds (fosig sig))) ++ ", Function symbols:" ++ (show (funcs (fosig sig))) ++ ", F.O. variables:" ++ (show (vars (fosig sig))) ++ ", S.O. variables:" ++ (show (sovars sig)) ++ ", Predicate variables:" ++ (show (pvars sig)) ++ ", S.O. predicates:" ++ (show (sopreds sig))

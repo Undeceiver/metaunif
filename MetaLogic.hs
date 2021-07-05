@@ -548,6 +548,8 @@ type SOMetaQParcSol = ParcCESQSol OPredicate OFunction SOAMVariable SOMVariable
 type SOMetaQFullSol = SOMetaQVar := SOMetaQSol
 type SOMetaBaseQ = BaseCESQuery CAtomPF CTermF SOPredicate OPredicate OFunction OVariable SOAMVariable SOMVariable -- = LogicQuery SOMetaCNF SOMetaterm
 type SOMetaQuery = CESQuery CAtomPF CTermF SOPredicate OPredicate OFunction OVariable SOAMVariable SOMVariable -- = Query SOMetaBaseQ SOMetaQVar SOMetaQSol
+type SOMetaQArgMap = CESQArgumentMap OPredicate OFunction SOAMVariable SOMVariable
+type SOMetaImplicitInstantiation = ImplicitInstantiation CTermF SOPredicate OPredicate OFunction OVariable SOAMVariable SOMVariable UnifVariable
 
 -- This should be doable this way, but it isn't now:
 --deriving via (NormalizeLiteral SOMetaatom, NormalizeLiteral SOMetaatom) instance Normalizable SOMetaliteral SOMetaliteral
@@ -619,6 +621,25 @@ instance Read SOMetaQParcSol where
 				in [(ParcCESQSol (Left (fst r)), (snd r))]);			
 			Nothing -> error ("Cannot read ground term or atom: " ++ xs)
 		}}}}
+
+instance Read SOMetaQArgMap where
+	readsPrec _ xs =
+		case stripPrefix "F" xs of
+		{
+			Just _ -> (let {aidx = fromJust (Data.List.findIndex (== ':') xs); (fmv,(_:_:argv)) = Data.List.splitAt aidx xs} in
+					(let {rfmv = (head (reads (trim fmv))::(SOMVariable,String)); rargv = (head (reads (trim argv))::(SOMetatermF,String))} in
+						[(CESQFAM (fst rfmv) (fst rargv), (snd rargv))]));
+			Nothing ->
+		case stripPrefix "P" xs of
+		{
+			Just _ -> (let {aidx = fromJust (Data.List.findIndex (== ':') xs); (pmv,(_:_:argv)) = Data.List.splitAt aidx xs} in
+					(let {rpmv = (head (reads (trim pmv))::(SOAMVariable,String)); rargv = (head (reads (trim argv))::(SOMetaatomP,String))} in
+						[(CESQPAM (fst rpmv) (fst rargv), (snd rargv))]));
+			Nothing -> error ("Cannot read argument map: " ++ xs)
+		}}
+
+instance Queriable SOMetaBaseQ SOMetaQVar SOMetaCNF SOMetaQSol SOMetaImplicitInstantiation where
+	runBaseQ = runBaseQWithUV (erased :: Erase UnifVariable)
 
 type SOMetaResProofStep = ResProofStep SOMetaAtomDependant [SOMetaUnifEquation]
 

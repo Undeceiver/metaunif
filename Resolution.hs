@@ -79,14 +79,16 @@ lens_rescnf_steps f rescnf = fmap (\rsteps -> ResCNF (rescnf_clauses rescnf) rst
 
 -- l is the atom type
 -- r is the constraint type generated when resolving
--- I don't really like this entirely, but mt is a Monad Transformer that's also a Monad Functor
 class PreResLiteral l where
 	-- resolvable works directly on the atoms, not on the literals, so that we can compare literals from the same clause for factorization.
 	-- Thus, at this level we can only actually resolve two literals with exactly opposite signs.
 	-- It is also an initial check. If false, it means they cannot be resolved. If true, it merely means a constraint can be generated, but that constraint may later on turn unsatisfiable.
 	-- It assumes commutativity: if (resolvable a b) is true, then (resolvable b a) is true.	
 	resolvable :: l -> l -> Bool
+	-- Full resolvable is used right before resolving to avoid going down useless paths. An acceptable (but slow) implementation is to just return True.
+	fullresolvable :: [l] -> [l] -> Bool
 
+-- I don't really like this entirely, but mt is a Monad Transformer that's also a Monad Functor
 class (Monoid r, MonadTrans mt, MFunctor mt, forall n. Monad n => Monad (mt n), PreResLiteral l) => ResLiteral l r (mt :: (* -> *) -> * -> *) | l r -> mt where
 	-- resolve works on two lists of atoms, the positive and the negative ones, and produces a constraint AND a function that modifies other atoms (the "unifier").
 	resolve :: Monad m => [l] -> [l] -> mt m (r,l -> l)
@@ -213,8 +215,43 @@ res_choosestep = do
 	{
 		resst <- lift (get);
 		
-		(lift . lift) (m_heur_choose () (rescnf_steps (resst_cnf resst)))
-	}
+		mb_step <- (lift . lift) (m_heur_choose () (rescnf_steps (resst_cnf resst)));
+
+--		return mb_step
+
+		gtraceM False "MB STEP";
+		gtraceM False (show mb_step);
+		
+		case mb_step of
+		{
+			Nothing -> return Nothing;
+			Just stepidx -> do
+			{
+				let {step = ((rescnf_steps . resst_cnf) resst) !! stepidx; posclidx = resstep_poscl step; poslitsidx = resstep_poslits step; negclidx = resstep_negcl step; neglitsidx = resstep_neglits step};
+				let {cnf = resst_cnf resst; cls = rescnf_clauses cnf};
+				let {poscl = cls !! posclidx; negcl = cls !! negclidx};
+				let {poslits = ((resclause_lits poscl) !!) <$> poslitsidx; neglits = ((resclause_lits negcl) !!) <$> neglitsidx};
+				let {posatoms = atom_from_literal <$> poslits; negatoms = atom_from_literal <$> neglits};
+
+				if (fullresolvable posatoms negatoms) then (gtrace False "YES!" (return mb_step))
+				else do
+				{
+					-- Remove this step, since it's no good.
+					let {resst2 = (lens_resst_cnf . lens_rescnf_steps) ..~ (removeAt stepidx) $ resst};
+					lift (put resst2);
+
+					gtraceM False "NO!";
+
+					-- Roll again
+					res_choosestep;
+				}
+			}
+		}
+
+
+	}		
+
+		
 
 -- We indicate the index of the step, rather than the step itself.
 -- Return the resulting constraint

@@ -23,6 +23,10 @@ import HaskellPlus
 import Data.Maybe
 import Control.Monad.ST
 import Control.Applicative
+import System.IO.Silently
+import SimplePerformance
+import System.IO
+
 
 -- There are two fundamental assumptions for any instance of the type EnumProc:
 --
@@ -432,6 +436,15 @@ etake n Halt = Halt
 etake n (Error str) = Error str
 etake n (Continue x) = Continue (etake n x)
 etake n (Produce v x) = v --> (etake (n-1) x)
+
+-- Counts continues
+etakeSteps :: Int -> EnumProc t -> EnumProc t
+etakeSteps 0 _ = Empty
+etakeSteps n Empty = Empty
+etakeSteps n Halt = Halt
+etakeSteps n (Error str) = Error str
+etakeSteps n (Continue x) = Continue (etakeSteps (n-1) x)
+etakeSteps n (Produce v x) = v --> (etakeSteps (n-1) x)
 
 etakeWhile :: (a -> Bool) -> EnumProc a -> EnumProc a
 etakeWhile _ Empty = Empty
@@ -911,4 +924,227 @@ st_en_commute sten = case comtype of
 				Produce v x -> return ProduceCom
 			}
 		})
+
+
+
+
+
+
+
+type EnumProcPerformanceOutput a = Integer -> Integer -> Integer -> a -> IO ()
+
+-- Measuring times for infinite enumerations.
+-- The first function is what to do on Produce.
+	-- First Integer argument is this step's time
+	-- Second Integer argument is time since last produce
+	-- Third Integer argument is total time
+-- The second function is what to do on Continue. Same arguments (but without the element, of course)
+-- The third function is what to do on Empty.
+-- The fourth function is what to do on Halt.
+-- Errors get output as errors regardless.
+t_measure_enum_by :: Show a => EnumProcPerformanceOutput a -> EnumProcPerformanceOutput () -> EnumProcPerformanceOutput () -> EnumProcPerformanceOutput () -> EnumProc a -> IO ()
+t_measure_enum_by fprod fcont fempty fhalt en = do
+	{
+		cur <- getCPUTime;
+
+		t_measure_enum_by_rec fprod fcont fempty fhalt cur cur cur en
+	}
+
+t_measure_enum_by_rec :: Show a => EnumProcPerformanceOutput a -> EnumProcPerformanceOutput () -> EnumProcPerformanceOutput () -> EnumProcPerformanceOutput () -> Integer -> Integer -> Integer -> EnumProc a -> IO ()
+t_measure_enum_by_rec fprod fcont fempty fhalt lstep lprod base EnumProc.Empty = do
+	{
+		cur <- getCPUTime;
+		let {tstep = cur - lstep; tprod = cur - lprod; ttot = cur - base};
+		fempty tstep tprod ttot ()
+	}
+t_measure_enum_by_rec fprod fcont fempty fhalt lstep lprod base EnumProc.Halt = do
+	{
+		cur <- getCPUTime;
+		let {tstep = cur - lstep; tprod = cur - lprod; ttot = cur - base};
+		fhalt tstep tprod ttot ()
+	}
+t_measure_enum_by_rec fprod fcont fempty fhalt lstep lprod base (Error estr) = error estr
+t_measure_enum_by_rec fprod fcont fempty fhalt lstep lprod base (Produce v x) = do
+	{
+		silence (putStr (show v));
+
+		cur <- getCPUTime;
+		let {tstep = cur - lstep; tprod = cur - lprod; ttot = cur - base};
+		fprod tstep tprod ttot v;
+		
+		let {nstep = cur; nprod = cur};
+
+		t_measure_enum_by_rec fprod fcont fempty fhalt nstep nprod base x;	
+	}
+t_measure_enum_by_rec fprod fcont fempty fhalt lstep lprod base (Continue x) = do
+	{
+		cur <- getCPUTime;
+		let {tstep = cur - lstep; tprod = cur - lprod; ttot = cur - base};
+		fcont tstep tprod ttot ();
+		
+		let {nstep = cur; nprod = lprod};
+
+		t_measure_enum_by_rec fprod fcont fempty fhalt nstep nprod base x;	
+	}
+
+t_measure_enum_default_fprod :: Show a => EnumProcPerformanceOutput a
+t_measure_enum_default_fprod tstep tprod ttot a = do
+	{
+		putStrLn "Found an element";
+		putStrLn "";
+		putStrLn (show a);
+		putStrLn "";
+		putStrLn ("Time since last step: " ++ (show tstep));
+		putStrLn ("Time since last element: " ++ (show tprod));
+		putStrLn ("Time since start: " ++ (show ttot));
+		putStrLn ""
+	}
+
+t_measure_enum_default_fcont :: EnumProcPerformanceOutput ()
+t_measure_enum_default_fcont tstep tprod ttot _ = do
+	{
+		putStrLn "Improductive step";
+		putStrLn "";
+		putStrLn ("Time since last step: " ++ (show tstep));
+		putStrLn ("Time since last element: " ++ (show tprod));
+		putStrLn ("Time since start: " ++ (show ttot));
+		putStrLn ""
+	}
+
+t_measure_enum_default_fempty :: EnumProcPerformanceOutput ()
+t_measure_enum_default_fempty tstep tprod ttot _ = do
+	{
+		putStrLn "Enumeration finished";
+		putStrLn "";
+		putStrLn ("Time since last step: " ++ (show tstep));
+		putStrLn ("Time since last element: " ++ (show tprod));
+		putStrLn ("Time since start: " ++ (show ttot));
+		putStrLn ""
+	}
+
+t_measure_enum_default_fhalt :: EnumProcPerformanceOutput ()
+t_measure_enum_default_fhalt tstep tprod ttot _ = do
+	{
+		putStrLn "Enumeration halted";
+		putStrLn "";
+		putStrLn ("Time since last step: " ++ (show tstep));
+		putStrLn ("Time since last element: " ++ (show tprod));
+		putStrLn ("Time since start: " ++ (show ttot));
+		putStrLn ""
+	}
+
+t_measure_enum :: Show a => EnumProc a -> IO ()
+t_measure_enum = t_measure_enum_by t_measure_enum_default_fprod t_measure_enum_default_fcont t_measure_enum_default_fempty t_measure_enum_default_fhalt
+
+t_measure_enum_default_fprod_secs :: Show a => EnumProcPerformanceOutput a
+t_measure_enum_default_fprod_secs tstep tprod ttot a = do
+	{
+		putStrLn "Found an element";
+		putStrLn "";
+		putStrLn (show a);
+		putStrLn "";
+		putStrLn ("Time since last step: " ++ (show (t_seconds tstep)) ++ "s");
+		putStrLn ("Time since last element: " ++ (show (t_seconds tprod)) ++ "s");
+		putStrLn ("Time since start: " ++ (show (t_seconds ttot)) ++ "s");
+		putStrLn ""
+	}
+
+t_measure_enum_default_fcont_secs :: EnumProcPerformanceOutput ()
+t_measure_enum_default_fcont_secs tstep tprod ttot _ = do
+	{
+		putStrLn "Improductive step";
+		putStrLn "";
+		putStrLn ("Time since last step: " ++ (show (t_seconds tstep)) ++ "s");
+		putStrLn ("Time since last element: " ++ (show (t_seconds tprod)) ++ "s");
+		putStrLn ("Time since start: " ++ (show (t_seconds ttot)) ++ "s");
+		putStrLn ""
+	}
+
+t_measure_enum_default_fempty_secs :: EnumProcPerformanceOutput ()
+t_measure_enum_default_fempty_secs tstep tprod ttot _ = do
+	{
+		putStrLn "Enumeration finished";
+		putStrLn "";
+		putStrLn ("Time since last step: " ++ (show (t_seconds tstep)) ++ "s");
+		putStrLn ("Time since last element: " ++ (show (t_seconds tprod)) ++ "s");
+		putStrLn ("Time since start: " ++ (show (t_seconds ttot)) ++ "s");
+		putStrLn ""
+	}
+
+t_measure_enum_default_fhalt_secs :: EnumProcPerformanceOutput ()
+t_measure_enum_default_fhalt_secs tstep tprod ttot _ = do
+	{
+		putStrLn "Enumeration halted";
+		putStrLn "";
+		putStrLn ("Time since last step: " ++ (show (t_seconds tstep)) ++ "s");
+		putStrLn ("Time since last element: " ++ (show (t_seconds tprod)) ++ "s");
+		putStrLn ("Time since start: " ++ (show (t_seconds ttot)) ++ "s");
+		putStrLn ""
+	}
+
+t_measure_enum_secs :: Show a => EnumProc a -> IO ()
+t_measure_enum_secs = t_measure_enum_by t_measure_enum_default_fprod_secs t_measure_enum_default_fcont_secs t_measure_enum_default_fempty_secs t_measure_enum_default_fhalt_secs
+
+t_measure_enum_csv_fprod :: Show a => String -> EnumProcPerformanceOutput a
+t_measure_enum_csv_fprod sep tstep tprod ttot a = do
+	{
+		let {
+			stype = "PROD";
+			sstep = show (t_seconds tstep);
+			sprod = show (t_seconds tprod);
+			stot = show (t_seconds ttot);
+			sa = show a;
+		};
+
+		putStrLn (stype ++ sep ++ sstep ++ sep ++ sprod ++ sep ++ stot ++ sep ++ sa);
+		hFlush stdout
+	}
+
+t_measure_enum_csv_fcont :: String -> EnumProcPerformanceOutput ()
+t_measure_enum_csv_fcont sep tstep tprod ttot _ = do
+	{
+		let {
+			stype = "CONT";
+			sstep = show (t_seconds tstep);
+			sprod = show (t_seconds tprod);
+			stot = show (t_seconds ttot);
+			sa = "";
+		};
+
+		putStrLn (stype ++ sep ++ sstep ++ sep ++ sprod ++ sep ++ stot ++ sep ++ sa);
+		hFlush stdout
+	}
+
+t_measure_enum_csv_fempty :: String -> EnumProcPerformanceOutput ()
+t_measure_enum_csv_fempty sep tstep tprod ttot _ = do
+	{
+		let {
+			stype = "EMPTY";
+			sstep = show (t_seconds tstep);
+			sprod = show (t_seconds tprod);
+			stot = show (t_seconds ttot);
+			sa = "";
+		};
+
+		putStrLn (stype ++ sep ++ sstep ++ sep ++ sprod ++ sep ++ stot ++ sep ++ sa);
+		hFlush stdout
+	}
+
+t_measure_enum_csv_fhalt :: String -> EnumProcPerformanceOutput ()
+t_measure_enum_csv_fhalt sep tstep tprod ttot _ = do
+	{
+		let {
+			stype = "HALT";
+			sstep = show (t_seconds tstep);
+			sprod = show (t_seconds tprod);
+			stot = show (t_seconds ttot);
+			sa = "";
+		};
+
+		putStrLn (stype ++ sep ++ sstep ++ sep ++ sprod ++ sep ++ stot ++ sep ++ sa);
+		hFlush stdout
+	}
+
+t_measure_enum_csv :: Show a => String -> EnumProc a -> IO ()
+t_measure_enum_csv sep = t_measure_enum_by (t_measure_enum_csv_fprod sep) (t_measure_enum_csv_fcont sep) (t_measure_enum_csv_fempty sep) (t_measure_enum_csv_fhalt sep)
 

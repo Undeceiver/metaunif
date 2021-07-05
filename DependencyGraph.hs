@@ -190,8 +190,21 @@ lens_soh f (DGSOEdge id h ss t) = fmap (\rh -> DGSOEdge id rh ss t) (f h)
 lens_sot :: Lens' DGSOEdge Int
 lens_sot f (DGSOEdge id h ss t) = fmap (\rt -> DGSOEdge id h ss rt) (f t)
 
+get_fonode_ids :: DGraph -> [Int]
+get_fonode_ids (DGraph fonodes _ _ _) = get_fonode_ids_l 0 fonodes
 
+get_fonode_ids_l :: Int -> [Maybe DGFONode] -> [Int]
+get_fonode_ids_l _ [] = []
+get_fonode_ids_l off (Nothing:ns) = get_fonode_ids_l (off+1) ns
+get_fonode_ids_l off ((Just _):ns) = off:(get_fonode_ids_l (off+1) ns)
 
+get_sonode_ids :: DGraph -> [Int]
+get_sonode_ids (DGraph _ _ sonodes _) = get_sonode_ids_l 0 sonodes
+
+get_sonode_ids_l :: Int -> [Maybe DGSONode] -> [Int]
+get_sonode_ids_l _ [] = []
+get_sonode_ids_l off (Nothing:ns) = get_sonode_ids_l (off+1) ns
+get_sonode_ids_l off ((Just _):ns) = off:(get_sonode_ids_l (off+1) ns)
 
 
 
@@ -428,7 +441,7 @@ lens_eqdg_sored f (EqDGraph dgraph fopoints fonodes foelements sopoints sonodes 
 
 
 show_eqdgraph :: (Show fot, Show sot) => EqDGraph s fot sot -> String
-show_eqdgraph eqdg = (show_dgraph foshow soshow efoshow esoshow (eqdgraph eqdg)) where foshow = (\foi -> (show foi) ++ "(FO):: " ++ (show (findWithDefault [] foi (eqdg_foelements eqdg)))); soshow = (\soi -> (show soi) ++ "(SO):: " ++ (show (findWithDefault [] soi (eqdg_soelements eqdg)))); efoshow = (\foei -> if (findWithDefault False foei (eqdg_redundant_foedges eqdg)) then "[R]" else "[NR]"); esoshow = (\soei -> if (findWithDefault False soei (eqdg_redundant_soedges eqdg)) then "[R]" else "[NR]")
+show_eqdgraph eqdg = (show_dgraph foshow soshow efoshow esoshow (eqdgraph eqdg)) where foshow = (\foi -> (show foi) ++ "(FO):: " ++ (show (findWithDefault [] foi (eqdg_foelements eqdg)))); soshow = (\soi -> (show soi) ++ "(SO):: " ++ (show (findWithDefault [] soi (eqdg_soelements eqdg)))); efoshow = (\foei -> if (findWithDefault False foei (eqdg_redundant_foedges eqdg)) then ("[R][" ++ (show foei) ++ "]") else ("[NR][" ++ (show foei) ++ "]")); esoshow = (\soei -> if (findWithDefault False soei (eqdg_redundant_soedges eqdg)) then ("[R][" ++ (show soei) ++ "]") else ("[NR][" ++ (show soei) ++ "]"))
 
 -- An alternative version that dumps the entire map structure for debugging purposes
 dump_eqdgraph :: (Show fot, Show sot) => EqDGraph s fot sot -> ST s String

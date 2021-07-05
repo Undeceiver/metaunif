@@ -147,6 +147,10 @@ runcomp x alg = runorder x alg ()
 rigidify_alg :: ExecOrder t => t -> (a .-> b) -> (a .-> b)
 rigidify_alg x alg = fork (runorder x alg)
 
+-- Uses rigidification to apply an enumeration-level function, and packs it again as an algorithm.
+fenum_alg :: ExecOrder t => t -> (EnumProc b -> EnumProc b) -> (a .-> b) -> (a .-> b)
+fenum_alg x f alg = fork (f . runorder x alg)
+
 data DFS = DFS
 
 dfs :: (a -> EnumProc b) -> EnumProc a -> EnumProc b
