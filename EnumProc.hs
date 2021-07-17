@@ -55,7 +55,7 @@ import System.IO
 data EnumProc t = Continue (EnumProc t) | Produce t (EnumProc t) | Halt | Empty | Error String
 
 instance Show t => Show (EnumProc t) where
-	show x = show_enumproc_run (run_enumproc x)
+	show x = show_enumproc x
 	
 instance Functor EnumProc where
 	fmap f (Continue x) = Continue (fmap f x)
@@ -134,7 +134,7 @@ instance Monad EnumProc where
 	en1 >> en2 = diagonalize_apply (\_ -> en2) en1
 	--en1 >> en2 = es_econcat (fmap (\_ -> en2) en1)
 	return x = single_enum x
-	fail str = Error str
+	--fail str = Error str
 
 -- We may wish to produce monad actions over EnumProcs. This is not the same as a monad transformer, the types do not match. This could be implemented from a monad transformer, but a generic monad transformer cannot be implemented from this.
 (..>>=) :: Monad m => EnumProc (m a) -> (a -> m b) -> EnumProc (m b)
@@ -790,18 +790,19 @@ run_enumproc_next Halt = [Halt]
 run_enumproc_next Empty = []
 run_enumproc_next (Error x) = [Error x]
 
-show_enumproc_run :: Show t => [EnumProc t] -> String
-show_enumproc_run [] = ""
-show_enumproc_run ((Continue x):xs) = "() ..> " ++ (show_enumproc_run xs)
-show_enumproc_run ((Produce v x):xs) = "(" ++ (show v) ++ ") --> " ++ (show_enumproc_run xs)
-show_enumproc_run (Halt:xs) = " Halt."
--- This should not happen really.
-show_enumproc_run (Empty:xs) = ""
-show_enumproc_run ((Error x):xs) = "\n\nError: " ++ x ++ "\n"
+show_enumproc :: Show t => EnumProc t -> String
+show_enumproc (Continue x) = "() ..> " ++ (show_enumproc x)
+show_enumproc (Produce v x) = "(" ++ (show v) ++ ") --> " ++ (show_enumproc x)
+show_enumproc Halt = " Halt."
+show_enumproc Empty = ""
+show_enumproc (Error x) = "\n\nError: " ++ x ++ "\n"
 
--- Just use this if you just want to see an EnumProc run.
-do_run_enumproc :: Show t => EnumProc t -> IO ()
-do_run_enumproc x = putStr (show_enumproc_run (run_enumproc x))
+show_enumproc_run :: Show t => EnumProc t -> IO ()
+show_enumproc_run (Continue x) = putStrLn ("() ..> ") >> hFlush stdout >> show_enumproc_run x
+show_enumproc_run (Produce v x) = putStrLn ("(" ++ (show v) ++ ") --> ") >> hFlush stdout >> show_enumproc_run x
+show_enumproc_run Halt = putStrLn (" Halt.") >> hFlush stdout
+show_enumproc_run Empty = putStrLn ("") >> hFlush stdout
+show_enumproc_run (Error x) = putStrLn ("\n\nError: " ++ x) >> hFlush stdout
 
 show_collapsed_enumproc :: Show t => EnumProc t -> IO ()
 show_collapsed_enumproc x = putStr (show (uns_ecollapse x))

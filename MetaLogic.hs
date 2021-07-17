@@ -439,10 +439,10 @@ metaunif_check_target_arity_so :: StateT (SOMetaUnifDGraph s) (ST s) Bool
 metaunif_check_target_arity_so = check_target_arity_so
 
 metaunif_occurs_check_so :: StateT (SOMetaUnifDGraph s) (ST s) Bool
-metaunif_occurs_check_so = occurs_check_so
+metaunif_occurs_check_so = fst <$> occurs_check_so
 
 metaunif_occurs_check_fo :: StateT (SOMetaUnifDGraph s) (ST s) Bool
-metaunif_occurs_check_fo = occurs_check_fo
+metaunif_occurs_check_fo = fst <$> occurs_check_fo
 
 metaunif_validate_all_consistency :: RSOMetaUnifDGraph -> AnswerSet RSOMetaUnifDGraph SOMetaUnifSysSolution
 metaunif_validate_all_consistency resuvdg = (ImplicitAS resuvdg) ?>>= SOTConsistency ?>>= HeadAritySO ?>>= HeadArityFO ?>>= OccursCheckSO ?>>= OccursCheckFO

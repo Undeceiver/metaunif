@@ -79,11 +79,11 @@ check_not_hsoedge sig title stmudg h ss t = AT title (if result then (ATR True "
 
 
 -- Check that vertical edge exists / does not exist
-check_vedge :: SOMetaSignature -> String -> (forall s. StateT (RTestSOMetaUnifDGraph s) (ST s) a) -> SOMetaTermDependant -> SOMetaTermDependant -> AutomatedTest
-check_vedge sig title stmudg s t = AT title (if result then (ATR True "The vertical edge was correctly found.") else (ATR False "Could not find the expected vertical edge.")) where sid = relbwEqDGFoId s; tid = relbwEqDGFoId t; checked = do {stmudg; on_vdgraph (checkVFoEdge sid tid)}; result = getStateTSTValue checked (emptyRMUDG sig)
+check_vedge :: SOMetaSignature -> String -> (forall s. StateT (RTestSOMetaUnifDGraph s) (ST s) a) -> SOMetaTermDependant -> SOMetaTermDependant -> UnifVariable -> AutomatedTest
+check_vedge sig title stmudg s t uv = AT title (if result then (ATR True "The vertical edge was correctly found.") else (ATR False "Could not find the expected vertical edge.")) where sid = relbwEqDGFoId s; tid = relbwEqDGFoId t; checked = do {stmudg; on_vdgraph (checkVFoEdge sid tid uv)}; result = getStateTSTValue checked (emptyRMUDG sig)
 
-check_not_vedge :: SOMetaSignature -> String -> (forall s. StateT (RTestSOMetaUnifDGraph s) (ST s) a) -> SOMetaTermDependant -> SOMetaTermDependant -> AutomatedTest
-check_not_vedge sig title stmudg s t = AT title (if result then (ATR True "The vertical edge was correctly not found.") else (ATR False "Found the vertical edge, but we should not have done so.")) where sid = relbwEqDGFoId s; tid = relbwEqDGFoId t; checked = do {stmudg; on_vdgraph (checkVFoEdge sid tid)}; result = not (getStateTSTValue checked (emptyRMUDG sig))
+check_not_vedge :: SOMetaSignature -> String -> (forall s. StateT (RTestSOMetaUnifDGraph s) (ST s) a) -> SOMetaTermDependant -> SOMetaTermDependant -> UnifVariable -> AutomatedTest
+check_not_vedge sig title stmudg s t uv = AT title (if result then (ATR True "The vertical edge was correctly not found.") else (ATR False "Found the vertical edge, but we should not have done so.")) where sid = relbwEqDGFoId s; tid = relbwEqDGFoId t; checked = do {stmudg; on_vdgraph (checkVFoEdge sid tid uv)}; result = not (getStateTSTValue checked (emptyRMUDG sig))
 
 -- Check that two elements are equivalent / not equivalent
 check_foequiv :: SOMetaSignature -> String -> (forall s. StateT (RTestSOMetaUnifDGraph s) (ST s) a) -> SOMetaTermDependant -> SOMetaTermDependant -> AutomatedTest
@@ -203,25 +203,25 @@ vcommute1_t1 :: AutomatedTest
 vcommute1_t1 = check_hfoedge vcommute1_sig "Checking the source horizontal edge is there before" vcommute1_mudg1 vcommute1_soterm1 [vcommute1_term1] vcommute1_term2
 
 vcommute1_t2 :: AutomatedTest
-vcommute1_t2 = check_vedge vcommute1_sig "Checking the source vertical edge is there before" vcommute1_mudg1 vcommute1_term2 vcommute1_term3
+vcommute1_t2 = check_vedge vcommute1_sig "Checking the source vertical edge is there before" vcommute1_mudg1 vcommute1_term2 vcommute1_term3 (read "u1")
 
 vcommute1_t3 :: AutomatedTest
 vcommute1_t3 = check_not_hfoedge vcommute1_sig "Checking the commuted horizontal edge is not there before" vcommute1_mudg1 vcommute1_soterm1 [vcommute1_term4] vcommute1_term3
 
 vcommute1_t4 :: AutomatedTest
-vcommute1_t4 = check_not_vedge vcommute1_sig "Checking the commuted vertical edge is not there before" vcommute1_mudg1 vcommute1_term1 vcommute1_term4
+vcommute1_t4 = check_not_vedge vcommute1_sig "Checking the commuted vertical edge is not there before" vcommute1_mudg1 vcommute1_term1 vcommute1_term4 (read "u1")
 
 vcommute1_t5 :: AutomatedTest
 vcommute1_t5 = check_hfoedge vcommute1_sig "Checking the source horizontal edge is there after" vcommute1_mudg2 vcommute1_soterm1 [vcommute1_term1] vcommute1_term2
 
 vcommute1_t6 :: AutomatedTest
-vcommute1_t6 = check_vedge vcommute1_sig "Checking the source vertical edge is there after" vcommute1_mudg2 vcommute1_term2 vcommute1_term3
+vcommute1_t6 = check_vedge vcommute1_sig "Checking the source vertical edge is there after" vcommute1_mudg2 vcommute1_term2 vcommute1_term3 (read "u1")
 
 vcommute1_t7 :: AutomatedTest
 vcommute1_t7 = check_hfoedge vcommute1_sig "Checking the commuted horizontal edge is there after" vcommute1_mudg2 vcommute1_soterm1 [vcommute1_term4] vcommute1_term3
 
 vcommute1_t8 :: AutomatedTest
-vcommute1_t8 = check_vedge vcommute1_sig "Checking the commuted vertical edge is there after" vcommute1_mudg2 vcommute1_term1 vcommute1_term4
+vcommute1_t8 = check_vedge vcommute1_sig "Checking the commuted vertical edge is there after" vcommute1_mudg2 vcommute1_term1 vcommute1_term4 (read "u1")
 
 vcommute_tests1 :: String
 vcommute_tests1 = combine_test_results [vcommute1_t1,vcommute1_t2,vcommute1_t3,vcommute1_t4,vcommute1_t5,vcommute1_t6,vcommute1_t7,vcommute1_t8]
@@ -283,41 +283,41 @@ vcommute2_t1 :: AutomatedTest
 vcommute2_t1 = check_hfoedge vcommute2_sig "Checking the source horizontal edge is there before" vcommute2_mudg1 vcommute2_soterm1 [vcommute2_term1,vcommute2_term2] vcommute2_term3
 
 vcommute2_t2 :: AutomatedTest
-vcommute2_t2 = check_vedge vcommute2_sig "Checking the source vertical edge is there before" vcommute2_mudg1 vcommute2_term3 vcommute2_term4
+vcommute2_t2 = check_vedge vcommute2_sig "Checking the source vertical edge is there before" vcommute2_mudg1 vcommute2_term3 vcommute2_term4 (read "u1")
 
 vcommute2_t3 :: AutomatedTest
 vcommute2_t3 = check_not_hfoedge vcommute2_sig "Checking the commuted horizontal edge is not there before" vcommute2_mudg1 vcommute2_soterm1 [vcommute2_term5,vcommute2_term6] vcommute2_term4
 
 vcommute2_t4 :: AutomatedTest
-vcommute2_t4 = check_not_vedge vcommute2_sig "Checking the commuted vertical edge is not there before" vcommute2_mudg1 vcommute2_term1 vcommute2_term5
+vcommute2_t4 = check_not_vedge vcommute2_sig "Checking the commuted vertical edge is not there before" vcommute2_mudg1 vcommute2_term1 vcommute2_term5 (read "u1")
 
 vcommute2_t5 :: AutomatedTest
-vcommute2_t5 = check_not_vedge vcommute2_sig "Checking the commuted vertical edge is not there before" vcommute2_mudg1 vcommute2_term2 vcommute2_term6
+vcommute2_t5 = check_not_vedge vcommute2_sig "Checking the commuted vertical edge is not there before" vcommute2_mudg1 vcommute2_term2 vcommute2_term6 (read "u1")
 
 vcommute2_t6 :: AutomatedTest
 vcommute2_t6 = check_hfoedge vcommute2_sig "Checking the source horizontal edge is there after" vcommute2_mudg2 vcommute2_soterm1 [vcommute2_term1,vcommute2_term2] vcommute2_term3
 
 vcommute2_t7 :: AutomatedTest
-vcommute2_t7 = check_vedge vcommute2_sig "Checking the source vertical edge is there after" vcommute2_mudg2 vcommute2_term3 vcommute2_term4
+vcommute2_t7 = check_vedge vcommute2_sig "Checking the source vertical edge is there after" vcommute2_mudg2 vcommute2_term3 vcommute2_term4 (read "u1")
 
 vcommute2_t8 :: AutomatedTest
 vcommute2_t8 = check_hfoedge vcommute2_sig "Checking the commuted horizontal edge is there after" vcommute2_mudg2 vcommute2_soterm1 [vcommute2_term5,vcommute2_term6] vcommute2_term4
 
 vcommute2_t9 :: AutomatedTest
-vcommute2_t9 = check_vedge vcommute2_sig "Checking the commuted vertical edge is there after" vcommute2_mudg2 vcommute2_term1 vcommute2_term5
+vcommute2_t9 = check_vedge vcommute2_sig "Checking the commuted vertical edge is there after" vcommute2_mudg2 vcommute2_term1 vcommute2_term5 (read "u1")
 
 vcommute2_t10 :: AutomatedTest
-vcommute2_t10 = check_vedge vcommute2_sig "Checking the commuted vertical edge is there after" vcommute2_mudg2 vcommute2_term2 vcommute2_term6
+vcommute2_t10 = check_vedge vcommute2_sig "Checking the commuted vertical edge is there after" vcommute2_mudg2 vcommute2_term2 vcommute2_term6 (read "u1")
 
 -- Additional tests, verifying no weird crossings have happened.
 vcommute2_t11 :: AutomatedTest
 vcommute2_t11 = check_not_hfoedge vcommute2_sig "Checking no crossed horizontal edge is there after" vcommute2_mudg2 vcommute2_soterm1 [vcommute2_term6,vcommute2_term5] vcommute2_term4
 
 vcommute2_t12 :: AutomatedTest
-vcommute2_t12 = check_not_vedge vcommute2_sig "Checking no crossed vertical edge is there after" vcommute2_mudg2 vcommute2_term1 vcommute2_term6
+vcommute2_t12 = check_not_vedge vcommute2_sig "Checking no crossed vertical edge is there after" vcommute2_mudg2 vcommute2_term1 vcommute2_term6 (read "u1")
 
 vcommute2_t13 :: AutomatedTest
-vcommute2_t13 = check_not_vedge vcommute2_sig "Checking no crossed vertical edge is there after" vcommute2_mudg2 vcommute2_term2 vcommute2_term5
+vcommute2_t13 = check_not_vedge vcommute2_sig "Checking no crossed vertical edge is there after" vcommute2_mudg2 vcommute2_term2 vcommute2_term5 (read "u1")
 
 vcommute_tests2 :: String
 vcommute_tests2 = combine_test_results [vcommute2_t1,vcommute2_t2,vcommute2_t3,vcommute2_t4,vcommute2_t5,vcommute2_t6,vcommute2_t7,vcommute2_t8,vcommute2_t9,vcommute2_t10,vcommute2_t11,vcommute2_t12,vcommute2_t13]
@@ -395,13 +395,13 @@ vcommute3_t4 :: AutomatedTest
 vcommute3_t4 = check_not_hfoedge vcommute3_sig "Checking that the target horizontal edge is not there before" vcommute3_mudg1 vcommute3_soterm2 [vcommute3_term6] vcommute3_term4
 
 vcommute3_t5 :: AutomatedTest
-vcommute3_t5 = check_vedge vcommute3_sig "Checking that the source vertical edge is there before" vcommute3_mudg1 vcommute3_term2 vcommute3_term3
+vcommute3_t5 = check_vedge vcommute3_sig "Checking that the source vertical edge is there before" vcommute3_mudg1 vcommute3_term2 vcommute3_term3 (read "u1")
 
 vcommute3_t6 :: AutomatedTest
-vcommute3_t6 = check_not_vedge vcommute3_sig "Checking that the target vertical edge is not there before" vcommute3_mudg1 vcommute3_term1 vcommute3_term4
+vcommute3_t6 = check_not_vedge vcommute3_sig "Checking that the target vertical edge is not there before" vcommute3_mudg1 vcommute3_term1 vcommute3_term4 (read "u1")
 
 vcommute3_t7 :: AutomatedTest
-vcommute3_t7 = check_not_vedge vcommute3_sig "Checking that the target vertical edge is not there before" vcommute3_mudg1 vcommute3_term5 vcommute3_term6
+vcommute3_t7 = check_not_vedge vcommute3_sig "Checking that the target vertical edge is not there before" vcommute3_mudg1 vcommute3_term5 vcommute3_term6 (read "u1")
 
 vcommute3_t8 :: AutomatedTest
 vcommute3_t8 = check_hfoedge vcommute3_sig "Checking that the target horizontal edge is there after" vcommute3_mudg2 vcommute3_soterm1 [vcommute3_term4] vcommute3_term3
@@ -410,10 +410,10 @@ vcommute3_t9 :: AutomatedTest
 vcommute3_t9 = check_hfoedge vcommute3_sig "Checking that the target horizontal edge is there after" vcommute3_mudg2 vcommute3_soterm2 [vcommute3_term6] vcommute3_term4
 
 vcommute3_t10 :: AutomatedTest
-vcommute3_t10 = check_vedge vcommute3_sig "Checking that the target vertical edge is there after" vcommute3_mudg2 vcommute3_term1 vcommute3_term4
+vcommute3_t10 = check_vedge vcommute3_sig "Checking that the target vertical edge is there after" vcommute3_mudg2 vcommute3_term1 vcommute3_term4 (read "u1")
 
 vcommute3_t11 :: AutomatedTest
-vcommute3_t11 = check_vedge vcommute3_sig "Checking that the target vertical edge is there after" vcommute3_mudg2 vcommute3_term5 vcommute3_term6
+vcommute3_t11 = check_vedge vcommute3_sig "Checking that the target vertical edge is there after" vcommute3_mudg2 vcommute3_term5 vcommute3_term6 (read "u1")
 
 vcommute_tests3 :: String
 vcommute_tests3 = combine_test_results [vcommute3_t1,vcommute3_t2,vcommute3_t3,vcommute3_t4,vcommute3_t5,vcommute3_t6,vcommute3_t7,vcommute3_t8,vcommute3_t9,vcommute3_t10,vcommute3_t11]
@@ -463,25 +463,25 @@ vcommute4_t1 :: AutomatedTest
 vcommute4_t1 = check_hfoedge vcommute4_sig "Checking the source horizontal edge is there before" vcommute4_mudg1 vcommute4_soterm1 [vcommute4_term1] vcommute4_term2
 
 vcommute4_t2 :: AutomatedTest
-vcommute4_t2 = check_vedge vcommute4_sig "Checking the source vertical edge is there before" vcommute4_mudg1 vcommute4_term1 vcommute4_term4
+vcommute4_t2 = check_vedge vcommute4_sig "Checking the source vertical edge is there before" vcommute4_mudg1 vcommute4_term1 vcommute4_term4 (read "u1")
 
 vcommute4_t3 :: AutomatedTest
 vcommute4_t3 = check_not_hfoedge vcommute4_sig "Checking the resulting horizontal edge is not there before" vcommute4_mudg1 vcommute4_soterm1 [vcommute4_term4] vcommute4_term3
 
 vcommute4_t4 :: AutomatedTest
-vcommute4_t4 = check_not_vedge vcommute4_sig "Checking the resulting vertical edge is not there before" vcommute4_mudg1 vcommute4_term2 vcommute4_term3
+vcommute4_t4 = check_not_vedge vcommute4_sig "Checking the resulting vertical edge is not there before" vcommute4_mudg1 vcommute4_term2 vcommute4_term3 (read "u1")
 
 vcommute4_t5 :: AutomatedTest
 vcommute4_t5 = check_hfoedge vcommute4_sig "Checking the source horizontal edge is there after" vcommute4_mudg2 vcommute4_soterm1 [vcommute4_term1] vcommute4_term2
 
 vcommute4_t6 :: AutomatedTest
-vcommute4_t6 = check_vedge vcommute4_sig "Checking the source vertical edge is there after" vcommute4_mudg2 vcommute4_term1 vcommute4_term4
+vcommute4_t6 = check_vedge vcommute4_sig "Checking the source vertical edge is there after" vcommute4_mudg2 vcommute4_term1 vcommute4_term4 (read "u1")
 
 vcommute4_t7 :: AutomatedTest
 vcommute4_t7 = check_hfoedge vcommute4_sig "Checking the resulting horizontal edge is there after" vcommute4_mudg2 vcommute4_soterm1 [vcommute4_term4] vcommute4_term3
 
 vcommute4_t8 :: AutomatedTest
-vcommute4_t8 = check_vedge vcommute4_sig "Checking the resulting vertical edge is there before" vcommute4_mudg2 vcommute4_term2 vcommute4_term3
+vcommute4_t8 = check_vedge vcommute4_sig "Checking the resulting vertical edge is there before" vcommute4_mudg2 vcommute4_term2 vcommute4_term3 (read "u1")
 
 vcommute_tests4 :: String
 vcommute_tests4 = combine_test_results [vcommute4_t1,vcommute4_t2,vcommute4_t3,vcommute4_t4,vcommute4_t5,vcommute4_t6,vcommute4_t7,vcommute4_t8]
@@ -544,40 +544,40 @@ valign1_mudg2 :: StateT (RTestSOMetaUnifDGraph s) (ST s) _
 valign1_mudg2 = do {valign1_mudg1; on_vdgraph metaunif_vertical_align; return ()}
 
 valign1_t1 :: AutomatedTest
-valign1_t1 = check_vedge valign1_sig "Checking that the preexisting vertical edge exists before" valign1_mudg1 valign1_term3 valign1_term1
+valign1_t1 = check_vedge valign1_sig "Checking that the preexisting vertical edge exists before" valign1_mudg1 valign1_term3 valign1_term1 (read "u1")
 
 valign1_t2 :: AutomatedTest
-valign1_t2 = check_not_vedge valign1_sig "Checking that the produced vertical edge does not exist before" valign1_mudg1 valign1_term4 valign1_term3
+valign1_t2 = check_not_vedge valign1_sig "Checking that the produced vertical edge does not exist before" valign1_mudg1 valign1_term4 valign1_term3 (read "u0")
 
 valign1_t3 :: AutomatedTest
-valign1_t3 = check_not_vedge valign1_sig "Checking that the produced vertical edge does not exist before" valign1_mudg1 valign1_term5 valign1_term2
+valign1_t3 = check_not_vedge valign1_sig "Checking that the produced vertical edge does not exist before" valign1_mudg1 valign1_term5 valign1_term2 (read "u2")
 
 valign1_t4 :: AutomatedTest
-valign1_t4 = check_not_vedge valign1_sig "Checking that the produced vertical edge does not exist before" valign1_mudg1 valign1_term6 valign1_term5
+valign1_t4 = check_not_vedge valign1_sig "Checking that the produced vertical edge does not exist before" valign1_mudg1 valign1_term6 valign1_term5 (read "u0")
 
 valign1_t5 :: AutomatedTest
-valign1_t5 = check_not_vedge valign1_sig "Checking that a transitive vertical edge does not exist before" valign1_mudg1 valign1_term6 valign1_term2
+valign1_t5 = check_not_vedge valign1_sig "Checking that a transitive vertical edge does not exist before" valign1_mudg1 valign1_term6 valign1_term2 (read "u2")
 
 valign1_t6 :: AutomatedTest
-valign1_t6 = check_not_vedge valign1_sig "Checking that a transitive vertical edge does not exist before" valign1_mudg1 valign1_term4 valign1_term1
+valign1_t6 = check_not_vedge valign1_sig "Checking that a transitive vertical edge does not exist before" valign1_mudg1 valign1_term4 valign1_term1 (read "u1")
 
 valign1_t7 :: AutomatedTest
-valign1_t7 = check_vedge valign1_sig "Checking that the preexisting vertical edge exists after" valign1_mudg2 valign1_term3 valign1_term1
+valign1_t7 = check_vedge valign1_sig "Checking that the preexisting vertical edge exists after" valign1_mudg2 valign1_term3 valign1_term1 (read "u1")
 
 valign1_t8 :: AutomatedTest
-valign1_t8 = check_vedge valign1_sig "Checking that the produced vertical edge exists after" valign1_mudg2 valign1_term4 valign1_term3
+valign1_t8 = check_vedge valign1_sig "Checking that the produced vertical edge exists after" valign1_mudg2 valign1_term4 valign1_term3 (read "u0")
 
 valign1_t9 :: AutomatedTest
-valign1_t9 = check_vedge valign1_sig "Checking that the produced vertical edge exists after" valign1_mudg2 valign1_term5 valign1_term2
+valign1_t9 = check_vedge valign1_sig "Checking that the produced vertical edge exists after" valign1_mudg2 valign1_term5 valign1_term2 (read "u2")
 
 valign1_t10 :: AutomatedTest
-valign1_t10 = check_vedge valign1_sig "Checking that the produced vertical edge exists after" valign1_mudg2 valign1_term6 valign1_term5
+valign1_t10 = check_vedge valign1_sig "Checking that the produced vertical edge exists after" valign1_mudg2 valign1_term6 valign1_term5 (read "u0")
 
 valign1_t11 :: AutomatedTest
-valign1_t11 = check_not_vedge valign1_sig "Checking that a transitive vertical edge does not exist after" valign1_mudg2 valign1_term6 valign1_term2
+valign1_t11 = check_not_vedge valign1_sig "Checking that a transitive vertical edge does not exist after" valign1_mudg2 valign1_term6 valign1_term2 (read "u2")
 
 valign1_t12 :: AutomatedTest
-valign1_t12 = check_not_vedge valign1_sig "Checking that a transitive vertical edge does not exist after" valign1_mudg2 valign1_term4 valign1_term1
+valign1_t12 = check_not_vedge valign1_sig "Checking that a transitive vertical edge does not exist after" valign1_mudg2 valign1_term4 valign1_term1 (read "u1")
 
 valign_tests1 :: String
 valign_tests1 = combine_test_results [valign1_t1,valign1_t2,valign1_t3,valign1_t4,valign1_t5,valign1_t6,valign1_t7,valign1_t8,valign1_t9,valign1_t10,valign1_t11,valign1_t12]
@@ -1042,16 +1042,16 @@ zip4_t6 :: AutomatedTest
 zip4_t6 = check_not_hfoedge zip4_sig "Checking there is no h horizontal edge between u2 u1 x1 and u2 u1 x3 before" zip4_mudg1 zip4_soterm3 [zip4_term10] zip4_term9
 
 zip4_t7 :: AutomatedTest
-zip4_t7 = check_not_vedge zip4_sig "Checking there is no vertical edge between u0 x3 and u1 u0 x3 before" zip4_mudg1 zip4_term4 zip4_term7
+zip4_t7 = check_not_vedge zip4_sig "Checking there is no vertical edge between u0 x3 and u1 u0 x3 before" zip4_mudg1 zip4_term4 zip4_term7 (read "u1")
 
 zip4_t8 :: AutomatedTest
-zip4_t8 = check_not_vedge zip4_sig "Checking there is no vertical edge between u0 x1 and u1 u0 x1 before" zip4_mudg1 zip4_term2 zip4_term6
+zip4_t8 = check_not_vedge zip4_sig "Checking there is no vertical edge between u0 x1 and u1 u0 x1 before" zip4_mudg1 zip4_term2 zip4_term6 (read "u1")
 
 zip4_t9 :: AutomatedTest
-zip4_t9 = check_not_vedge zip4_sig "Checking there is no vertical edge between u1 x1 and u2 u1 x1 before" zip4_mudg1 zip4_term5 zip4_term10
+zip4_t9 = check_not_vedge zip4_sig "Checking there is no vertical edge between u1 x1 and u2 u1 x1 before" zip4_mudg1 zip4_term5 zip4_term10 (read "u2")
 
 zip4_t10 :: AutomatedTest
-zip4_t10 = check_not_vedge zip4_sig "Checking there is no vertical edge between u1 x3 and u2 u1 x3 before" zip4_mudg1 zip4_term8 zip4_term9
+zip4_t10 = check_not_vedge zip4_sig "Checking there is no vertical edge between u1 x3 and u2 u1 x3 before" zip4_mudg1 zip4_term8 zip4_term9 (read "u2")
 
 zip4_t21 :: AutomatedTest
 zip4_t21 = check_foequiv zip4_sig "Checking that u0 x1 and u0 x2 are equivalent after" zip4_mudg3 zip4_term2 zip4_term3
@@ -1072,16 +1072,16 @@ zip4_t26 :: AutomatedTest
 zip4_t26 = check_hfoedge zip4_sig "Checking there is a h horizontal edge between u2 u1 x1 and u2 u1 x3 after" zip4_mudg3 zip4_soterm3 [zip4_term10] zip4_term9
 
 zip4_t27 :: AutomatedTest
-zip4_t27 = check_vedge zip4_sig "Checking there is a vertical edge between u0 x3 and u1 u0 x3 after" zip4_mudg3 zip4_term4 zip4_term7
+zip4_t27 = check_vedge zip4_sig "Checking there is a vertical edge between u0 x3 and u1 u0 x3 after" zip4_mudg3 zip4_term4 zip4_term7 (read "u1")
 
 zip4_t28 :: AutomatedTest
-zip4_t28 = check_vedge zip4_sig "Checking there is a vertical edge between u0 x1 and u1 u0 x1 after" zip4_mudg3 zip4_term2 zip4_term6
+zip4_t28 = check_vedge zip4_sig "Checking there is a vertical edge between u0 x1 and u1 u0 x1 after" zip4_mudg3 zip4_term2 zip4_term6 (read "u1")
 
 zip4_t29 :: AutomatedTest
-zip4_t29 = check_vedge zip4_sig "Checking there is a vertical edge between u1 x1 and u2 u1 x1 after" zip4_mudg3 zip4_term5 zip4_term10
+zip4_t29 = check_vedge zip4_sig "Checking there is a vertical edge between u1 x1 and u2 u1 x1 after" zip4_mudg3 zip4_term5 zip4_term10 (read "u2")
 
 zip4_t30 :: AutomatedTest
-zip4_t30 = check_vedge zip4_sig "Checking there is a vertical edge between u1 x3 and u2 u1 x3 after" zip4_mudg3 zip4_term8 zip4_term9
+zip4_t30 = check_vedge zip4_sig "Checking there is a vertical edge between u1 x3 and u2 u1 x3 after" zip4_mudg3 zip4_term8 zip4_term9 (read "u2")
 
 zip_tests4 :: String
 --zip_tests4 = combine_test_results [zip4_t1,zip4_t2,zip4_t3,zip4_t4,zip4_t5,zip4_t6,zip4_t7,zip4_t8,zip4_t9,zip4_t10,zip4_t11,zip4_t12,zip4_t13,zip4_t14,zip4_t15,zip4_t16,zip4_t17,zip4_t18,zip4_t19,zip4_t20,zip4_t21,zip4_t22,zip4_t23,zip4_t24,zip4_t25,zip4_t26,zip4_t27,zip4_t28,zip4_t29,zip4_t30]
@@ -1918,7 +1918,7 @@ target_arity_test = putStr "EXAMPLE 1\n\n" >> putStr target_arity1_tests >>
 			putStr "EXAMPLE 4\n\n" >> putStr target_arity4_tests
 
 
-
+{-|
 occurs_check1_term1 :: SOMetatermF
 occurs_check1_term1 = read "f1[1]"
 
@@ -2098,7 +2098,7 @@ occurs_check1_tests = combine_test_results [occurs_check1_t1,occurs_check1_t2,oc
 
 occurs_check_test :: IO ()
 occurs_check_test = putStr "EXAMPLE 1\n\n" >> putStr occurs_check1_tests
-
+|-}
 
 factorize_tests_n :: Int
 factorize_tests_n = 200
@@ -3175,6 +3175,7 @@ factorize10_t15 = check_any_resuvdg factorize10_tests_n "Checking that F0 is som
 factorize10_tests :: String
 factorize10_tests = combine_test_results [factorize10_t1,factorize10_t2,factorize10_t3,factorize10_t4,factorize10_t5,factorize10_t6,factorize10_t7,factorize10_t8,factorize10_t9,factorize10_t10,factorize10_t11,factorize10_t12,factorize10_t13,factorize10_t14,factorize10_t15]
 
+{-|
 factorize11_tests_n :: Int
 factorize11_tests_n = 1000
 
@@ -3252,6 +3253,8 @@ factorize11_t10 = check_all_resuvdg factorize11_tests_n "Checking that F0 is alw
 
 factorize11_tests :: String
 factorize11_tests = combine_test_results [factorize11_t1,factorize11_t2,factorize11_t3,factorize11_t4,factorize11_t5,factorize11_t6,factorize11_t7,factorize11_t8,factorize11_t9,factorize11_t10]
+
+|-}
 
 factorize12_tests_n :: Int
 factorize12_tests_n = 1000
@@ -3563,7 +3566,7 @@ factorize_test = putStr "EXAMPLE 1\n\n" >> putStr factorize1_tests >>
 		putStr "EXAMPLE 8\n\n" >> putStr factorize8_tests >>
 		putStr "EXAMPLE 9\n\n" >> putStr factorize9_tests >>
 		putStr "EXAMPLE 10\n\n" >> putStr factorize10_tests >>
-		putStr "EXAMPLE 11\n\n" >> putStr factorize11_tests >>
+--		putStr "EXAMPLE 11\n\n" >> putStr factorize11_tests >>
 		putStr "EXAMPLE 12\n\n" >> putStr factorize12_tests >>
 		putStr "EXAMPLE 13\n\n" >> putStr factorize13_tests >>
 		putStr "EXAMPLE 14\n\n" >> putStr factorize14_tests
@@ -3579,7 +3582,7 @@ dgraphop_test = putStr "VERTICAL COMMUTE TESTS\n\n" >> vcommute_test >>
 		putStr "SOT CONSISTENCY TESTS\n\n" >> sotconsistency_test >>
 		putStr "HEAD ARITY TESTS\n\n" >> head_arity_test >>
 		putStr "TARGET ARITY TESTS\n\n" >> target_arity_test >>
-		putStr "OCCURS CHECK TESTS\n\n" >> occurs_check_test >>
+--		putStr "OCCURS CHECK TESTS\n\n" >> occurs_check_test >>
 		putStr "FACTORIZATION TESTS\n\n" >> factorize_test
 
 

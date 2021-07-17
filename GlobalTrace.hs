@@ -33,3 +33,12 @@ gtrace False _ x = x
 gtraceM :: Applicative f => Bool -> String -> f ()
 gtraceM True str = if gtrace_switch then (traceM str) else (pure ())
 gtraceM False _ = pure ()
+
+gmytrace :: Bool -> String -> a -> a
+gmytrace True str x = trace str x
+gmytrace False _ x = x
+
+gmytraceM :: Applicative f => Bool -> String -> f ()
+gmytraceM True str = traceM str
+gmytraceM False _ = pure ()
+

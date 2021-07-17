@@ -1118,4 +1118,4 @@ cesqtest26 = CESQTest cesqtheory26 cesqquery26 cesqsols26
 
 
 
-main = putStr (show (enumAS cesqas20 \$ ()))
+main = show_enumproc_run (enumAS cesqas8 \$ ())
