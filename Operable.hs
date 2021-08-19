@@ -19,7 +19,7 @@ module Operable where
 
 import HaskellPlus
 import Data.List
-import Data.Map.Strict
+import Data.HashMap
 import EnumProc
 import Data.Maybe
 import Data.Bifunctor

@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FunctionalDependencies #-}
@@ -43,11 +44,13 @@ import Resolution
 import SOResolution
 import Algorithm
 import Heuristics
+import GHC.Generics (Generic)
+import Data.Hashable
 
 -- We may use these so we leave them, but these are the old flat meta-variables approach. Check the new second-order approach instead.
 
 -- Second-order approach to meta-variables
-data SOMVariable = SOMVar Int Int
+data SOMVariable = SOMVar Int Int deriving Generic
 
 -- Equality does not check arity, just in case we use the Variabilizable instance in the wrong way.
 instance Eq SOMVariable where
@@ -55,6 +58,8 @@ instance Eq SOMVariable where
 
 instance Ord SOMVariable where
 	(SOMVar i _) <= (SOMVar j _) = i <= j
+
+instance Hashable SOMVariable
 
 instance Show SOMVariable where
 	show (SOMVar x a) = "F" ++ (show x) ++ "[" ++ (show a) ++ "]"
@@ -179,7 +184,9 @@ instance Read GroundSOMetaterm where
 			Nothing -> error ("Cannot read ground term: " ++ xs)
 		}
 
-data SOAMVariable = SOAMVar Int Int deriving (Eq, Ord)
+data SOAMVariable = SOAMVar Int Int deriving (Eq, Ord, Generic)
+
+instance Hashable SOAMVariable
 
 instance Show SOAMVariable where
 	show (SOAMVar x a) = "P" ++ (show x) ++ "[" ++ (show a) ++ "]"
@@ -286,7 +293,9 @@ infix 7 **$
 
 
 -- Second-order atoms.
-data SOPredicate = SOPred Int Int deriving (Eq, Ord)
+data SOPredicate = SOPred Int Int deriving (Eq, Ord, Generic)
+
+instance Hashable SOPredicate
 
 instance Show SOPredicate where
 	show (SOPred x y) = "k" ++ (show x) ++ "[" ++ (show y) ++ "]"
@@ -333,7 +342,9 @@ instance Read CombSOMetaatom where
 
 
 -- Dependency graphs in this meta-logic.
-data UnifVariable = UnifVar Int deriving (Ord)
+data UnifVariable = UnifVar Int deriving (Ord, Generic)
+
+instance Hashable UnifVariable
 
 -- Equality does not check arity, just in case we use the Variabilizable instance in the wrong way.
 instance Eq UnifVariable where

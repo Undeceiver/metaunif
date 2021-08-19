@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FunctionalDependencies #-}
@@ -36,9 +37,12 @@ import Control.Monad.State
 import Extensionality
 import Data.List
 import Data.Maybe
-import Data.Map.Strict
+import Data.HashMap
 import EnumProc
 import Control.Lens
+import GHC.Generics (Generic)
+import Data.Hashable
+
 
 class Variabilizable t where
 	from_var :: IntVar -> t
@@ -226,8 +230,8 @@ fntraversal :: SimpleTerm t => Control.Lens.Traversal (UTerm (t fn) v) (UTerm (t
 fntraversal = fntraverse
 
 -- ConstF indicates a function corresponding to a constant SYMBOL of second order (but the function is not constant in any way).
-data SOTermPF fn p f = ConstF fn | Proj Int | CompF p [f] deriving (Eq, Ord)
-newtype SOTermF fn f = SOF (SOTermPF fn f f) deriving (Eq, Ord)
+data SOTermPF fn p f = ConstF fn | Proj Int | CompF p [f] deriving (Eq, Ord, Generic)
+newtype SOTermF fn f = SOF (SOTermPF fn f f) deriving (Eq, Ord, Generic)
 
 isproj :: SOTermPF fn p f -> Bool
 isproj (ConstF _) = False
@@ -236,6 +240,9 @@ isproj (CompF _ _) = False
 
 isproj_sof :: SOTermF fn f -> Bool
 isproj_sof (SOF x) = isproj x
+
+instance (Hashable fn, Hashable p, Hashable f) => Hashable (SOTermPF fn p f)
+instance (Hashable fn, Hashable f) => Hashable (SOTermF fn f)
 
 instance Bifunctor (SOTermPF fn) where
 	bimap f g (ConstF fn) = ConstF fn
@@ -421,7 +428,7 @@ instance (HasArity fn, HasArity sov) => Normalizable (SOTerm fn sov) (SOTerm fn 
 
 
 
-newtype SOTermP pd f p = SOP (SOTermPF pd p f) deriving (Eq, Ord)
+newtype SOTermP pd f p = SOP (SOTermPF pd p f) deriving (Eq, Ord, Generic)
 type GroundSOA pd fn = Fix (SOTermP pd (GroundSOT fn))
 type SOAtom pd fn soav sov = UTerm (SOTermP pd (SOTerm fn sov)) soav
 
@@ -435,6 +442,7 @@ soa_min_arity (UTerm (SOP (ConstF x))) = arity x
 soa_min_arity (UTerm (SOP (Proj idx))) = error "Atoms should not be projections!!! (soa_min_arity)"
 soa_min_arity (UTerm (SOP (CompF h sts))) = Prelude.foldr (\i -> \m -> max (sot_min_arity i) m) 0 sts
 
+instance (Hashable pd, Hashable f, Hashable p) => Hashable (SOTermP pd f p)
 
 instance Bifunctor (SOTermP pd) where
 	bimap f g (SOP sotermpf) = SOP (bimap g f sotermpf)
@@ -553,7 +561,7 @@ instance (Eq pmv) => Substitutable (SOAtom pd fn pmv fmv) pmv pmv where
 --instance (Eq fmv) => Substitutable (SOAtom pd fn pmv fmv) fmv (GroundSOT fn) where
 --	subst fmv sot soa = subst fmv gsot soa where gsot = inject_groundsot sot :: SOTerm fn fmv
 
-newtype SOMetawrap (t :: * -> * -> *) fn v mv = SOMetawrap {fromSOMetawrap :: UTerm (t (SOTerm fn mv)) v}
+newtype SOMetawrap (t :: * -> * -> *) fn v mv = SOMetawrap {fromSOMetawrap :: UTerm (t (SOTerm fn mv)) v} deriving Generic
 
 -- These following "tricks" are a consequence of being unable to produce the normalization algorithm for SOMetawrap for generic function and term types, which was a huge pain that we ended up giving up on.
 -- This type is only briefly used for small things so we don't provide all that we provide for SOMetawrap.
@@ -611,10 +619,13 @@ instance (Show v, Show (t (SOTerm fn mv) (UTerm (t (SOTerm fn mv)) v))) => Show 
 
 deriving instance (Eq v, Eq (t (SOTerm fn mv) (UTerm (t (SOTerm fn mv)) v))) => Eq (SOMetawrap t fn v mv)
 
-deriving instance (Eq v, Eq (t fn (UTerm (t fn) v)), Ord fn, Ord v, Ord (t fn (UTerm (t fn) v))) => Ord (UTerm (t fn) v)
+deriving instance (Eq v, Eq (t fn (UTerm (t fn) v)), Hashable fn, Ord fn, Ord v, Ord (t fn (UTerm (t fn) v))) => Ord (UTerm (t fn) v)
+deriving instance Generic (UTerm t v)
+instance (Hashable fn, Hashable v, Hashable (t fn (UTerm (t fn) v))) => Hashable (UTerm (t fn) v)
 
-deriving instance (Eq v, Eq (t (SOTerm fn mv) (UTerm (t (SOTerm fn mv)) v)), Ord fn, Ord v, Ord mv, Ord (t (SOTerm fn mv) (UTerm (t (SOTerm fn mv)) v))) => Ord (SOMetawrap t fn v mv)
-	
+deriving instance (Eq v, Eq (t (SOTerm fn mv) (UTerm (t (SOTerm fn mv)) v)), Hashable fn, Ord fn, Hashable v, Ord v, Hashable mv, Ord mv, Hashable (t (SOTerm fn mv) (UTerm (t (SOTerm fn mv)) v)), Ord (t (SOTerm fn mv) (UTerm (t (SOTerm fn mv)) v))) => Ord (SOMetawrap t fn v mv)
+instance (Hashable fn, Hashable v, Hashable mv, Hashable (t (SOTerm fn mv) (UTerm (t (SOTerm fn mv)) v))) => Hashable (SOMetawrap t fn v mv)
+
 	
 -- Remove all second-order structure and dump it into the first-order structure.
 instance (HasArity fn, HasArity mv, SimpleTerm t) => Normalizable (SOMetawrap t fn v mv) (SOMetawrap t fn v mv) where
@@ -693,7 +704,7 @@ instance (Eq fn, Eq sov, SimpleTerm t) => Substitutable (SOMetawrap t fn v sov) 
 	subst sov rsot (SOMetawrap (UVar v)) = SOMetawrap (UVar v)
 	subst sov rsot (SOMetawrap (UTerm t)) = SOMetawrap (UTerm rt) where (h,sts) = unbuild_term t; rh = subst sov rsot h; rt = build_term rh sts
 
-newtype SOMetawrapA (a :: * -> * -> *) (t :: * -> * -> *) pd fn v pmv fmv = SOMetawrapA (a (SOAtom pd fn pmv fmv) (SOMetawrap t fn v fmv))
+newtype SOMetawrapA (a :: * -> * -> *) (t :: * -> * -> *) pd fn v pmv fmv = SOMetawrapA (a (SOAtom pd fn pmv fmv) (SOMetawrap t fn v fmv)) deriving Generic
 fromSOMetawrapA :: SOMetawrapA a t pd fn v pmv fmv -> a (SOAtom pd fn pmv fmv) (SOMetawrap t fn v fmv)
 fromSOMetawrapA (SOMetawrapA x) = x
 
@@ -702,6 +713,7 @@ instance Show (a (SOAtom pd fn pmv fmv) (SOMetawrap t fn v fmv)) => Show (SOMeta
 
 deriving instance Eq (a (SOAtom pd fn pmv fmv) (SOMetawrap t fn v fmv)) => Eq (SOMetawrapA a t pd fn v pmv fmv)
 deriving instance Ord (a (SOAtom pd fn pmv fmv) (SOMetawrap t fn v fmv)) => Ord (SOMetawrapA a t pd fn v pmv fmv)
+instance Hashable (a (SOAtom pd fn pmv fmv) (SOMetawrap t fn v fmv)) => Hashable (SOMetawrapA a t pd fn v pmv fmv)
 	
 instance (HasArity pd, HasArity fn, HasArity pmv, HasArity fmv, SimpleTerm a, SimpleTerm t) => Normalizable (SOMetawrapA a t pd fn v pmv fmv) (SOMetawrapA a t pd fn v pmv fmv) where
 	inject_normal = id
@@ -749,13 +761,14 @@ somv mv ts = SOMetawrap (UTerm (build_term (UVar mv) (Prelude.map fromSOMetawrap
 -- First-order atoms in which the universe of discourse are second-order atoms.
 -- We provide a very simple case, which is the one we need: Only second-order predicates (no functions) and only applied on object-level predicates (not functions, although the predicates could be composites containing functions).
 -- We allow the inclusion of an additional inner layer in the first-second-order predicates. This will likely be a lambda-CNF structure, allowing to express properties of conjunctions, disjunctions, negations and the like. But we try to keep it parametric at this level for now. This is represented by the s type parameter.
-newtype FirstSOAAtom (a :: * -> * -> *) (s :: * -> *) mpd pd fn pmv fmv = FirstSOAAtom {fromFirstSOAAtom :: a mpd (s (SOAtom pd fn pmv fmv))}
+newtype FirstSOAAtom (a :: * -> * -> *) (s :: * -> *) mpd pd fn pmv fmv = FirstSOAAtom {fromFirstSOAAtom :: a mpd (s (SOAtom pd fn pmv fmv))} deriving Generic
 
 instance Show (a mpd (s (SOAtom pd fn pmv fmv))) => Show (FirstSOAAtom a s mpd pd fn pmv fmv) where
 	show (FirstSOAAtom x) = show x
 
 deriving instance Eq (a mpd (s (SOAtom pd fn pmv fmv))) => Eq (FirstSOAAtom a s mpd pd fn pmv fmv)
 deriving instance Ord (a mpd (s (SOAtom pd fn pmv fmv))) => Ord (FirstSOAAtom a s mpd pd fn pmv fmv)
+instance Hashable (a mpd (s (SOAtom pd fn pmv fmv))) => Hashable (FirstSOAAtom a s mpd pd fn pmv fmv)
 
 instance (HasArity pd, HasArity pmv, HasArity fn, HasArity fmv, Functor (a mpd), Functor s) => Normalizable (FirstSOAAtom a s mpd pd fn pmv fmv) (FirstSOAAtom a s mpd pd fn pmv fmv) where
 	inject_normal = id
@@ -771,7 +784,7 @@ instance (SimpleTerm a, Eq fn, Eq fmv, Functor s) => Substitutable (FirstSOAAtom
 	subst sov gsot fsoa = subst sov sot fsoa where sot = inject_groundsot gsot :: SOTerm fn fmv
 
 
-data CombSOAtom (a :: * -> * -> *) (t :: * -> * -> *) (s :: * -> *) mpd pd fn v pmv fmv = NSOAtom (SOMetawrapA a t pd fn v pmv fmv) | FSOAtom (FirstSOAAtom a s mpd pd fn pmv fmv)
+data CombSOAtom (a :: * -> * -> *) (t :: * -> * -> *) (s :: * -> *) mpd pd fn v pmv fmv = NSOAtom (SOMetawrapA a t pd fn v pmv fmv) | FSOAtom (FirstSOAAtom a s mpd pd fn pmv fmv) deriving Generic
 
 instance (Show (a mpd (s (SOAtom pd fn pmv fmv))), Show (a (SOAtom pd fn pmv fmv) (SOMetawrap t fn v fmv))) => Show (CombSOAtom a t s mpd pd fn v pmv fmv) where
 	show (NSOAtom x) = show x
@@ -779,6 +792,7 @@ instance (Show (a mpd (s (SOAtom pd fn pmv fmv))), Show (a (SOAtom pd fn pmv fmv
 
 deriving instance (Eq (a (SOAtom pd fn pmv fmv) (SOMetawrap t fn v fmv)), Eq (a mpd (s (SOAtom pd fn pmv fmv)))) => Eq (CombSOAtom a t s mpd pd fn v pmv fmv)
 deriving instance (Ord (a (SOAtom pd fn pmv fmv) (SOMetawrap t fn v fmv)), Ord (a mpd (s (SOAtom pd fn pmv fmv)))) => Ord (CombSOAtom a t s mpd pd fn v pmv fmv)
+instance (Hashable (a (SOAtom pd fn pmv fmv) (SOMetawrap t fn v fmv)), Hashable (a mpd (s (SOAtom pd fn pmv fmv)))) => Hashable (CombSOAtom a t s mpd pd fn v pmv fmv)
 
 instance (HasArity pd, HasArity pmv, HasArity fn, HasArity fmv, Functor (a mpd), Functor s, SimpleTerm a, SimpleTerm t) => Normalizable (CombSOAtom a t s mpd pd fn v pmv fmv) (CombSOAtom a t s mpd pd fn v pmv fmv) where
 	inject_normal = id
@@ -1114,11 +1128,13 @@ new_psovar aty = do
 	}
 
 
-data Literal t = PosLit t | NegLit t deriving (Eq, Ord, Functor)
+data Literal t = PosLit t | NegLit t deriving (Eq, Ord, Functor, Generic)
 
 atom_from_literal :: Literal t -> t
 atom_from_literal (PosLit x) = x
 atom_from_literal (NegLit x) = x
+
+instance Hashable t => Hashable (Literal t)
 
 instance Read t => Read (Literal t) where
 	readsPrec _ xs =

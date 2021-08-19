@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FunctionalDependencies #-}
@@ -31,7 +32,7 @@ import Data.Either
 import Control.Unification.Types
 import Data.List
 import Data.Maybe
-import Data.Map.Strict
+import Data.HashMap
 import Syntax
 import AnswerSet
 import QueryLogic
@@ -48,6 +49,8 @@ import Data.Functor.Fixedpoint
 import Data.Bifunctor
 import DependencyGraph
 import GlobalTrace
+import GHC.Generics (Generic)
+import Data.Hashable
 
 -- Here are all our assumptions / simplifications:
 --	- A literal is either an atom or its negation.
@@ -67,8 +70,8 @@ type GroundLiteral (a :: * -> * -> *) (t :: * -> * -> *) pd fn = Literal (Ground
 type Clause (a :: * -> * -> *) (t :: * -> * -> *) mpd pd fn v pmv fmv = [VarLiteral a t mpd pd fn v pmv fmv]
 type CNF (a :: * -> * -> *) (t :: * -> * -> *) mpd pd fn v pmv fmv = [Clause a t mpd pd fn v pmv fmv]
 
-newtype CESQVar pmv fmv = CESQVar {fromCESQVar :: Either pmv fmv} deriving (Eq)
-newtype CESQSol pd fn = CESQSol {fromCESQSol :: Either (LambdaCNF (GroundSOA pd fn)) (GroundSOT fn)} deriving (Eq)
+newtype CESQVar pmv fmv = CESQVar {fromCESQVar :: Either pmv fmv} deriving (Eq, Generic)
+newtype CESQSol pd fn = CESQSol {fromCESQSol :: Either (LambdaCNF (GroundSOA pd fn)) (GroundSOT fn)} deriving (Eq, Generic)
 newtype ParcCESQSol pd fn pmv fmv = ParcCESQSol {fromParcCESQSol :: Either (LambdaCNF (SOAtom pd fn pmv fmv)) (SOTerm fn fmv)}
 type BaseCESQuery (a :: * -> * -> *) (t :: * -> * -> *) mpd pd fn v pmv fmv = FullLogicQuery (SOSignature mpd pd fn v pmv fmv) (CNF a t mpd pd fn v pmv fmv) (SOMetawrapA a t pd fn v pmv fmv)
 type CESQuery (a :: * -> * -> *) (t :: * -> * -> *) mpd pd fn v pmv fmv = Query (BaseCESQuery a t mpd pd fn v pmv fmv) (CESQVar pmv fmv) [CESQArgumentMap pd fn pmv fmv] (CESQSol pd fn)
@@ -83,8 +86,10 @@ instance (Show pd, Show fn) => Show (CESQSol pd fn) where
 
 instance (Show pd, Show fn, Show pmv, Show fmv) => Show (ParcCESQSol pd fn pmv fmv)
 
-instance (Ord pmv, Ord fmv, Eq pmv, Eq fmv) => Ord (CESQVar pmv fmv) where
+instance (Hashable pmv, Ord pmv, Hashable fmv, Ord fmv, Eq pmv, Eq fmv) => Ord (CESQVar pmv fmv) where
 	compare (CESQVar a) (CESQVar b) = compare a b
+
+instance (Hashable pmv, Hashable fmv) => Hashable (CESQVar pmv fmv)
 
 lambdacnf_to_gsoa :: LambdaCNF (GroundSOA pd fn) -> GroundSOA pd fn
 lambdacnf_to_gsoa (LambdaCNF [LambdaClause [PosLit l]]) = l
@@ -111,19 +116,19 @@ instance ESMGUConstraintsUPmv t pd fn v pmv fmv uv => Show (ImplicitInstantiatio
 implicitInst_mincond_depth :: Int
 implicitInst_mincond_depth = 5000
 
-implicitInst_tounifsol :: (Ord pmv, Ord fmv) => (CESQVar pmv fmv := CESQSol pd fn) -> UnifSysSolution pd fn pmv fmv
+implicitInst_tounifsol :: (Hashable pmv, Ord pmv, Hashable fmv, Ord fmv) => (CESQVar pmv fmv := CESQSol pd fn) -> UnifSysSolution pd fn pmv fmv
 implicitInst_tounifsol m = UnifSysSolution recf recp where (recf, recp) = implicitInst_tounifsol_rec (toList m)
 
 -- Right now, we do not have the ability to use LambdaCNFs for this at all: we assume they are one positive literal and nothing else.
-implicitInst_tounifsol_rec :: (Ord pmv, Ord fmv) => [(CESQVar pmv fmv, CESQSol pd fn)] -> (fmv := GroundSOT fn, pmv := GroundSOA pd fn)
-implicitInst_tounifsol_rec [] = (Data.Map.Strict.empty, Data.Map.Strict.empty)
-implicitInst_tounifsol_rec ((CESQVar (Left pmv), CESQSol (Left (LambdaCNF [LambdaClause [PosLit soa]]))):sols) = (recf, Data.Map.Strict.insert pmv soa recp) where (recf,recp) = implicitInst_tounifsol_rec sols
+implicitInst_tounifsol_rec :: (Hashable pmv, Ord pmv, Hashable fmv, Ord fmv) => [(CESQVar pmv fmv, CESQSol pd fn)] -> (fmv := GroundSOT fn, pmv := GroundSOA pd fn)
+implicitInst_tounifsol_rec [] = (Data.HashMap.empty, Data.HashMap.empty)
+implicitInst_tounifsol_rec ((CESQVar (Left pmv), CESQSol (Left (LambdaCNF [LambdaClause [PosLit soa]]))):sols) = (recf, Data.HashMap.insert pmv soa recp) where (recf,recp) = implicitInst_tounifsol_rec sols
 implicitInst_tounifsol_rec ((CESQVar (Left pmv), CESQSol (Left _)):sols) = error "implicitInst_tounifsol_rec: LambdaCNFs are currently not supported in solutions to systems"
-implicitInst_tounifsol_rec ((CESQVar (Right fmv), CESQSol (Right sot)):sols) = (Data.Map.Strict.insert fmv sot recf, recp) where (recf,recp) = implicitInst_tounifsol_rec sols
+implicitInst_tounifsol_rec ((CESQVar (Right fmv), CESQSol (Right sot)):sols) = (Data.HashMap.insert fmv sot recf, recp) where (recf,recp) = implicitInst_tounifsol_rec sols
 implicitInst_tounif_sol_rec _ = error "Found an association which does not match variable types in the CESQ solution"
 
-implicitInst_fromunifsol :: (Ord pmv, Ord fmv) => UnifSysSolution pd fn pmv fmv -> (CESQVar pmv fmv := CESQSol pd fn)
-implicitInst_fromunifsol (UnifSysSolution fsol psol) = Data.List.foldr (\(fk,fv) -> Data.Map.Strict.insert (CESQVar (Right fk)) (CESQSol (Right fv))) (Data.List.foldr (\(pk,pv) -> Data.Map.Strict.insert (CESQVar (Left pk)) (CESQSol (Left (LambdaCNF [LambdaClause [PosLit pv]])))) Data.Map.Strict.empty (toList psol)) (toList fsol)
+implicitInst_fromunifsol :: (Hashable pmv, Ord pmv, Hashable fmv, Ord fmv) => UnifSysSolution pd fn pmv fmv -> (CESQVar pmv fmv := CESQSol pd fn)
+implicitInst_fromunifsol (UnifSysSolution fsol psol) = Data.List.foldr (\(fk,fv) -> Data.HashMap.insert (CESQVar (Right fk)) (CESQSol (Right fv))) (Data.List.foldr (\(pk,pv) -> Data.HashMap.insert (CESQVar (Left pk)) (CESQSol (Left (LambdaCNF [LambdaClause [PosLit pv]])))) Data.HashMap.empty (toList psol)) (toList fsol)
 
 -- We use diagonalization here. This is an arbitrary choice, but one that works for this particular purpose absolutely fine.
 cesq_enum_execorder :: Diagonalize
@@ -201,10 +206,10 @@ instance forall a t mpd pd fn v pmv fmv uv. ResConstraintsALL a t LambdaCNF mpd 
 			inst = ImplicitAS (ImplicitInstantiation (MinMaxGraphInst resuvdg_min resuvdg_mincond resuvdg_max) sel);
 	runBaseQWithUV _ t sel q = error "Unexpected type of CESQ query!!!"
 
-type CESQConstraintsOutNoPd fn pmv fmv = (Ord pmv, Ord fmv, Eq pmv, Eq fmv, Eq fn, Ord fn) 
-type CESQConstraintsOut pd fn pmv fmv = (CESQConstraintsOutNoPd fn pmv fmv, Eq pd, Ord pd)
+type CESQConstraintsOutNoPd fn pmv fmv = (Hashable pmv, Ord pmv, Hashable fmv, Ord fmv, Eq pmv, Eq fmv, Eq fn, Hashable fn, Ord fn) 
+type CESQConstraintsOut pd fn pmv fmv = (CESQConstraintsOutNoPd fn pmv fmv, Eq pd, Hashable pd, Ord pd)
 type CESQConstraintsInT t pd fn pmv fmv = (CESQConstraintsOut pd fn pmv fmv, SimpleTerm t, Bifunctor t)
-type CESQConstraintsInV v = (Eq v, Ord v)
+type CESQConstraintsInV v = (Eq v, Hashable v, Ord v)
 type CESQConstraintsInTV t pd fn v pmv fmv = (CESQConstraintsInT t pd fn pmv fmv, CESQConstraintsInV v)
 type CESQConstraintsInTVNoPd t fn v pmv fmv = (CESQConstraintsOutNoPd fn pmv fmv, SimpleTerm t, CESQConstraintsInV v)
 type CESQConstraintsInA a pd fn pmv fmv = (CESQConstraintsOut pd fn pmv fmv, SimpleTerm a)
@@ -400,33 +405,35 @@ instance forall a t mpd pd fn v pmv fmv uv. ResConstraintsALL a t LambdaCNF mpd 
 
 -- Note that the way we use SOTerm and SOAtom here is overloading: Here they are actually third-order elements, but we can express them like second-order elements seamlessly. It's important to keep these two scopes separate, or really weird things could happen.
 -- Specifically, we do not use projections here and use the second-order variables themselves to stand in for replacing them for their values.
-data CESQArgumentMap pd fn pmv fmv = CESQFAM fmv (SOTerm fn fmv) | CESQPAM pmv (SOAtom pd fn pmv fmv) deriving (Eq, Ord)
+data CESQArgumentMap pd fn pmv fmv = CESQFAM fmv (SOTerm fn fmv) | CESQPAM pmv (SOAtom pd fn pmv fmv) deriving (Eq, Ord, Generic)
 
 instance (Show pd, Show fn, Show pmv, Show fmv) => Show (CESQArgumentMap pd fn pmv fmv) where
 	show (CESQFAM fmv sot) = (show fmv) ++ " := " ++ (show sot)
 	show (CESQPAM pmv soa) = (show pmv) ++ " := " ++ (show soa)
 
+instance (Hashable pd, Hashable fn, Hashable pmv, Hashable fmv) => Hashable (CESQArgumentMap pd fn pmv fmv)
+
 -- Note: It is possible we are calling this function too often and this is a performance issue. I don't think so, though.
-instance (Ord pmv, Ord fmv) => Transformable [CESQArgumentMap pd fn pmv fmv] (CESQVar pmv fmv :->= CESQSol pd fn) where
+instance (Hashable pmv, Ord pmv, Hashable fmv, Ord fmv) => Transformable [CESQArgumentMap pd fn pmv fmv] (CESQVar pmv fmv :->= CESQSol pd fn) where
 	transform am = fromList (transform_single_cesqam <$> am)
 
-transform_single_cesqam :: (Ord pmv, Ord fmv) => CESQArgumentMap pd fn pmv fmv -> (CESQVar pmv fmv,((CESQVar pmv fmv =<- CESQSol pd fn) -> CESQSol pd fn))
+transform_single_cesqam :: (Hashable pmv, Ord pmv, Hashable fmv, Ord fmv) => CESQArgumentMap pd fn pmv fmv -> (CESQVar pmv fmv,((CESQVar pmv fmv =<- CESQSol pd fn) -> CESQSol pd fn))
 transform_single_cesqam (CESQFAM fmv sot) = (CESQVar (Right fmv), transform_sot_cesqam sot)
 transform_single_cesqam (CESQPAM pmv soa) = (CESQVar (Left pmv), transform_soa_cesqam soa)
 
-transform_sot_cesqam :: (Ord pmv, Ord fmv) => SOTerm fn fmv -> CESQVar pmv fmv =<- CESQSol pd fn -> CESQSol pd fn
+transform_sot_cesqam :: (Hashable pmv, Ord pmv, Hashable fmv, Ord fmv) => SOTerm fn fmv -> CESQVar pmv fmv =<- CESQSol pd fn -> CESQSol pd fn
 transform_sot_cesqam (UVar fmv) rs = rsmap !# (CESQVar (Right fmv)) $ "Error on transform_sot_cesqam. Found a second-order variable that is not part of the result set!" where rsmap = qresultset_result rs
 transform_sot_cesqam (UTerm (SOF (ConstF fn))) rs = CESQSol (Right (Fix (SOF (ConstF fn))))
 transform_sot_cesqam (UTerm (SOF (Proj idx))) rs = error "Found a projection on a third/second-order term when transforming!"
 transform_sot_cesqam (UTerm (SOF (CompF h sts))) rs = CESQSol (Right (Fix (SOF (CompF rh rsts)))) where (CESQSol (Right rh)) = transform_sot_cesqam h rs; frsts = (\(CESQSol (Right rst)) -> rst); rsts = frsts . (\st -> transform_sot_cesqam st rs) <$> sts
 
-transform_soa_cesqam :: (Ord pmv, Ord fmv) => SOAtom pd fn pmv fmv -> CESQVar pmv fmv =<- CESQSol pd fn -> CESQSol pd fn
+transform_soa_cesqam :: (Hashable pmv, Ord pmv, Hashable fmv, Ord fmv) => SOAtom pd fn pmv fmv -> CESQVar pmv fmv =<- CESQSol pd fn -> CESQSol pd fn
 transform_soa_cesqam (UVar pmv) rs = rsmap !# (CESQVar (Left pmv)) $ "Error on transform_soa_cesqam. Found a second-order variable that is not part of the result set!" where rsmap = qresultset_result rs
 transform_soa_cesqam (UTerm (SOP (ConstF pd))) rs = CESQSol (Left (gsoa_to_lambdacnf (Fix (SOP (ConstF pd)))))
 transform_soa_cesqam (UTerm (SOP (Proj idx))) rs = error "Found a projection on a third/second-order term when transforming!"
 transform_soa_cesqam (UTerm (SOP (CompF h sts))) rs = CESQSol (Left (gsoa_to_lambdacnf (Fix (SOP (CompF rrh rsts))))) where (CESQSol (Left rh)) = transform_soa_cesqam h rs; rrh = lambdacnf_to_gsoa rh; frsts = (\(CESQSol (Right rst)) -> rst); rsts = frsts . (\st -> transform_sot_cesqam st rs) <$> sts
 
-instance forall t mpd pd fn v pmv fmv uv. (Ord pmv, Ord fmv) => Functional [CESQArgumentMap pd fn pmv fmv] (CESQVar pmv fmv =<- CESQSol pd fn) (AnswerSet (ImplicitInstantiation t mpd pd fn v pmv fmv uv) (CESQVar pmv fmv =<- CESQSol pd fn)) where
+instance forall t mpd pd fn v pmv fmv uv. (Hashable pmv, Ord pmv, Hashable fmv, Ord fmv) => Functional [CESQArgumentMap pd fn pmv fmv] (CESQVar pmv fmv =<- CESQSol pd fn) (AnswerSet (ImplicitInstantiation t mpd pd fn v pmv fmv uv) (CESQVar pmv fmv =<- CESQSol pd fn)) where
 	tofun am = tofun (transform am::CESQVar pmv fmv :->= CESQSol pd fn)
 
 instance CESQConstraintsOut pd fn pmv fmv => Substitutable [CESQArgumentMap pd fn pmv fmv] (CESQVar pmv fmv) (CESQSol pd fn) where
@@ -495,7 +502,7 @@ implicitinst_am_maxvars ((CESQPAM pmv _):am) = (max ipmv mpmv, mfmv) where (mpmv
 implicitinst_am_substvars :: (Variable v, Variabilizable v) => Int -> v -> v
 implicitinst_am_substvars max v = update_var (+(max+1)) v
 
-implicitinst_am_addam :: (Ord pd, Ord pmv, Ord fn, Ord fmv) => CESQArgumentMap pd fn pmv fmv -> StateT (ESUnifVDGraph s t mpd pd fn v pmv fmv uv) (ST s) ()
+implicitinst_am_addam :: (Hashable pd, Ord pd, Hashable pmv, Ord pmv, Hashable fn, Ord fn, Hashable fmv, Ord fmv) => CESQArgumentMap pd fn pmv fmv -> StateT (ESUnifVDGraph s t mpd pd fn v pmv fmv uv) (ST s) ()
 implicitinst_am_addam (CESQFAM fmv _) = mzoom lens_esunifdgraph_dgraph $ newEqDGSONode (FSONode (UVar fmv)) >> pass
 implicitinst_am_addam (CESQPAM pmv _) = mzoom lens_esunifdgraph_dgraph $ newEqDGSONode (PSONode (UVar pmv)) >> pass
 
@@ -504,7 +511,7 @@ implicitinst_am_addtosig (CESQFAM fmv _) sosig = SOSignature (fosig sosig) (fmv 
 implicitinst_am_addtosig (CESQPAM pmv _) sosig = SOSignature (fosig sosig) (sovars sosig) (pmv --> pvars sosig) (sopreds sosig)
 
 -- Creates a function that replaces the second-order variables in the signature within an argument map.
-implicitinst_am_transformam :: forall mpd pd fn v pmv fmv. (Ord pmv, Ord fmv) => (pmv -> pmv) -> (fmv -> fmv) -> SOSignature mpd pd fn v pmv fmv -> CESQArgumentMap pd fn pmv fmv -> CESQArgumentMap pd fn pmv fmv
+implicitinst_am_transformam :: forall mpd pd fn v pmv fmv. (Hashable pmv, Ord pmv, Hashable fmv, Ord fmv) => (pmv -> pmv) -> (fmv -> fmv) -> SOSignature mpd pd fn v pmv fmv -> CESQArgumentMap pd fn pmv fmv -> CESQArgumentMap pd fn pmv fmv
 implicitinst_am_transformam fpmv ffmv sosig (CESQFAM rfmv sot) = CESQFAM rfmv (subst_all fsubsts $ sot) where fmvs = sovars sosig; pmvs = pvars sosig; fsubsts = fromList . list_from_enum $ ((\fmv -> (fmv,UVar (ffmv fmv)::SOTerm fn fmv)) <$> fmvs)
 implicitinst_am_transformam fpmv ffmv sosig (CESQPAM rpmv soa) = CESQPAM rpmv (subst_all fsubsts . implicitinst_am_substall_pmv psubsts $ soa) where fmvs = sovars sosig; pmvs = pvars sosig; fsubsts = fromList . list_from_enum $ ((\fmv -> (fmv,UVar (ffmv fmv)::SOTerm fn fmv)) <$> fmvs); psubsts = fromList . list_from_enum $ ((\pmv -> (pmv,fpmv pmv)) <$> pmvs)
 
@@ -653,17 +660,19 @@ testtypes = runQuery
 type LambdaLiteral pd = Literal pd
 
 -- These newtypes are so unnecessary though.
-newtype LambdaClause pd = LambdaClause [LambdaLiteral pd] 
-newtype LambdaCNF pd = LambdaCNF [LambdaClause pd]
+newtype LambdaClause pd = LambdaClause [LambdaLiteral pd] deriving Generic
+newtype LambdaCNF pd = LambdaCNF [LambdaClause pd] deriving Generic
 
 -- These equalities should be replaced by permutation-invariant equality.
 deriving instance Eq pd => Eq (LambdaClause pd)
 deriving instance Ord pd => Ord (LambdaClause pd)
+instance Hashable pd => Hashable (LambdaClause pd)
 deriving instance Functor LambdaClause
 deriving instance Foldable LambdaClause
 deriving instance Traversable LambdaClause
 deriving instance Eq pd => Eq (LambdaCNF pd)
 deriving instance Ord pd => Ord (LambdaCNF pd)
+instance Hashable pd => Hashable (LambdaCNF pd)
 deriving instance Functor LambdaCNF
 deriving instance Foldable LambdaCNF
 deriving instance Traversable LambdaCNF

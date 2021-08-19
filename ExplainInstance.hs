@@ -13,7 +13,7 @@ import           Data.Coerce
 import           Data.Function (on)
 import           Data.Generics
 import           Data.List (groupBy, sortBy, sort, group, find)
-import qualified Data.Map as M
+import qualified Data.HashMap as M
 import           Data.Maybe
 import           Data.Ord (comparing)
 import           Language.Haskell.TH

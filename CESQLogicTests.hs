@@ -31,7 +31,7 @@ import Data.Either
 import Control.Unification.Types
 import Data.List
 import Data.Maybe
-import Data.Map.Strict
+import Data.HashMap
 import Syntax
 import AnswerSet
 import QueryLogic

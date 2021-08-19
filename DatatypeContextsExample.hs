@@ -2,7 +2,7 @@
 {-# LANGUAGE DatatypeContexts #-}
 module DatatypeContextsExample where
 
-import Data.Map
+import Data.HashMap
 import Data.Bifunctor
 
 data Ord t => Foo t where

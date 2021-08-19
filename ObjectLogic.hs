@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FunctionalDependencies #-}
@@ -26,8 +27,12 @@ import Syntax
 import Data.Functor.Fixedpoint
 import Data.Bifunctor
 import HaskellPlus
+import GHC.Generics (Generic)
+import Data.Hashable
 
-newtype OVariable = OVar Int deriving (Eq, Ord)
+newtype OVariable = OVar Int deriving (Eq, Ord, Generic)
+
+instance Hashable OVariable
 
 instance Show OVariable where
 	show (OVar x) = "x" ++ (show x)
@@ -42,7 +47,9 @@ instance Variabilizable OVariable where
 instance Variable OVariable where
 	getVarID = getVarID_gen
 
-data OFunction = OFun Int Int deriving (Eq, Ord)
+data OFunction = OFun Int Int deriving (Eq, Ord, Generic)
+
+instance Hashable OFunction
 
 instance Show OFunction where
 	show (OFun x y) = "f" ++ (show x) ++ "[" ++ (show y) ++ "]"
@@ -55,7 +62,9 @@ instance Read OFunction where
 instance HasArity OFunction where
 	arity (OFun _ x) = x									
 
-data OPredicate = OPred Int Int deriving (Eq, Ord)
+data OPredicate = OPred Int Int deriving (Eq, Ord, Generic)
+
+instance Hashable OPredicate
 
 instance Show OPredicate where
 	show (OPred x y) = "p" ++ (show x) ++ "[" ++ (show y) ++ "]"
@@ -68,7 +77,9 @@ instance Read OPredicate where
 instance HasArity OPredicate where
 	arity (OPred _ x) = x
 
-data CTermF fn f = TFun fn [f] deriving (Eq, Ord, Functor, Foldable, Traversable)
+data CTermF fn f = TFun fn [f] deriving (Eq, Ord, Functor, Foldable, Traversable, Generic)
+
+instance (Hashable fn, Hashable f) => Hashable (CTermF fn f)
 
 fixTFun :: fn -> [Fix (CTermF fn)] -> Fix (CTermF fn)
 fixTFun = build_functor_fix TFun
@@ -118,7 +129,9 @@ instance (Eq fn, Show fn) => Unifiable (CTermF fn) where
 	zipMatch (TFun f t1s) (TFun g t2s) | (f == g) && ((length t1s) /= (length t2s)) = error ("Unifying function " ++ (show f) ++ " but arities don't match! Arities: " ++ (show (length t1s)) ++  " and " ++ (show (length t2s)))
 	zipMatch (TFun f t1s) (TFun g t2s) = Nothing
 
-data CAtomPF pd f = APred pd [f] deriving (Eq, Ord, Functor, Foldable, Traversable)
+data CAtomPF pd f = APred pd [f] deriving (Eq, Ord, Functor, Foldable, Traversable, Generic)
+
+instance (Hashable pd, Hashable f) => Hashable (CAtomPF pd f)
 
 fixAPred :: pd -> [Fix (CAtomPF pd)] -> Fix (CAtomPF pd)
 fixAPred = build_functor_fix APred

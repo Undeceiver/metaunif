@@ -25,7 +25,7 @@ import Data.Functor.Fixedpoint
 import Data.Functor.Identity
 import Control.Unification
 import Control.Monad.Except
-import Data.Map.Strict
+import Data.HashMap
 import Data.Graph
 import Control.Lens
 import Control.Applicative
@@ -37,6 +37,7 @@ import Control.Monad.Except
 import Debug.Trace
 import GHC.IO.Handle
 import System.IO
+import Data.Hashable
 
 -- Here I put functions/types that I feel should be part of Haskell but aren't. It is likely that at least half of them ACTUALLY are part of Haskell, but I wasn't smart enough to find them.
 
@@ -485,6 +486,7 @@ instance (Functor f, Normalizable a b) => Normalizable (NormalizedFunctor f a) (
 type (v := r) = Map v r
 
 
+
 -- Variations of Functor for different arguments and types.
 -- We use the following nomenclature: A "Non" syllable means an argument that does not behave functorially. A "Func" syllable means an argument that behaves functorially, in order.
 -- So, for example, Functor ~ FuncFunctor, Bifunctor ~ FuncFuncFunctor, a type which has two arguments but is only functorial on the first one would be FuncNonFunctor, etc.
@@ -567,10 +569,10 @@ foldMapBool tr f s = foldMapByOf tr (\s1 -> \s2 -> do {r1 <- s1; r2 <- s2; retur
 
 -- In theory we can use the provided map optics instead of this, but they seem harder to use, at least to me. I prefer to just compose stuff.
 -- This may, however, be inefficient in large maps. I'd have to think about it slowly.
-lens_assocs :: Ord k => Lens' (Map k v) [(k,v)]
+lens_assocs :: (Hashable k, Ord k) => Lens' (Map k v) [(k,v)]
 lens_assocs = lens assocs (\prev -> \new -> fromList new)
 
-traversal_assocs :: Ord k => Traversal' (Map k v) (k,v)
+traversal_assocs :: (Hashable k, Ord k) => Traversal' (Map k v) (k,v)
 traversal_assocs = lens_assocs . traverse
 
 lens_idx :: Int -> Lens' [a] a
@@ -704,14 +706,37 @@ headErr :: String -> [a] -> a
 headErr str [] = error str
 headErr str (x:xs) = x
 
-lookupErr :: Ord k => String -> Map k v -> k -> v
+lookupErr :: (Hashable k, Ord k) => String -> Map k v -> k -> v
 lookupErr str m k = case mb_v of {Nothing -> error str; Just v -> v} where mb_v = m !? k
 
-(!#) :: Ord k => Map k v -> k -> String -> v
+(!?) :: (Ord k, Hashable k) => Map k v -> k -> Maybe v
+m !? k = Data.HashMap.lookup k m
+
+(!#) :: (Hashable k, Ord k) => Map k v -> k -> String -> v
 m !# k = (\str -> lookupErr str m k)
 
-(!<) :: Ord k => Map k v -> k -> v -> v
+(!<) :: (Hashable k, Ord k) => Map k v -> k -> v -> v
 m !< k = (\dv -> findWithDefault dv k m)
+
+-- Lenses for hashmaps
+type instance Index (Data.HashMap.Map k v) = k
+type instance IxValue (Data.HashMap.Map k v) = v
+
+instance (Ord k, Hashable k) => Ixed (Data.HashMap.Map k v) where
+	ix k f m = if (isJust mb_v) then fm else (pure m)
+		where
+			mb_v = m !? k;
+			v = fromJust mb_v;
+			fv = f v;
+			fm = (\w -> Data.HashMap.insert k w m) <$> fv
+
+instance (Ord k, Hashable k) => At (Data.HashMap.Map k v) where
+	at k f m = fm
+		where
+			mb_v = m !? k;
+			fv = f mb_v;
+			fm = (\mb_w -> if (isNothing mb_w) then (Data.HashMap.delete k m) else (Data.HashMap.insert k (fromJust mb_w) m)) <$> fv
+			
 
 
 -- To be able to do this with kinds, we need to use/assume extensionality of kinds!

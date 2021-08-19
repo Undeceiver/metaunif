@@ -22,7 +22,7 @@ module Identifier where
 
 import HaskellPlus
 import Data.List
-import Data.Map.Strict
+import Data.HashMap
 import Control.Lens
 import Control.Lens.Iso
 import Control.Monad.State

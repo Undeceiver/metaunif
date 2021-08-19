@@ -33,7 +33,7 @@ import HaskellPlus
 import Syntax
 import Data.Functor.Fixedpoint
 import Data.List
-import Data.Map.Strict
+import Data.HashMap
 import AnswerSet
 import EnumProc
 import Data.Maybe

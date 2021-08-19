@@ -34,7 +34,7 @@ import HaskellPlus
 import Syntax
 import Data.Functor.Fixedpoint
 import Data.List
-import Data.Map.Strict
+import Data.HashMap
 import AnswerSet
 import EnumProc
 import Data.Maybe
@@ -304,8 +304,8 @@ res_resolveall = do
 		-- Check if there is an empty clause. If there is, we are finished.
 		let {cls = (rescnf_clauses . resst_cnf) resst; rcls = Prelude.filter (\cl -> Prelude.null (resclause_lits cl)) cls};
 		case rcls of
-		{
-			(cl:_) -> return (Just (resclause_cstr cl,resclause_proof cl));
+		{			
+			(cl:_) -> gtrace True "Found an empty clause!" (return (Just (resclause_cstr cl,resclause_proof cl)));
 			[] -> do
 				{
 					mb_step <- res_choosestep;

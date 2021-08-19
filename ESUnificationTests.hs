@@ -22,7 +22,7 @@ import HaskellPlus
 import Syntax
 import Data.Functor.Fixedpoint
 import Data.List
-import Data.Map.Strict
+import Data.HashMap
 import AnswerSet
 import EnumProc
 import Data.Maybe
@@ -39,6 +39,7 @@ import Control.Monad.ST
 import DependencyGraph
 import Identifier
 import Algorithm
+import Data.Hashable
 
 
 -- Dependency graph operation tests
@@ -123,7 +124,7 @@ check_all_resuvdg maxen title ftest as = case filtered of {EnumProc.Empty -> AT 
 
 
 -- UnifSysSolution tests
-check_map :: (Normalizable b b, Eq b, Ord a) => (a := b) -> (a := b) -> Bool
+check_map :: (Normalizable b b, Eq b, Hashable a, Ord a) => (a := b) -> (a := b) -> Bool
 check_map desired sol = all f (toList desired) where f = (\(k,v) -> NormalizedFunctor (sol !? k) ~~ NormalizedFunctor (Just v))
 
 check_usol :: String -> SOMetaUnifSysSolution -> SOMetaUnifSysSolution -> AutomatedTest

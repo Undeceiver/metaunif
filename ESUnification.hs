@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FunctionalDependencies #-}
@@ -33,7 +34,7 @@ import HaskellPlus
 import Syntax
 import Data.Functor.Fixedpoint
 import Data.List
-import Data.Map.Strict
+import Data.HashMap
 import AnswerSet
 import EnumProc
 import Data.Maybe
@@ -53,9 +54,11 @@ import Data.Tuple
 import Debug.Trace
 import Safe (maximumMay, minimumMay)
 import GlobalTrace
+import GHC.Generics (Generic)
+import Data.Hashable
 
 
-data TermDependant t fn v sov uv = TDDirect (SOMetawrap t fn v sov) | TDUnif uv (TermDependant t fn v sov uv)
+data TermDependant t fn v sov uv = TDDirect (SOMetawrap t fn v sov) | TDUnif uv (TermDependant t fn v sov uv) deriving Generic
 -- This one makes no sense. Second order terms always appear free of unifiers, since they do not affect them directly.
 --data SOTermDependant fn sov uv = SOTDDirect (SOTerm fn sov) | SOTDUnif uv (SOTermDependant fn sov uv)
 
@@ -92,12 +95,14 @@ instance (Show (t (SOTerm fn sov) (UTerm (t (SOTerm fn sov)) v)), Show uv, Show 
 --	show (SOTDUnif uv td) = (show uv) ++ " " ++ (show td)
 
 deriving instance (Eq v, Eq (t (SOTerm fn sov) (UTerm (t (SOTerm fn sov)) v)), Eq sov, Eq uv) => Eq (TermDependant t fn v sov uv)
-deriving instance (Ord v, Ord (t (SOTerm fn sov) (UTerm (t (SOTerm fn sov)) v)), Ord fn, Ord sov, Ord uv) => Ord (TermDependant t fn v sov uv)
+deriving instance (Hashable v, Ord v, Hashable (t (SOTerm fn sov) (UTerm (t (SOTerm fn sov)) v)), Ord (t (SOTerm fn sov) (UTerm (t (SOTerm fn sov)) v)), Hashable fn, Ord fn, Hashable sov, Ord sov, Hashable uv, Ord uv) => Ord (TermDependant t fn v sov uv)
+
+instance (Hashable (t (SOTerm fn sov) (UTerm (t (SOTerm fn sov)) v)), Hashable fn, Hashable v, Hashable sov, Hashable uv) => Hashable (TermDependant t fn v sov uv)
 
 --deriving instance (Eq sov, Eq uv, Eq fn) => Eq (SOTermDependant fn sov uv)
 --deriving instance (Ord fn, Ord sov, Ord uv) => Ord (SOTermDependant fn sov uv)
 
-data AtomDependant a t ss mpd pd fn v pmv fmv uv = ADDirect (CombSOAtom a t ss mpd pd fn v pmv fmv) | ADUnif uv (AtomDependant a t ss mpd pd fn v pmv fmv uv)
+data AtomDependant a t ss mpd pd fn v pmv fmv uv = ADDirect (CombSOAtom a t ss mpd pd fn v pmv fmv) | ADUnif uv (AtomDependant a t ss mpd pd fn v pmv fmv uv) deriving Generic
 
 is_adunif :: AtomDependant a t s mpd pd fn v pmv fmv uv -> Bool
 is_adunif (ADDirect _) = False
@@ -124,7 +129,7 @@ instance (Show (a mpd (s (SOAtom pd fn pmv fmv))), Show (a (SOAtom pd fn pmv fmv
 deriving instance (Eq (a (SOAtom pd fn pmv fmv) (SOMetawrap t fn v fmv)), Eq (a mpd (s (SOAtom pd fn pmv fmv))), Eq pmv, Eq fmv, Eq uv) => Eq (AtomDependant a t s mpd pd fn v pmv fmv uv)
 deriving instance (Ord (a (SOAtom pd fn pmv fmv) (SOMetawrap t fn v fmv)), Ord (a mpd (s (SOAtom pd fn pmv fmv))), Ord pmv, Ord fmv, Ord uv) => Ord (AtomDependant a t s mpd pd fn v pmv fmv uv)
 
-
+instance (Hashable (a (SOAtom pd fn pmv fmv) (SOMetawrap t fn v fmv)), Hashable (a mpd (s (SOAtom pd fn pmv fmv))), Hashable pmv, Hashable fmv, Hashable uv) => Hashable (AtomDependant a t s mpd pd fn v pmv fmv uv)
 
 data UnifEquation a t ss mpd pd fn v pmv fmv uv = TermUnif (TermDependant t fn v fmv uv) (TermDependant t fn v fmv uv) | AtomUnif (AtomDependant a t ss mpd pd fn v pmv fmv uv) (AtomDependant a t ss mpd pd fn v pmv fmv uv) 
 
@@ -276,26 +281,28 @@ dgraph_from_ueq sig (AtomUnif lad rad) = do
 	}
 
 
-type ESMGUConstraints t pd fn v sov = (Ord sov, SimpleTerm t, Eq fn, HasArity fn, HasArity sov, ChangeArity sov, Functor (t (SOTerm fn sov)), Functor (t fn), Bifunctor t, Traversable (t (GroundSOT fn)), Unifiable (t (SOTerm fn sov)), Variabilizable v, Variable v, Variabilizable sov, Variable sov, Ord v, Functor (t (GroundSOT fn)), Eq (t fn (Fix (t fn))), Show sov, Show fn, Show v, Show (t (SOTerm fn sov) (UTerm (t (SOTerm fn sov)) v)), Show (t (GroundSOT fn) (UTerm (t (GroundSOT fn)) v)), Ord fn, Ord (t (SOTerm fn sov) (UTerm (t (SOTerm fn sov)) v)))
+type ESMGUConstraints t pd fn v sov = (Hashable sov, Ord sov, SimpleTerm t, Eq fn, HasArity fn, HasArity sov, ChangeArity sov, Functor (t (SOTerm fn sov)), Functor (t fn), Bifunctor t, Traversable (t (GroundSOT fn)), Unifiable (t (SOTerm fn sov)), Variabilizable v, Variable v, Variabilizable sov, Variable sov, Hashable v, Ord v, Functor (t (GroundSOT fn)), Eq (t fn (Fix (t fn))), Show sov, Show fn, Show v, Show (t (SOTerm fn sov) (UTerm (t (SOTerm fn sov)) v)), Show (t (GroundSOT fn) (UTerm (t (GroundSOT fn)) v)), Hashable fn, Ord fn, Hashable (t (SOTerm fn sov) (UTerm (t (SOTerm fn sov)) v)), Ord (t (SOTerm fn sov) (UTerm (t (SOTerm fn sov)) v)))
 
 
 
 
 
 -- We work with a clear mapping between levels and unifier variables. This makes things a lot easier.
-type ESMGUConstraintsU t pd fn v sov uv = (ESMGUConstraints t pd fn v sov, Show uv, Ord uv, Variable uv, Variabilizable uv)
-type ESMGUConstraintsPdPmv pd pmv = (Ord pd, Ord pmv, Eq pd, Eq pmv, Show pmv, Show pd, HasArity pd, HasArity pmv, Variable pmv, Variabilizable pmv, ChangeArity pmv)
-type ESMGUConstraintsFnFmv fn fmv = (Ord fn, Ord fmv, Eq fn, Eq fmv, Show fmv, Show fn, HasArity fn, HasArity fmv, Variable fmv, Variabilizable fmv, ChangeArity fmv)
+type ESMGUConstraintsU t pd fn v sov uv = (ESMGUConstraints t pd fn v sov, Show uv, Hashable uv, Ord uv, Variable uv, Variabilizable uv)
+type ESMGUConstraintsPdPmv pd pmv = (Hashable pd, Ord pd, Hashable pmv, Ord pmv, Eq pd, Eq pmv, Show pmv, Show pd, HasArity pd, HasArity pmv, Variable pmv, Variabilizable pmv, ChangeArity pmv)
+type ESMGUConstraintsFnFmv fn fmv = (Hashable fn, Ord fn, Hashable fmv, Ord fmv, Eq fn, Eq fmv, Show fmv, Show fn, HasArity fn, HasArity fmv, Variable fmv, Variabilizable fmv, ChangeArity fmv)
 type ESMGUConstraintsPdFnPmvFmv pd fn pmv fmv = (ESMGUConstraintsPdPmv pd pmv, ESMGUConstraintsFnFmv fn fmv)
 type ESMGUConstraintsUPmv t pd fn v pmv fmv uv = (ESMGUConstraintsU t pd fn v fmv uv, ESMGUConstraintsPdPmv pd pmv)
 type ESMGUConstraintsA a = (SimpleTerm a)
-type ESMGUConstraintsAMpd a mpd = (ESMGUConstraintsA a, Functor (a mpd), Eq mpd, Ord mpd)
+type ESMGUConstraintsAMpd a mpd = (ESMGUConstraintsA a, Functor (a mpd), Eq mpd, Hashable mpd, Ord mpd)
 type ESMGUConstraintsSS ss = (Functor ss, Unifiable ss)
 type ESMGUConstraintsAMpdSs a t ss mpd pd fn v pmv fmv = (ESMGUConstraints t pd fn v fmv, ESMGUConstraintsSS ss, ESMGUConstraintsAMpd a mpd, Eq (a mpd (ss (SOAtom pd fn pmv fmv))), Eq (a (SOAtom pd fn pmv fmv) (SOMetawrap t fn v fmv)), ESMGUConstraintsPdPmv pd pmv, Show (a mpd (ss (SOAtom pd fn pmv fmv))), Show (a (SOAtom pd fn pmv fmv) (SOMetawrap t fn v fmv)))
 type ESMGUConstraintsALL a t ss mpd pd fn v pmv fmv uv = (ESMGUConstraintsU t pd fn v fmv uv, ESMGUConstraintsAMpdSs a t ss mpd pd fn v pmv fmv)
 
 -- As first order nodes we use TermDependants, but we use empty ones for atoms, since we do not have atom variables anyway.
-data ESUnifDGSONode pd fn pmv fmv = FSONode (SOTerm fn fmv) | PSONode (SOAtom pd fn pmv fmv) deriving (Ord, Eq)
+data ESUnifDGSONode pd fn pmv fmv = FSONode (SOTerm fn fmv) | PSONode (SOAtom pd fn pmv fmv) deriving (Ord, Eq, Generic)
+
+instance (Hashable fn, Hashable fmv, Hashable pd, Hashable pmv) => Hashable (ESUnifDGSONode pd fn pmv fmv)
 
 is_fsonode :: ESUnifDGSONode pd fn pmv fmv -> Bool
 is_fsonode (FSONode _) = True
@@ -659,13 +666,13 @@ mergeESUnifVDGraph_mergevars cvs vs1 vs2 = (enub (vs2 ..+ (ff <$> vs1)), ff)
 		maxvid = maximum (getVarID <$> vs2);
 		ff = (\v -> if (uns_produce_next (eelem v cvs)) then v else (update_var (+(maxvid+1)) v))
 
-mergeESUnifVDGraph_maxuv :: (Variable uv, Ord uv) => [[TermDependant t fn v fmv uv]] -> Int
+mergeESUnifVDGraph_maxuv :: (Variable uv, Hashable uv, Ord uv) => [[TermDependant t fn v fmv uv]] -> Int
 mergeESUnifVDGraph_maxuv [] = 0
 mergeESUnifVDGraph_maxuv ([]:tdss) = mergeESUnifVDGraph_maxuv tdss
 mergeESUnifVDGraph_maxuv (((TDDirect _):tds):tdss) = mergeESUnifVDGraph_maxuv (tds:tdss)
 mergeESUnifVDGraph_maxuv (((TDUnif uv _):tds):tdss) = max (getVarID uv) (mergeESUnifVDGraph_maxuv (tds:tdss))
 
-mergeESUnifVDGraph_refreshfo :: (Variable uv, Ord uv, Variabilizable uv) => Int -> TermDependant t fn v fmv uv -> TermDependant t fn v fmv uv
+mergeESUnifVDGraph_refreshfo :: (Variable uv, Hashable uv, Ord uv, Variabilizable uv) => Int -> TermDependant t fn v fmv uv -> TermDependant t fn v fmv uv
 mergeESUnifVDGraph_refreshfo maxuv (TDDirect x) = TDDirect x
 mergeESUnifVDGraph_refreshfo maxuv (TDUnif uv x) = TDUnif (update_var (+(maxuv+1)) uv) (mergeESUnifVDGraph_refreshfo maxuv x)
 
@@ -893,7 +900,7 @@ newtype EnRESUnifVDGraph t mpd pd fn v pmv fmv uv = EnRESUnifVDGraph {fromEnRESU
 instance ESMGUConstraintsUPmv t pd fn v pmv fmv uv => Implicit (EnRESUnifVDGraph t mpd pd fn v pmv fmv uv) (UnifSysSolution pd fn pmv fmv) where
 	checkImplicit (EnRESUnifVDGraph resuvdg) us = error "The checkImplicit implementation for the enumerated unification dependency graph should not be used!"
 	-- enumImplicit assumes full normalization and enumeration of root second-order variables
-	enumImplicit (EnRESUnifVDGraph resuvdg) = if (resuvdg_checkfailed resuvdg) then emptycomp else return (extract_unifsolution resuvdg)
+	enumImplicit (EnRESUnifVDGraph resuvdg) = if (resuvdg_checkfailed resuvdg) then emptycomp else (gtrace True "Extracting solution from normal graph" (return (extract_unifsolution resuvdg)))
 
 resuvdg_checkfailed :: ESMGUConstraintsUPmv t pd fn v pmv fmv uv => RESUnifVDGraph t mpd pd fn v pmv fmv uv -> Bool
 resuvdg_checkfailed resuvdg = runST (fst <$> runStateT (do {unRESUnifVDGraph resuvdg; esuvdg <- get; return (esunifdgraph_failed esuvdg)}) (emptyVDGraph (sig_RESUnifVDGraph resuvdg)))
@@ -949,7 +956,7 @@ extract_unifsolution resuvdg = runST (do
 		})};
 		let {ppairsr = runStateT (traverse psovar pvars) esuvdg2};		
 		ppairs <- (list_from_enum . fst) <$> ppairsr;
-		return (UnifSysSolution (Data.Map.Strict.fromList sovpairs) (Data.Map.Strict.fromList ppairs))
+		return (UnifSysSolution (Data.HashMap.fromList sovpairs) (Data.HashMap.fromList ppairs))
 	})
 
 extract_fmv_value :: ESMGUConstraintsUPmv t pd fn v pmv fmv uv => ESUnifRelSoId s t pd fn v pmv fmv uv -> StateT (ESUnifVDGraph s t mpd pd fn v pmv fmv uv) (ST s) (GroundSOT fn)
@@ -3455,7 +3462,7 @@ depgraph_normalize as = validate_all_consistency (as ?>>= Prenormalize ?>>= MFac
 --							Just a -> let {(_,fsamatch) = unbuild_term a} in (case fsamatch of
 --								{
 --									-- If there is a direct match here, then there is no partial instantiation or anything to do for this equation. This equation is constant and is a match.
---									Left sa -> comp ([],Data.Map.empty);
+--									Left sa -> comp ([],Data.HashMap.empty);
 --									Right (lsa, rsa) -> undefined -- TODO: zipMatch lsa with rsa and keep going downwards.
 --								})
 --						};

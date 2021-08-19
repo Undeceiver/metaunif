@@ -6,7 +6,7 @@ module Constraints where
 -- Important note. Literals here actually are atoms (no negation). Bad wording...
 import Data.Maybe
 import qualified Data.Set as Set
-import qualified Data.Map.Strict as Map
+import qualified Data.HashMap as Map
 import qualified Data.List as List
 
 data Variable = Var Int deriving Eq

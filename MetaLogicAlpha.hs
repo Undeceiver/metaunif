@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FunctionalDependencies #-}
@@ -48,9 +49,13 @@ import MetaLogic
 import GHC.Base (liftA2)
 import Similarity
 import Equiv
+import GHC.Generics (Generic)
+import Data.Hashable
 
 -- The entire purpose of all of this is to make the structures a single-parameter functor with the variables being what it depends on.
-data SomeVariable v fmv pmv uv = SomeOVariable {unsomeovariable :: v} | SomeFVariable {unsomefvariable :: fmv} | SomePVariable {unsomepvariable :: pmv} | SomeUVariable {unsomeuvariable :: uv} deriving (Eq, Ord)
+data SomeVariable v fmv pmv uv = SomeOVariable {unsomeovariable :: v} | SomeFVariable {unsomefvariable :: fmv} | SomePVariable {unsomepvariable :: pmv} | SomeUVariable {unsomeuvariable :: uv} deriving (Eq, Ord, Generic)
+
+instance (Hashable v, Hashable fmv, Hashable pmv, Hashable uv) => Hashable (SomeVariable v fmv pmv uv)
 
 someov :: v -> SomeVariable v fmv pmv uv
 someov = SomeOVariable
@@ -133,7 +138,7 @@ instance Traversable SomeSOMetaUnifSystemV where
 -- s sv == (wrapped) Either (SomeSOMetaTermDependantV sv) (SomeSOMetaAtomDependantV sv)
 -- t ssv == EquivClasses sv
 -- t (s sv) = EquivClasses (Either (SomeSOMetaTermDependantV sv) (SomeSOMetaAtomDependantV sv)) ~~ Equiv (Either (SomeSOMetaTermDependantV sv) (SomeSOMetaAtomDependantV sv))
-some_sometaunifsystem_similarities :: (Ord sv1, Ord sv2) => SomeSOMetaUnifSystemV sv1 -> SomeSOMetaUnifSystemV sv2 -> Computation (Equiv (Either sv1 sv2))
+some_sometaunifsystem_similarities :: (Hashable sv1, Ord sv1, Hashable sv2, Ord sv2) => SomeSOMetaUnifSystemV sv1 -> SomeSOMetaUnifSystemV sv2 -> Computation (Equiv (Either sv1 sv2))
 some_sometaunifsystem_similarities (SomeSOMetaUnifSystem leqs) (SomeSOMetaUnifSystem reqs) = composite_similarities lequivcst requivcst
 	where
 		lequiv = produce_equivs_somesometaunifsystem (SomeSOMetaUnifEquation <$> leqs);
@@ -144,7 +149,9 @@ some_sometaunifsystem_similarities (SomeSOMetaUnifSystem leqs) (SomeSOMetaUnifSy
 		requivcst = SomeSOMetaSomeDependant <$> requivcs;
 
 
-newtype SomeSOMetaSomeDependantV sv = SomeSOMetaSomeDependant {fromSomeSOMetaSomeDependant :: Either (SomeSOMetaTermDependantV sv) (SomeSOMetaAtomDependantV sv)} deriving (Eq, Ord, Show)
+newtype SomeSOMetaSomeDependantV sv = SomeSOMetaSomeDependant {fromSomeSOMetaSomeDependant :: Either (SomeSOMetaTermDependantV sv) (SomeSOMetaAtomDependantV sv)} deriving (Eq, Ord, Show, Generic)
+
+instance Hashable sv => Hashable (SomeSOMetaSomeDependantV sv)
 
 instance Functor SomeSOMetaSomeDependantV where
 	fmap g (SomeSOMetaSomeDependant (Left somt)) = (SomeSOMetaSomeDependant (Left (fmap g somt)))
@@ -164,7 +171,7 @@ instance Similarity SomeSOMetaSomeDependantV where
 	similarities _ _ = emptycomp
 
 
-produce_equivs_somesometaunifsystem :: (Ord sv) => [SomeSOMetaUnifEquationV sv] -> Equiv (Either (SomeSOMetaTermDependantV sv) (SomeSOMetaAtomDependantV sv))
+produce_equivs_somesometaunifsystem :: (Hashable sv, Ord sv) => [SomeSOMetaUnifEquationV sv] -> Equiv (Either (SomeSOMetaTermDependantV sv) (SomeSOMetaAtomDependantV sv))
 produce_equivs_somesometaunifsystem [] = empty_equiv
 produce_equivs_somesometaunifsystem ((SomeSOMetaUnifEquation (TermUnif ltd rtd)):eqs) = (Left (SomeSOMetaTermDependant ltd)) =:~ (Left (SomeSOMetaTermDependant rtd)) $ (produce_equivs_somesometaunifsystem eqs)
 produce_equivs_somesometaunifsystem ((SomeSOMetaUnifEquation (AtomUnif lad rad)):eqs) = (Right (SomeSOMetaAtomDependant lad)) =:~ (Right (SomeSOMetaAtomDependant rad)) $ (produce_equivs_somesometaunifsystem eqs)
@@ -191,7 +198,10 @@ instance Traversable SomeSOMetaUnifEquationV where
 	traverse g (SomeSOMetaUnifEquation (TermUnif ltd rtd)) = SomeSOMetaUnifEquation <$> (liftA2 (\rltd -> \rrtd -> TermUnif (fromSomeSOMetaTermDependant rltd) (fromSomeSOMetaTermDependant rrtd)) (traverse g (SomeSOMetaTermDependant ltd)) (traverse g (SomeSOMetaTermDependant rtd)))
 	traverse g (SomeSOMetaUnifEquation (AtomUnif lad rad)) = SomeSOMetaUnifEquation <$> (liftA2 (\rlad -> \rrad -> AtomUnif (fromSomeSOMetaAtomDependant rlad) (fromSomeSOMetaAtomDependant rrad)) (traverse g (SomeSOMetaAtomDependant lad)) (traverse g (SomeSOMetaAtomDependant rad)))
 
-newtype SomeSOMetaTermDependantV sv = SomeSOMetaTermDependant {fromSomeSOMetaTermDependant :: TermDependant CTermF OFunction sv sv sv} deriving (Eq, Ord, Show)
+newtype SomeSOMetaTermDependantV sv = SomeSOMetaTermDependant {fromSomeSOMetaTermDependant :: TermDependant CTermF OFunction sv sv sv} deriving (Eq, Ord, Show, Generic)
+
+instance Hashable sv => Hashable (SomeSOMetaTermDependantV sv)
+
 type SomeSOMetaTermDependant = SomeSOMetaTermDependantV SomeMetaVariable
 some_sometatermdependant :: SOMetaTermDependant -> SomeSOMetaTermDependant
 some_sometatermdependant (TDUnif uv std) = SomeSOMetaTermDependant (TDUnif (SomeUVariable uv) (fromSomeSOMetaTermDependant (some_sometatermdependant std)))
@@ -218,7 +228,10 @@ instance Similarity SomeSOMetaTermDependantV where
 	similarities (SomeSOMetaTermDependant (TDDirect somt1)) (SomeSOMetaTermDependant (TDDirect somt2)) = similarities (SomeSOMetaterm somt1) (SomeSOMetaterm somt2)
 	similarities _ _ = emptycomp
 
-newtype SomeSOMetaAtomDependantV sv = SomeSOMetaAtomDependant {fromSomeSOMetaAtomDependant :: AtomDependant CAtomPF CTermF LambdaCNF SOPredicate OPredicate OFunction sv sv sv sv} deriving (Eq, Ord, Show)
+newtype SomeSOMetaAtomDependantV sv = SomeSOMetaAtomDependant {fromSomeSOMetaAtomDependant :: AtomDependant CAtomPF CTermF LambdaCNF SOPredicate OPredicate OFunction sv sv sv sv} deriving (Eq, Ord, Show, Generic)
+
+instance Hashable sv => Hashable (SomeSOMetaAtomDependantV sv)
+
 type SomeSOMetaAtomDependant = SomeSOMetaAtomDependantV SomeMetaVariable
 some_sometaatomdependant :: SOMetaAtomDependant -> SomeSOMetaAtomDependant
 some_sometaatomdependant (ADUnif uv atd) = SomeSOMetaAtomDependant (ADUnif (SomeUVariable uv) (fromSomeSOMetaAtomDependant (some_sometaatomdependant atd)))
@@ -246,7 +259,10 @@ instance Similarity SomeSOMetaAtomDependantV where
 	similarities (SomeSOMetaAtomDependant (ADDirect csoa1)) (SomeSOMetaAtomDependant (ADDirect csoa2)) = similarities (SomeCombSOMetaatom csoa1) (SomeCombSOMetaatom csoa2)
 	similarities _ _ = emptycomp
 
-newtype SomeSOMetatermV sv = SomeSOMetaterm {fromSomeSOMetaterm :: SOMetawrap CTermF OFunction sv sv} deriving (Eq, Ord, Show)
+newtype SomeSOMetatermV sv = SomeSOMetaterm {fromSomeSOMetaterm :: SOMetawrap CTermF OFunction sv sv} deriving (Eq, Ord, Show, Generic)
+
+instance Hashable sv => Hashable (SomeSOMetatermV sv)
+
 type SomeSOMetaterm = SomeSOMetatermV SomeMetaVariable
 some_sometaterm :: SOMetaterm -> SomeSOMetaterm
 some_sometaterm (SOMetawrap (UVar v)) = SomeSOMetaterm (SOMetawrap (UVar (SomeOVariable v)))
@@ -300,7 +316,10 @@ instance Similarity SomeCombSOMetaatomV where
 	similarities (SomeCombSOMetaatom (FSOAtom fsomaa1)) (SomeCombSOMetaatom (FSOAtom fsomaa2)) = similarities (SomeFirstSOMetaAAtom fsomaa1) (SomeFirstSOMetaAAtom fsomaa2)
 	similarities _ _ = emptycomp
 
-newtype SomeSOMetatermFV sv = SomeSOMetatermF {fromSomeSOMetatermF :: SOTerm OFunction sv} deriving (Eq, Ord)
+newtype SomeSOMetatermFV sv = SomeSOMetatermF {fromSomeSOMetatermF :: SOTerm OFunction sv} deriving (Eq, Ord, Generic)
+
+instance Hashable sv => Hashable (SomeSOMetatermFV sv)
+
 type SomeSOMetatermF = SomeSOMetatermFV SomeMetaVariable
 some_sometatermf :: SOMetatermF -> SomeSOMetatermF
 some_sometatermf (UVar fmv) = SomeSOMetatermF (UVar (SomeFVariable fmv))
@@ -377,7 +396,9 @@ instance Foldable SomeFirstSOMetaAAtomV where
 instance Traversable SomeFirstSOMetaAAtomV where
 	traverse g (SomeFirstSOMetaAAtom (FirstSOAAtom a)) = SomeFirstSOMetaAAtom . FirstSOAAtom <$> (fmap (build_term mp) (fmap3 fromSomeSOMetaatomP (traverse3 g (fmap2 SomeSOMetaatomP ssoas)))) where (mp,ssoas) = unbuild_term a
 
-newtype ListLambdaCNF t = ListLambdaCNF [LambdaCNF t] deriving (Eq, Ord)
+newtype ListLambdaCNF t = ListLambdaCNF [LambdaCNF t] deriving (Eq, Ord, Generic)
+
+instance Hashable t => Hashable (ListLambdaCNF t)
 
 instance Functor ListLambdaCNF where
 	fmap g (ListLambdaCNF l) = ListLambdaCNF (fmap2 g l)
@@ -395,7 +416,10 @@ instance Similarity SomeFirstSOMetaAAtomV where
 	similarities (SomeFirstSOMetaAAtom (FirstSOAAtom a1)) (SomeFirstSOMetaAAtom (FirstSOAAtom a2)) | mp1 == mp2 = composite_similarities (SomeSOMetaatomP <$> xssoas1) (SomeSOMetaatomP <$> xssoas2) where (mp1,ssoas1) = unbuild_term a1; (mp2,ssoas2) = unbuild_term a2; xssoas1 = ListLambdaCNF ssoas1; xssoas2 = ListLambdaCNF ssoas2
 	similarities _ _ = emptycomp
 
-newtype SomeSOMetaatomPV sv = SomeSOMetaatomP {fromSomeSOMetaatomP :: SOAtom OPredicate OFunction sv sv} deriving (Eq, Ord)
+newtype SomeSOMetaatomPV sv = SomeSOMetaatomP {fromSomeSOMetaatomP :: SOAtom OPredicate OFunction sv sv} deriving (Eq, Ord, Generic)
+
+instance Hashable sv => Hashable (SomeSOMetaatomPV sv)
+
 type SomeSOMetaatomP = SomeSOMetaatomPV SomeMetaVariable
 some_sometaatomp :: SOMetaatomP -> SomeSOMetaatomP
 some_sometaatomp (UVar pmv) = SomeSOMetaatomP (UVar (SomePVariable pmv))
