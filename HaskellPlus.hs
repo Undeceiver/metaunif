@@ -861,3 +861,10 @@ stdout_to_file filename = do
 		h <- openFile filename WriteMode;
 		hDuplicateTo h stdout
 	}
+
+stderr_to_file :: String -> IO ()
+stderr_to_file filename = do
+	{
+		h <- openFile filename WriteMode;
+		hDuplicateTo h stderr
+	}

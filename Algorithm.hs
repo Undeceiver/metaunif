@@ -25,6 +25,7 @@ import Provenance
 import Data.Tuple
 import Control.Monad.Trans.State
 import qualified Control.Lens
+import GlobalTrace
 
 -- In some sense this generalizes EnumProc to allow arbitrary search strategies. To get the full generalization without committing to any particular search strategy, use only the most basic functions of EnumProc, and everything else from Algorithm. That is, don't produce EnumProcs by combining other EnumProcs, but only directly, and let ExecOrder do the combining.
 data Algorithm a b = AlgDir (a -> b) | forall c. AlgStep (Algorithm c b) (Algorithm a c) | AlgFork (a -> EnumProc b) | AlgFilter (a -> Maybe b) | AlgEval (forall t. ExecOrder t => t -> a -> EnumProc b)
@@ -258,10 +259,10 @@ gen_diagonalize_rec veag heag depth width fl f Halt prev [] = Halt
 gen_diagonalize_rec veag heag depth width fl f (Error str) prev [] = Error str
 gen_diagonalize_rec veag heag depth width fl f Empty [] [] = Empty
 gen_diagonalize_rec veag heag depth width fl f Empty prev [] = gen_diagonalize_rec veag heag depth width fl f Empty [] prev
-gen_diagonalize_rec veag False depth width True f en prev [] = gen_diagonalize_rec veag False depth width True f r [] fnew where (new,r) = get_nstep_full width en; fnew = (reverse prev) ++ (map f new)
-gen_diagonalize_rec veag False depth width False f en prev [] = gen_diagonalize_rec veag False depth width True f r [] fnew where (new,r) = get_nstep_full width en; fnew = (map f new) ++ prev
-gen_diagonalize_rec veag True depth width True f en prev [] = eager width f1 en where f1 = (\new -> \r -> gen_diagonalize_rec veag True depth width True f r [] ((reverse prev) ++ (map f new)))
-gen_diagonalize_rec veag True depth width False f en prev [] = eager width f1 en where f1 = (\new -> \r -> gen_diagonalize_rec veag True depth width False f r [] ((map f new) ++ prev))
+gen_diagonalize_rec veag False depth width True f en prev [] = gtrace True "BRANCHING" (gen_diagonalize_rec veag False depth width True f r [] fnew) where (new,r) = get_nstep_full width en; fnew = (reverse prev) ++ (map f new)
+gen_diagonalize_rec veag False depth width False f en prev [] = gtrace True "BRANCHING" (gen_diagonalize_rec veag False depth width True f r [] fnew) where (new,r) = get_nstep_full width en; fnew = (map f new) ++ prev
+gen_diagonalize_rec veag True depth width True f en prev [] = gtrace True "BRANCHING" (eager width f1 en) where f1 = (\new -> \r -> gen_diagonalize_rec veag True depth width True f r [] ((reverse prev) ++ (map f new)))
+gen_diagonalize_rec veag True depth width False f en prev [] = gtrace True "BRANCHING" (eager width f1 en) where f1 = (\new -> \r -> gen_diagonalize_rec veag True depth width False f r [] ((map f new) ++ prev))
 gen_diagonalize_rec veag heag depth width fl f en prev (Empty:xs) = gen_diagonalize_rec veag heag depth width fl f en prev xs
 gen_diagonalize_rec veag heag depth width fl f en prev (Halt:xs) = Halt
 gen_diagonalize_rec veag heag depth width fl f en prev ((Error str):xs) = Error str

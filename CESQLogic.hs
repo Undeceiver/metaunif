@@ -51,6 +51,7 @@ import DependencyGraph
 import GlobalTrace
 import GHC.Generics (Generic)
 import Data.Hashable
+import Control.Lens
 
 -- Here are all our assumptions / simplifications:
 --	- A literal is either an atom or its negation.
@@ -169,16 +170,21 @@ class QueriableWithUV q v t r s uv | q v t uv -> r s where
 instance forall a t mpd pd fn v pmv fmv uv. ResConstraintsALL a t LambdaCNF mpd pd fn v pmv fmv uv => QueriableWithUV (BaseCESQuery a t mpd pd fn v pmv fmv) (CESQVar pmv fmv) (CNF a t mpd pd fn v pmv fmv) (CESQSol pd fn) (ImplicitInstantiation t mpd pd fn v pmv fmv uv) uv where
 	runBaseQWithUV _ tcnf sel (FLogicQuery sig (Entails ecnf)) = ExplicitAS einsts
 		where
-			compresuvdgs = soresolve_to_dgraph_filter_nub cesq_resolution_execorder sig (tcnf ++ ecnf) :: Computation (RESUnifVDGraph t mpd pd fn v pmv fmv uv);
+			(tplusesig,tplusecnf) = standardize_apart_cesqclause sig (tcnf ++ ecnf);
+			compresuvdgs = soresolve_to_dgraph_filter_nub cesq_resolution_execorder tplusesig tplusecnf :: Computation (RESUnifVDGraph t mpd pd fn v pmv fmv uv);
 			eresuvdgs = runcomp cesq_resolution_execorder compresuvdgs;
 			finsts = (\resuvdg -> ImplicitAS (ImplicitInstantiation (ExactGraphInst resuvdg) sel));
 			einsts = finsts <$> eresuvdgs;
 	runBaseQWithUV _ tcnf sel (FLogicQuery sig (Satisfies ecnf satcnf)) = ExplicitAS einsts
 		where
-			compresuvdgs_ecnf = soresolve_to_dgraph_filter_nub cesq_resolution_execorder sig (tcnf ++ ecnf) :: Computation (RESUnifVDGraph t mpd pd fn v pmv fmv uv);
-			compresuvdgs_mincondcnf = soresolve_to_dgraph_filter_nub cesq_resolution_execorder sig (tcnf ++ satcnf) :: Computation (RESUnifVDGraph t mpd pd fn v pmv fmv uv);
-			eresuvdgs_ecnf = failedRESUnifVDGraph sig --> runcomp cesq_resolution_execorder compresuvdgs_ecnf;
-			eresuvdgs_mincondcnf = emptyRESUnifVDGraph sig --> runcomp cesq_resolution_execorder compresuvdgs_mincondcnf;
+			-- Note that we standardize apart each condition independently, so these may be differing.
+			-- This should not be a problem because we never combine these things back, but it is worth noting in case this changes!!
+			(tplusesig,tplusecnf) = standardize_apart_cesqclause sig (tcnf ++ ecnf);
+			(tplussatsig,tplussatcnf) = standardize_apart_cesqclause sig (tcnf ++ satcnf);
+			compresuvdgs_ecnf = soresolve_to_dgraph_filter_nub cesq_resolution_execorder tplusesig tplusecnf :: Computation (RESUnifVDGraph t mpd pd fn v pmv fmv uv);
+			compresuvdgs_mincondcnf = soresolve_to_dgraph_filter_nub cesq_resolution_execorder tplussatsig tplussatcnf :: Computation (RESUnifVDGraph t mpd pd fn v pmv fmv uv);
+			eresuvdgs_ecnf = failedRESUnifVDGraph tplusesig --> runcomp cesq_resolution_execorder compresuvdgs_ecnf;
+			eresuvdgs_mincondcnf = emptyRESUnifVDGraph tplussatsig --> runcomp cesq_resolution_execorder compresuvdgs_mincondcnf;
 			resuvdg_min = emptyRESUnifVDGraph sig :: RESUnifVDGraph t mpd pd fn v pmv fmv uv;
 			einsts = do
 				{
@@ -209,9 +215,10 @@ instance forall a t mpd pd fn v pmv fmv uv. ResConstraintsALL a t LambdaCNF mpd 
 type CESQConstraintsOutNoPd fn pmv fmv = (Hashable pmv, Ord pmv, Hashable fmv, Ord fmv, Eq pmv, Eq fmv, Eq fn, Hashable fn, Ord fn) 
 type CESQConstraintsOut pd fn pmv fmv = (CESQConstraintsOutNoPd fn pmv fmv, Eq pd, Hashable pd, Ord pd)
 type CESQConstraintsInT t pd fn pmv fmv = (CESQConstraintsOut pd fn pmv fmv, SimpleTerm t, Bifunctor t)
-type CESQConstraintsInV v = (Eq v, Hashable v, Ord v)
+type CESQConstraintsInV v = (Eq v, Hashable v, Ord v, Variable v, Variabilizable v)
 type CESQConstraintsInTV t pd fn v pmv fmv = (CESQConstraintsInT t pd fn pmv fmv, CESQConstraintsInV v)
 type CESQConstraintsInTVNoPd t fn v pmv fmv = (CESQConstraintsOutNoPd fn pmv fmv, SimpleTerm t, CESQConstraintsInV v)
+type CESQConstraintsInTVNoPmv t pd fn v fmv = (Hashable fmv, Ord fmv, Eq fmv, Eq fn, Hashable fn, Ord fn, SimpleTerm t, Bifunctor t, Eq v, Hashable v, Ord v, Variable v, Variabilizable v)
 type CESQConstraintsInA a pd fn pmv fmv = (CESQConstraintsOut pd fn pmv fmv, SimpleTerm a)
 type CESQConstraintsInAT a t pd fn pmv fmv = (CESQConstraintsInA a pd fn pmv fmv, CESQConstraintsInT t pd fn pmv fmv)
 type CESQConstraintsInATV a t pd fn v pmv fmv = (CESQConstraintsInAT a t pd fn pmv fmv, CESQConstraintsInV v)
@@ -321,6 +328,57 @@ instance CESQConstraintsInATV a t pd fn v pmv fmv => Substitutable (CNF a t mpd 
 instance CESQConstraintsInATV a t pd fn v pmv fmv => Substitutable (BaseCESQuery a t mpd pd fn v pmv fmv) (CESQVar pmv fmv) (CESQVar pmv fmv) where
 	subst = subst_bimap
 
+-- Standardizing apart clauses in a CNF
+instance CESQConstraintsInTVNoPmv t pd fn v fmv => Substitutable (SOMetawrap t fn v fmv) v (SOMetawrap t fn v fmv) where
+	subst v r (SOMetawrap (UVar v2)) | v == v2 = r
+	subst v r (SOMetawrap (UVar v2)) = SOMetawrap (UVar v2)
+	subst v r (SOMetawrap (UTerm t)) = SOMetawrap (UTerm (build_term h (fmap (\st -> fromSOMetawrap (subst v r (SOMetawrap st))) sts))) where (h,sts) = unbuild_term t
+	subst _ _ _ = error "Unexpected case on subst for SOMetawrap"
+
+instance CESQConstraintsInATV a t pd fn v pmv fmv => Substitutable (SOMetawrapA a t pd fn v pmv fmv) v (SOMetawrap t fn v fmv) where
+	subst v r (SOMetawrapA soa) = SOMetawrapA (build_term p (subst_fmap v r sts)) where (p,sts) = unbuild_term soa
+
+instance CESQConstraintsInATV a t pd fn v pmv fmv => Substitutable (CombSOAtom a t LambdaCNF mpd pd fn v pmv fmv) v (SOMetawrap t fn v fmv) where
+	subst v r (NSOAtom somwa) = NSOAtom (subst v r somwa)
+	subst v r (FSOAtom fsoa) = FSOAtom fsoa
+
+instance CESQConstraintsInATV a t pd fn v pmv fmv => Substitutable (VarLiteral a t mpd pd fn v pmv fmv) v (SOMetawrap t fn v fmv) where
+	subst = subst_fmap
+
+instance CESQConstraintsInATV a t pd fn v pmv fmv => Substitutable (Clause a t mpd pd fn v pmv fmv) v (SOMetawrap t fn v fmv) where
+	subst = subst_fmap
+
+instance CESQConstraintsInATV a t pd fn v pmv fmv => Substitutable (CNF a t mpd pd fn v pmv fmv) v (SOMetawrap t fn v fmv) where
+	subst = subst_fmap
+
+instance CESQConstraintsInATV a t pd fn v pmv fmv => Substitutable (BaseCESQuery a t mpd pd fn v pmv fmv) v (SOMetawrap t fn v fmv) where
+	subst = subst_bimap
+
+standardize_apart_cesqclause :: CESQConstraintsInATV a t pd fn v pmv fmv => SOSignature mpd pd fn v pmv fmv -> CNF a t mpd pd fn v pmv fmv -> (SOSignature mpd pd fn v pmv fmv, CNF a t mpd pd fn v pmv fmv)
+standardize_apart_cesqclause sosig cnf = (rsig,rstd)
+	where
+		vars = list_from_enum (fovars sosig);
+		nvars = maximum (getVarID <$> vars) + 1;
+		rstd = standardize_apart_cesqclause_rec sosig cnf nvars 0;
+		ncls = length cnf;
+		fvar = (\icl -> update_var (\i -> i + icl*nvars));
+		rvars = concat ((\icl -> fvar icl <$> vars) <$> [0..(ncls-1)]);
+		rsig = (lens_fosig . lens_vars) .~ (uns_enum_from_list rvars) $ sosig
+
+-- Adds as arguments, the number of original variables and the index of the clause.
+-- The CNF is the CNF starting from the current clause.
+-- We do not modify the signature here, this is done all at once at the top.
+standardize_apart_cesqclause_rec :: forall a t mpd pd fn v pmv fmv. CESQConstraintsInATV a t pd fn v pmv fmv => SOSignature mpd pd fn v pmv fmv -> CNF a t mpd pd fn v pmv fmv -> Int -> Int -> CNF a t mpd pd fn v pmv fmv
+standardize_apart_cesqclause_rec sosig [] _ _ = []
+standardize_apart_cesqclause_rec sosig (cl:cls) nvars icl = (subst_all varmap cl):rstd
+	where
+		rstd = standardize_apart_cesqclause_rec sosig cls nvars (icl+1);
+		fvar = update_var (\i -> i + icl*nvars);
+		vars = list_from_enum (fovars sosig);
+		varpairs = (\v -> (v,(SOMetawrap (UVar (fvar v))::SOMetawrap t fn v fmv))) <$> vars;
+		varmap = fromList varpairs;
+		
+
 
 -- This is actually unlikely to happen, because meta-variables have arity, which means they are not just an Int.
 instance (Variabilizable pmv, Variabilizable fmv) => Variabilizable (CESQVar pmv fmv) where
@@ -335,22 +393,26 @@ instance (Variabilizable pmv, Variabilizable fmv) => Variabilizable (CESQVar pmv
 instance forall a t mpd pd fn v pmv fmv uv. ResConstraintsALL a t LambdaCNF mpd pd fn v pmv fmv uv => ImplicitF (ImplicitInstantiation t mpd pd fn v pmv fmv uv) (ImplicitInstantiation t mpd pd fn v pmv fmv uv) (CESQVar pmv fmv =<- CESQSol pd fn) (BaseQueryInput (BaseCESQuery a t mpd pd fn v pmv fmv) (CESQVar pmv fmv) (CNF a t mpd pd fn v pmv fmv) (CESQSol pd fn)) where
 	composeImplicit (ImplicitInstantiation (ExactGraphInst resuvdg) sel) (tcnf,sel2,FLogicQuery sig (Entails ecnf)) = ExplicitAS einsts
 		where
-			compresuvdgs = soresolve_to_dgraph_filter_nub cesq_resolution_execorder sig (tcnf ++ ecnf) :: Computation (RESUnifVDGraph t mpd pd fn v pmv fmv uv);
+			(tplusesig,tplusecnf) = standardize_apart_cesqclause sig (tcnf ++ ecnf);
+			compresuvdgs = soresolve_to_dgraph_filter_nub cesq_resolution_execorder tplusesig tplusecnf :: Computation (RESUnifVDGraph t mpd pd fn v pmv fmv uv);
 			eresuvdgs = runcomp cesq_resolution_execorder compresuvdgs;
-			finsts = (\resuvdg2 -> ImplicitAS (ImplicitInstantiation (ExactGraphInst (mergeRESUnifVDGraph sig resuvdg resuvdg2)) sel2));
+			-- I am a bit scared of using the extended signature here on the merge, or rather, of not using something similar somewhere else.
+			finsts = (\resuvdg2 -> ImplicitAS (ImplicitInstantiation (ExactGraphInst (mergeRESUnifVDGraph tplusesig resuvdg resuvdg2)) sel2));
 			einsts = finsts <$> eresuvdgs;
 	composeImplicit (ImplicitInstantiation (ExactGraphInst resuvdg) sel) (tcnf,sel2,FLogicQuery sig (Satisfies ecnf satcnf)) = ExplicitAS einsts
 		where
-			compresuvdgs_ecnf = soresolve_to_dgraph_filter_nub cesq_resolution_execorder sig (tcnf ++ ecnf) :: Computation (RESUnifVDGraph t mpd pd fn v pmv fmv uv);
-			compresuvdgs_mincondcnf = soresolve_to_dgraph_filter_nub cesq_resolution_execorder sig (tcnf ++ satcnf) :: Computation (RESUnifVDGraph t mpd pd fn v pmv fmv uv);
-			eresuvdgs_ecnf = failedRESUnifVDGraph sig --> runcomp cesq_resolution_execorder compresuvdgs_ecnf;
-			eresuvdgs_mincondcnf = emptyRESUnifVDGraph sig --> runcomp cesq_resolution_execorder compresuvdgs_mincondcnf;
+			(tplusesig,tplusecnf) = standardize_apart_cesqclause sig (tcnf ++ ecnf);
+			(tplussatsig,tplussatcnf) = standardize_apart_cesqclause sig (tcnf ++ satcnf);
+			compresuvdgs_ecnf = soresolve_to_dgraph_filter_nub cesq_resolution_execorder tplusesig tplusecnf :: Computation (RESUnifVDGraph t mpd pd fn v pmv fmv uv);
+			compresuvdgs_mincondcnf = soresolve_to_dgraph_filter_nub cesq_resolution_execorder tplussatsig tplussatcnf :: Computation (RESUnifVDGraph t mpd pd fn v pmv fmv uv);
+			eresuvdgs_ecnf = failedRESUnifVDGraph tplusesig --> runcomp cesq_resolution_execorder compresuvdgs_ecnf;
+			eresuvdgs_mincondcnf = emptyRESUnifVDGraph tplussatsig --> runcomp cesq_resolution_execorder compresuvdgs_mincondcnf;
 			einsts = do
 				{
 					resuvdgs_ecnf <- eresuvdgs_ecnf;
 					resuvdgs_mincondcnf <- eresuvdgs_mincondcnf;
 
-					return (ImplicitAS (ImplicitInstantiation (MinMaxGraphInst resuvdg (mergeRESUnifVDGraph sig resuvdg resuvdgs_mincondcnf) (mergeRESUnifVDGraph sig resuvdg resuvdgs_ecnf)) sel2))
+					return (ImplicitAS (ImplicitInstantiation (MinMaxGraphInst resuvdg (mergeRESUnifVDGraph tplussatsig resuvdg resuvdgs_mincondcnf) (mergeRESUnifVDGraph tplusesig resuvdg resuvdgs_ecnf)) sel2))
 				};
 	composeImplicit (ImplicitInstantiation (ExactGraphInst resuvdg) sel) (tcnf,sel2,FLogicQuery sig (Equals a1 a2)) = inst
 		where
@@ -369,22 +431,25 @@ instance forall a t mpd pd fn v pmv fmv uv. ResConstraintsALL a t LambdaCNF mpd 
 			inst = ImplicitAS (ImplicitInstantiation (MinMaxGraphInst resuvdg (mergeRESUnifVDGraph sig resuvdg resuvdg_mincond) resuvdg_max) sel2);
 	composeImplicit (ImplicitInstantiation (MinMaxGraphInst resuvdg_min resuvdg_mincond resuvdg_max) sel) (tcnf,sel2,FLogicQuery sig (Entails ecnf)) = ExplicitAS einsts
 		where
-			compresuvdgs = soresolve_to_dgraph_filter_nub cesq_resolution_execorder sig (tcnf ++ ecnf) :: Computation (RESUnifVDGraph t mpd pd fn v pmv fmv uv);
+			(tplusesig,tplusecnf) = standardize_apart_cesqclause sig (tcnf ++ ecnf);
+			compresuvdgs = soresolve_to_dgraph_filter_nub cesq_resolution_execorder tplusesig tplusecnf :: Computation (RESUnifVDGraph t mpd pd fn v pmv fmv uv);
 			eresuvdgs = runcomp cesq_resolution_execorder compresuvdgs;
-			finsts = (\resuvdg2 -> ImplicitAS (ImplicitInstantiation (MinMaxGraphInst (mergeRESUnifVDGraph sig resuvdg_min resuvdg2) (mergeRESUnifVDGraph sig resuvdg_mincond resuvdg2) (mergeRESUnifVDGraph sig resuvdg_max resuvdg2)) sel2));
+			finsts = (\resuvdg2 -> ImplicitAS (ImplicitInstantiation (MinMaxGraphInst (mergeRESUnifVDGraph tplusesig resuvdg_min resuvdg2) (mergeRESUnifVDGraph tplusesig resuvdg_mincond resuvdg2) (mergeRESUnifVDGraph tplusesig resuvdg_max resuvdg2)) sel2));
 			einsts = finsts <$> eresuvdgs;
 	composeImplicit (ImplicitInstantiation (MinMaxGraphInst resuvdg_min resuvdg_mincond resuvdg_max) sel) (tcnf,sel2,FLogicQuery sig (Satisfies ecnf satcnf)) = ExplicitAS einsts
 		where
-			compresuvdgs_ecnf = soresolve_to_dgraph_filter_nub cesq_resolution_execorder sig (tcnf ++ ecnf) :: Computation (RESUnifVDGraph t mpd pd fn v pmv fmv uv);
-			compresuvdgs_mincondcnf = soresolve_to_dgraph_filter_nub cesq_resolution_execorder sig (tcnf ++ satcnf) :: Computation (RESUnifVDGraph t mpd pd fn v pmv fmv uv);
-			eresuvdgs_ecnf = failedRESUnifVDGraph sig --> runcomp cesq_resolution_execorder compresuvdgs_ecnf;
-			eresuvdgs_mincondcnf = emptyRESUnifVDGraph sig --> runcomp cesq_resolution_execorder compresuvdgs_mincondcnf;
+			(tplusesig,tplusecnf) = standardize_apart_cesqclause sig (tcnf ++ ecnf);
+			(tplussatsig,tplussatcnf) = standardize_apart_cesqclause sig (tcnf ++ satcnf);
+			compresuvdgs_ecnf = soresolve_to_dgraph_filter_nub cesq_resolution_execorder tplusesig tplusecnf :: Computation (RESUnifVDGraph t mpd pd fn v pmv fmv uv);
+			compresuvdgs_mincondcnf = soresolve_to_dgraph_filter_nub cesq_resolution_execorder tplussatsig tplussatcnf :: Computation (RESUnifVDGraph t mpd pd fn v pmv fmv uv);
+			eresuvdgs_ecnf = failedRESUnifVDGraph tplusesig --> runcomp cesq_resolution_execorder compresuvdgs_ecnf;
+			eresuvdgs_mincondcnf = emptyRESUnifVDGraph tplussatsig --> runcomp cesq_resolution_execorder compresuvdgs_mincondcnf;
 			einsts = do
 				{
 					resuvdgs_ecnf <- eresuvdgs_ecnf;
 					resuvdgs_mincondcnf <- eresuvdgs_mincondcnf;
 
-					return (ImplicitAS (ImplicitInstantiation (MinMaxGraphInst resuvdg_min (mergeRESUnifVDGraph sig resuvdg_mincond resuvdgs_mincondcnf) (mergeRESUnifVDGraph sig resuvdg_max resuvdgs_ecnf)) sel2))
+					return (ImplicitAS (ImplicitInstantiation (MinMaxGraphInst resuvdg_min (mergeRESUnifVDGraph tplussatsig resuvdg_mincond resuvdgs_mincondcnf) (mergeRESUnifVDGraph tplusesig resuvdg_max resuvdgs_ecnf)) sel2))
 				};
 	composeImplicit (ImplicitInstantiation (MinMaxGraphInst resuvdg_min resuvdg_mincond resuvdg_max) sel) (tcnf,sel2,FLogicQuery sig (Equals a1 a2)) = inst
 		where
@@ -434,7 +499,7 @@ transform_soa_cesqam (UTerm (SOP (Proj idx))) rs = error "Found a projection on 
 transform_soa_cesqam (UTerm (SOP (CompF h sts))) rs = CESQSol (Left (gsoa_to_lambdacnf (Fix (SOP (CompF rrh rsts))))) where (CESQSol (Left rh)) = transform_soa_cesqam h rs; rrh = lambdacnf_to_gsoa rh; frsts = (\(CESQSol (Right rst)) -> rst); rsts = frsts . (\st -> transform_sot_cesqam st rs) <$> sts
 
 instance forall t mpd pd fn v pmv fmv uv. (Hashable pmv, Ord pmv, Hashable fmv, Ord fmv) => Functional [CESQArgumentMap pd fn pmv fmv] (CESQVar pmv fmv =<- CESQSol pd fn) (AnswerSet (ImplicitInstantiation t mpd pd fn v pmv fmv uv) (CESQVar pmv fmv =<- CESQSol pd fn)) where
-	tofun am = tofun (transform am::CESQVar pmv fmv :->= CESQSol pd fn)
+	tofun am = tofun (HaskellPlus.transform am::CESQVar pmv fmv :->= CESQSol pd fn)
 
 instance CESQConstraintsOut pd fn pmv fmv => Substitutable [CESQArgumentMap pd fn pmv fmv] (CESQVar pmv fmv) (CESQSol pd fn) where
 	subst = subst_fmap

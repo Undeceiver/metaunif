@@ -19,6 +19,8 @@ import AnswerSet
 import SimplePerformance
 import EnumProc
 import Algorithm
+import SimplePerformance
+import ESUnification
 
 -- We do not really use this
 {-|
@@ -1131,4 +1133,35 @@ cesqtest26 = CESQTest cesqtheory26 cesqquery26 cesqsols26
 
 
 
-main = show_enumproc_run (enumAS cesqas8 \$ ())
+
+-- This is a good example in that it produces results, but takes much longer than we would expect.
+-- It is that "missing link" between the super simple case and the not-so-simple cases that do not finish at all.
+cesqsige1 :: SOMetaSignature
+cesqsige1 = SOSignature (Signature [EnumProc.Empty, read "p1[1]" --> read "p2[1]" --> EnumProc.Empty] [] (read "x0" --> EnumProc.Empty)) EnumProc.Empty (read "P1[1]" --> read "P2[1]" --> EnumProc.Empty) (read "k1[1]" --> read "k2[2]" --> EnumProc.Empty)
+
+cesqtheorye1 :: SOMetaCNF
+cesqtheorye1 = read "[[-p1[1](x0),+p2[1](x0)],[-p2[1](x0),+p1[1](x0)],[+k1[1]([[+p1[1]]])],[+k1[1]([[+p2[1]]])],[+k2[2]([[+p1[1]]],[[+p2[1]]])]]"
+
+cesqquerye1_1 :: SOMetaBaseQ
+--cesqquerye1_1 = FLogicQuery cesqsige1 (read "|= [[-k1[1]([[+P1[1]]]),-k1[1]([[+P2[1]]])]]")
+cesqquerye1_1 = FLogicQuery cesqsige1 (read "|= [[+p1[1](x5)],[-p2[1](x5)]]")
+
+cesqquerye1_2 :: SOMetaBaseQ
+cesqquerye1_2 = FLogicQuery cesqsige1 (read "|= [[-k2[2]([[+P1[1]]],[[+P2[1]]])]]")
+
+cesqquerye1 :: SOMetaQuery
+--cesqquerye1 = (BaseQ (read "[?P1[1],?P2[1]]") cesqquerye1_1) $<- (BaseQ (read "[?P1[1],?P2[1]]") cesqquerye1_2) $ (read "[P1[1] := P1[1],P2[1] := P2[1]]")
+cesqquerye1 = (BaseQ (read "[?P1[1],?P2[1]]") cesqquerye1_1)
+
+cesqase1 :: AnswerSet SOMetaImplicitInstantiation (SOMetaQVar =<- SOMetaQSol)
+cesqase1 = runQuery cesqtheorye1 cesqquerye1
+
+
+cesqfirstsyse1 :: SOMetaUnifSystem
+cesqfirstsyse1 = USys cesqsige1 [read "u0 p1[1](x0) ~ u0 p1[1](x5)", read "u1 p2[1](x5) ~ u1 u0 p2[1](x0)"]
+
+cesqfromsysase1 :: AnswerSet SOMetaUnifSystem SOMetaUnifSysSolution
+cesqfromsysase1 = ImplicitAS cesqfirstsyse1
+
+--main = show_enumproc_run (enumAS cesqas8 \$ ())
+main = show_enumproc_run (enumAS cesqase1 \$ ())

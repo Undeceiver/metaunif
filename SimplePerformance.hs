@@ -13,6 +13,9 @@ import Control.Lens
 import System.IO.Silently
 import Control.DeepSeq
 import System.Timeout
+import Debug.Trace
+import GlobalTrace
+import System.IO.Unsafe
 
 t_measure_io :: IO a -> IO (Integer, a)
 t_measure_io io = do
@@ -69,3 +72,18 @@ timeout_secs secs io = timeout (floor (secs * 10^6)) io
 
 n_timeout_secs :: Double -> IO () -> IO ()
 n_timeout_secs secs io = timeout_secs secs io >> return ()
+
+
+trace_measure :: NFData a => Bool -> (Integer -> String) -> a -> a
+trace_measure False _ x = x
+trace_measure True str a = unsafePerformIO printed_io
+	where
+		measured_io = t_measure_deepseq a;
+		printed_io = measured_io >>= (\(time,aa) -> do {putStr (str time); return aa});
+
+trace_measure_secs :: NFData a => Bool -> (Double -> String) -> a -> a
+trace_measure_secs False _ x = x
+trace_measure_secs True str a = unsafePerformIO printed_io
+	where
+		measured_io = t_measure_deepseq_secs a;
+		printed_io = measured_io >>= (\(time,aa) -> do {putStr (str time); return aa});

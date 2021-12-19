@@ -859,17 +859,17 @@ instance ESMGUConstraintsUPmv t pd fn v pmv fmv uv => StateTOperation (ST s) (ES
 	
 
 runESUStateTOp :: ESMGUConstraintsUPmv t pd fn v pmv fmv uv => ESUnifDGOp s t mpd pd fn v pmv fmv uv -> StateT (ESUnifVDGraph s t mpd pd fn v pmv fmv uv) (ST s) [ESUnifDGOp s t mpd pd fn v pmv fmv uv]
-runESUStateTOp (ESUVCommuteEEqFo foe) = do {foestr <- mshow_esunifvfoedge foe; gtraceM False ("VCommuteEEq: " ++ foestr); esuvdg <- show_esuvdg; gtraceM False esuvdg; esu_vertical_commute_explicit_eq_fo_edge foe}
-runESUStateTOp (ESUVCommuteEqFo foe) = do {foestr <- mshow_esunifvfoedge foe; gtraceM False ("VCommuteEq: " ++ foestr); esuvdg <- show_esuvdg; gtraceM False esuvdg; esu_vertical_commute_eq_fo_edge foe}
-runESUStateTOp (ESUVCommuteFo foe) = do {foestr <- mshow_esunifvfoedge foe; gtraceM False ("VCommute: " ++ foestr); esuvdg <- show_esuvdg; gtraceM False esuvdg; esu_vertical_commute_fo_edge foe}
-runESUStateTOp (ESUVAlign fot) = do {gtraceM False "BEFORE getrelid ESUVAlign"; preesuvdg <- show_esuvdg; gtraceM False preesuvdg; foid <- mzoom lens_esunifdgraph_dgraph (getSTRelativeEqDGFoId fot); gtraceM False ("ESUVAlign: " ++ (show foid)); esuvdg <- show_esuvdg; gtraceM False esuvdg; esu_vertical_align_fot fot}
-runESUStateTOp (ESUSOZip soe) = do {gtraceM False ("SOZip: " ++ (show soe)); esuvdg <- show_esuvdg; gtraceM False esuvdg; esu_sozip_soe soe}
-runESUStateTOp (ESUFOZip foe) = do {gtraceM False ("FOZip: " ++ (show foe)); esuvdg <- show_esuvdg; gtraceM False esuvdg; esu_fozip_foe foe}
-runESUStateTOp (ESUSOSimpProj soe) = do {gtraceM False ("ESUSOSimpProj: " ++ (show soe)); esuvdg <- show_esuvdg; gtraceM False esuvdg; esu_so_simplify_proj_soe soe}
-runESUStateTOp (ESUFOSimpProj foe) = do {gtraceM False ("ESUFOSimpProj: " ++ (show foe)); esuvdg <- show_esuvdg; gtraceM False esuvdg; esu_fo_simplify_proj_foe foe}
-runESUStateTOp (OccursCheckPre) = do {gtraceM False ("OccursCheckPre"); esuvdg <- show_esuvdg; gtraceM False esuvdg; esu_occurs_check_pre}
-runESUStateTOp (ESUSODump soe) = do {gtraceM False ("ESUSODump: " ++ (show soe)); esuvdg <- show_esuvdg; gtraceM False esuvdg; r <- esu_so_dump_soe soe; aesuvdg <- show_esuvdg; gtraceM False "AFTER ESUSODump Op"; gtraceM False aesuvdg; return r}
-runESUStateTOp (ESUFODump foe) = do {gtraceM False ("ESUFODump: " ++ (show foe)); esuvdg <- show_esuvdg; gtraceM False esuvdg; r <- esu_fo_dump_foe foe; aesuvdg <- show_esuvdg; gtraceM False "AFTER ESUFODump Op"; gtraceM False aesuvdg; return r}
+runESUStateTOp (ESUVCommuteEEqFo foe) = do {foestr <- mshow_esunifvfoedge foe; gtraceM True ("VCommuteEEq: " ++ foestr); esuvdg <- show_esuvdg; gtraceM False esuvdg; esu_vertical_commute_explicit_eq_fo_edge foe}
+runESUStateTOp (ESUVCommuteEqFo foe) = do {foestr <- mshow_esunifvfoedge foe; gtraceM True ("VCommuteEq: " ++ foestr); esuvdg <- show_esuvdg; gtraceM False esuvdg; esu_vertical_commute_eq_fo_edge foe}
+runESUStateTOp (ESUVCommuteFo foe) = do {foestr <- mshow_esunifvfoedge foe; gtraceM True ("VCommute: " ++ foestr); esuvdg <- show_esuvdg; gtraceM False esuvdg; esu_vertical_commute_fo_edge foe}
+runESUStateTOp (ESUVAlign fot) = do {gtraceM False "BEFORE getrelid ESUVAlign"; preesuvdg <- show_esuvdg; gtraceM False preesuvdg; foid <- mzoom lens_esunifdgraph_dgraph (getSTRelativeEqDGFoId fot); gtraceM True ("ESUVAlign: " ++ (show foid)); esuvdg <- show_esuvdg; gtraceM False esuvdg; esu_vertical_align_fot fot}
+runESUStateTOp (ESUSOZip soe) = do {gtraceM True ("SOZip: " ++ (show soe)); esuvdg <- show_esuvdg; gtraceM False esuvdg; esu_sozip_soe soe}
+runESUStateTOp (ESUFOZip foe) = do {gtraceM True ("FOZip: " ++ (show foe)); esuvdg <- show_esuvdg; gtraceM False esuvdg; esu_fozip_foe foe}
+runESUStateTOp (ESUSOSimpProj soe) = do {gtraceM True ("ESUSOSimpProj: " ++ (show soe)); esuvdg <- show_esuvdg; gtraceM False esuvdg; esu_so_simplify_proj_soe soe}
+runESUStateTOp (ESUFOSimpProj foe) = do {gtraceM True ("ESUFOSimpProj: " ++ (show foe)); esuvdg <- show_esuvdg; gtraceM False esuvdg; esu_fo_simplify_proj_foe foe}
+runESUStateTOp (OccursCheckPre) = do {gtraceM True ("OccursCheckPre"); esuvdg <- show_esuvdg; gtraceM False esuvdg; esu_occurs_check_pre}
+runESUStateTOp (ESUSODump soe) = do {gtraceM True ("ESUSODump: " ++ (show soe)); esuvdg <- show_esuvdg; gtraceM False esuvdg; r <- esu_so_dump_soe soe; aesuvdg <- show_esuvdg; gtraceM False "AFTER ESUSODump Op"; gtraceM False aesuvdg; return r}
+runESUStateTOp (ESUFODump foe) = do {gtraceM True ("ESUFODump: " ++ (show foe)); esuvdg <- show_esuvdg; gtraceM False esuvdg; r <- esu_fo_dump_foe foe; aesuvdg <- show_esuvdg; gtraceM False "AFTER ESUFODump Op"; gtraceM False aesuvdg; return r}
 
 newtype RESUnifVDGraph t mpd pd fn v pmv fmv uv = RESUnifVDGraph {fromRESUnifVDGraph :: forall s. ST s (ESUnifVDGraph s t mpd pd fn v pmv fmv uv)}
 
@@ -900,7 +900,7 @@ newtype EnRESUnifVDGraph t mpd pd fn v pmv fmv uv = EnRESUnifVDGraph {fromEnRESU
 instance ESMGUConstraintsUPmv t pd fn v pmv fmv uv => Implicit (EnRESUnifVDGraph t mpd pd fn v pmv fmv uv) (UnifSysSolution pd fn pmv fmv) where
 	checkImplicit (EnRESUnifVDGraph resuvdg) us = error "The checkImplicit implementation for the enumerated unification dependency graph should not be used!"
 	-- enumImplicit assumes full normalization and enumeration of root second-order variables
-	enumImplicit (EnRESUnifVDGraph resuvdg) = if (resuvdg_checkfailed resuvdg) then emptycomp else (gtrace True "Extracting solution from normal graph" (return (extract_unifsolution resuvdg)))
+	enumImplicit (EnRESUnifVDGraph resuvdg) = if (resuvdg_checkfailed resuvdg) then emptycomp else (gtrace False "Extracting solution from normal graph" (return (extract_unifsolution resuvdg)))
 
 resuvdg_checkfailed :: ESMGUConstraintsUPmv t pd fn v pmv fmv uv => RESUnifVDGraph t mpd pd fn v pmv fmv uv -> Bool
 resuvdg_checkfailed resuvdg = runST (fst <$> runStateT (do {unRESUnifVDGraph resuvdg; esuvdg <- get; return (esunifdgraph_failed esuvdg)}) (emptyVDGraph (sig_RESUnifVDGraph resuvdg)))
@@ -1784,7 +1784,8 @@ factorize_type fc = runST (do
 	})
 
 factorize_candidate :: ESMGUConstraintsUPmv t pd fn v pmv fmv uv => FactorizeCandidate t pd fn v pmv fmv uv -> RESUnifVDGraph t mpd pd fn v pmv fmv uv -> AnswerSet (RESUnifVDGraph t mpd pd fn v pmv fmv uv) (UnifSysSolution pd fn pmv fmv)
-factorize_candidate fc resuvdg = gtrace False ("FACTORIZING\n\nBEFORE:\n" ++ (show resuvdg) ++ "\nAFTER:\n" ++ (show (implicitOnly res \$ ())) ++ "\nDONE\n") res
+factorize_candidate fc resuvdg = gtrace True (show (factorize_type fc)) res
+				--gtrace True ("FACTORIZING\n\nBEFORE:\n" ++ (show resuvdg) ++ "\nAFTER:\n" ++ (show (implicitOnly res \$ ())) ++ "\nDONE\n") res
 	where res = st_as_commute_esuvdg (do
 		{		
 			esuvdg <- fromRESUnifVDGraph resuvdg;

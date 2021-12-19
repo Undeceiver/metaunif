@@ -305,7 +305,7 @@ res_resolveall = do
 		let {cls = (rescnf_clauses . resst_cnf) resst; rcls = Prelude.filter (\cl -> Prelude.null (resclause_lits cl)) cls};
 		case rcls of
 		{			
-			(cl:_) -> gtrace True "Found an empty clause!" (return (Just (resclause_cstr cl,resclause_proof cl)));
+			(cl:_) -> gtrace False "Found an empty clause!" (return (Just (resclause_cstr cl,resclause_proof cl)));
 			[] -> do
 				{
 					mb_step <- res_choosestep;

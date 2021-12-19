@@ -1008,6 +1008,15 @@ instance (Eq v, Functor t) => Substitutable (UTerm t v) v (UTerm t v) where
 -- We really should not need the variables in the signature, but because first-order unifiers for some (stupid) reason do not allow you to check which variables appear at all in the unifier, we need to keep track of that ourselves. vars will always be a superset of all the variables that may appear in any terms we have built while using this signature, and in many cases it will be a *proper* superset.
 data Signature pd fn v = Signature {preds :: [EnumProc pd], funcs :: [EnumProc fn], vars :: EnumProc v}
 
+lens_preds :: Lens' (Signature pd fn v) [EnumProc pd]
+lens_preds = lens preds (\prev -> \new -> Signature new (funcs prev) (vars prev))
+
+lens_funcs :: Lens' (Signature pd fn v) [EnumProc fn]
+lens_funcs = lens funcs (\prev -> \new -> Signature (preds prev) new (vars prev))
+
+lens_vars :: Lens' (Signature pd fn v) (EnumProc v)
+lens_vars = lens vars (\prev -> \new -> Signature (preds prev) (funcs prev) new)
+
 -- Enumerate functions (including composites) of a certain arity (this includes lower arities, as they simply ignore the remaining arguments).
 -- Concatenating this function with arbitrarily large arities is highly discouraged since this will include an exponential amount of redundancy.
 -- Note that the values returned by this function are already normal!
@@ -1174,3 +1183,4 @@ instance Normalizable a b => Normalizable (NormalizeLiteral a) (NormalizeLiteral
 	inject_normal (NormalizeLiteral (NegLit x)) = NormalizeLiteral (NegLit (inject_normal x))
 	normalize (NormalizeLiteral (PosLit x)) = NormalizeLiteral (PosLit (normalize x))
 	normalize (NormalizeLiteral (NegLit x)) = NormalizeLiteral (NegLit (normalize x))
+

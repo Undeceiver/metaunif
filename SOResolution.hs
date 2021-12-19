@@ -185,7 +185,7 @@ soresolve_to_dgraph :: ResConstraintsALL a t ss mpd pd fn v pmv fmv uv => SOSign
 soresolve_to_dgraph sig cnf = ((\usys -> doRESUnifVDGraph sig (dgraph_from_usys sig usys)) <$>) <$> (do
 					{
 						mb_eqs <- soresolve_to_constraints_only sig cnf;
-						gtraceM True (show mb_eqs);
+						gtraceM True ("EQUATIONS " ++ (show mb_eqs));
 						return mb_eqs
 					})
 
@@ -197,7 +197,7 @@ soresolve_to_dgraph_nub :: (ResConstraintsALL a t ss mpd pd fn v pmv fmv uv, Exe
 soresolve_to_dgraph_nub x sig cnf = ((\usys -> doRESUnifVDGraph sig (dgraph_from_usys sig usys)) <$>) <$> (do
 					{
 						mb_eqs <- fenum_alg x enub (soresolve_to_constraints_only sig cnf);
-						gtraceM True (show mb_eqs);
+						gtraceM True ("EQUATIONS " ++ (show mb_eqs));
 						return mb_eqs
 					})
 
